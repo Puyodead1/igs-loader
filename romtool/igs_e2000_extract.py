@@ -6,19 +6,24 @@ Disk layout (all E2000 images seen so far):
   p3 SHFS   game data, SquashFS 2.x variant           -> <work>/game
   p4 ext3   /<Game>/var, writable settings/bookkeeping (not extracted)
 
-The game executable is not stored whole.  At boot the kernel runs
-/bin/csh /lib/libdb0.a __KERNEL__ "-no-print -GC", which writes
-  /mnt/head = 1 KiB from p2 sector HEAD_SECTOR (the executable's first KiB)
-  /mnt/GECA = 1 KiB from p1 sector GECA_SECTOR + /lib/libdb0.a  (an ELF)
-and the kernel then runs /mnt/GECA, which builds /Game/<BINARY> as
-  head + libdb<PIECES[0]>.a + libdb<PIECES[1]>.a + ...
-taking (size/1K - trim) KiB of each piece, trim starting at TRIM_KB and
-changing by TRIM_STEP after each piece; the last piece keeps
-size - trim*1K bytes.  Details: docs/IGS_ROFS_REVERSE_ENGINEERING.md.
+The game executable is not stored whole.  At boot the kernel runs a stage-1
+loader (Gold Captain /bin/csh, Pirate Revenge /bin/HWtest), which writes
+  /mnt/head = 1 KiB from HEAD_PART sector HEAD_SECTOR (the executable's first KiB)
+  /mnt/GECA = 1 KiB from GECA_PART sector GECA_SECTOR + GECA_FILE  (an ELF)
+and the kernel then runs /mnt/GECA, which builds the executable as
+  head + piece(PIECES[0]) + piece(PIECES[1]) + ...
+where piece(d) is PIECE_FILE with %s = d.  PIECE_MODE says how much of each
+piece is kept; n starts at TRIM_KB and changes by TRIM_STEP after each piece:
+  trim (Gold Captain)     the first size/1K - n KiB; the last piece keeps
+                          size - n*1K bytes
+  skip (Pirate Revenge)   everything after the first n KiB
+Details: docs/IGS_ROFS_REVERSE_ENGINEERING.md.
 
 The software list (hash/e2000.xml) supplies the features geca_sector,
-head_sector, pieces, trim_kb, trim_step (read from /bin/csh and GECA of each
-game, see docs/IGS_KEYS.md).
+head_sector, pieces, trim_kb, trim_step and, where they differ from Gold
+Captain's, head_part (default p2), geca_part (p1), geca_file
+(/lib/libdb0.a), piece_file (/lib/libdb%s.a), piece_mode (trim); see
+docs/IGS_KEYS.md.
 
 This is the development workspace layout (root/, game/, <BINARY>.bin,
 loader/GECA).  Rom sets for the loader are built by mkromset.py, which uses
@@ -42,22 +47,38 @@ def partitions(image):
     return [struct.unpack_from('<II', mbr, 446 + 16 * i + 8) for i in range(4)]
 
 
+def part_index(m, key, default):
+    """A partition feature ('p1'..'p4') as an index into partitions()."""
+    p = m.get(key, default)
+    if len(p) != 2 or p[0] != 'p' or p[1] not in '1234':
+        sys.exit('bad %s %r' % (key.lower(), p))
+    return int(p[1]) - 1
+
+
+def root_file(root, cab):
+    with open(os.path.join(root, cab.lstrip('/')), 'rb') as f:
+        return f.read()
+
+
 def build_executable(image, parts, root, m):
     with open(image, 'rb') as f:
-        f.seek((parts[1][0] + int(m['HEAD_SECTOR'])) * 512)
+        f.seek((parts[part_index(m, 'HEAD_PART', 'p2')][0] + int(m['HEAD_SECTOR'])) * 512)
         out = f.read(1024)
     if out[:4] != b'\x7fELF':
         sys.exit('HEAD_SECTOR does not point at an ELF header')
-    trim, step = int(m['TRIM_KB']), int(m['TRIM_STEP'])
-    pieces = m['PIECES']
+    n, step = int(m['TRIM_KB']), int(m['TRIM_STEP'])
+    pieces, mode = m['PIECES'], m.get('PIECE_MODE', 'trim')
+    if mode not in ('trim', 'skip'):
+        sys.exit('bad piece_mode %r' % mode)
     for i, d in enumerate(pieces):
-        with open(os.path.join(root, 'lib', 'libdb%s.a' % d), 'rb') as f:
-            piece = f.read()
-        if i == len(pieces) - 1:
-            out += piece[:len(piece) - trim * 1024]
+        piece = root_file(root, m.get('PIECE_FILE', '/lib/libdb%s.a') % d)
+        if mode == 'skip':
+            out += piece[n * 1024:]
+        elif i == len(pieces) - 1:
+            out += piece[:len(piece) - n * 1024]
         else:
-            out += piece[:(len(piece) // 1024 - trim) * 1024]
-            trim += step
+            out += piece[:(len(piece) // 1024 - n) * 1024]
+        n += step
     # the section header table ends the file: a cheap integrity check
     shoff, = struct.unpack_from('<I', out, 0x20)
     shnum, = struct.unpack_from('<H', out, 0x30)
@@ -68,10 +89,9 @@ def build_executable(image, parts, root, m):
 
 def build_geca(image, parts, root, m):
     with open(image, 'rb') as f:
-        f.seek((parts[0][0] + int(m['GECA_SECTOR'])) * 512)
+        f.seek((parts[part_index(m, 'GECA_PART', 'p1')][0] + int(m['GECA_SECTOR'])) * 512)
         stub = f.read(1024)
-    with open(os.path.join(root, 'lib', 'libdb0.a'), 'rb') as f:
-        return stub + f.read()
+    return stub + root_file(root, m.get('GECA_FILE', '/lib/libdb0.a'))
 
 
 def main():

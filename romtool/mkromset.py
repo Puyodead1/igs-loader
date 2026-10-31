@@ -16,7 +16,8 @@ cabinet has it at run time.  The entry's "build" feature says how, as
                           keep SIZE bytes (Scratch's /bin/unrar step)
     copy SRC DST          copy a file inside the tree
     assemble DST          E2000: rebuild the split executable at DST
-                          (geca_sector, head_sector, pieces, trim_kb, trim_step)
+                          (geca_sector, head_sector, pieces, trim_kb, trim_step,
+                          head_part, geca_part, geca_file, piece_file, piece_mode)
     mount pN DIR          partition N replaces DIR's contents: p3 SquashFS
                           (E2100, unsquashfs) or IGS_SHFS (E2000); p4 ext2/3
                           (debugfs; lost+found is left out)

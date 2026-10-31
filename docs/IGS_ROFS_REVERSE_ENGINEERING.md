@@ -272,6 +272,14 @@ rom sets come from `romtool/mkromset.py`, which reuses its assembly.
 
 The kernel strings say "IGS-j filesystem" for this game-data scheme.
 
+**Pirate Revenge** (`PirateRevenge-OS-57P`, `2.4.31-IGS_V0.5a`, built 2 Aug
+2007) differs:
+- p3 mounts on `/pr/linux`, p4 (ext2, `gameset.bin`) on `/fec_data`.
+- Stage 1 is `/bin/HWtest`, run as `/etc/rc.d/rc0.d __KERNEL__ "-no-print -PR"`.
+- `/etc/X11/IGS` runs `cd /pr/linux; ./sship`, the copy on p3 (unstripped).
+  The assembled `/pr/exec/sship` (a ramfs over a static decoy of the same
+  name) has the same code and is stripped.
+
 ## Plaintext ROFS (p2)
 
 The format is cramfs with an IGS superblock; there is no encryption.  Kernel
@@ -389,9 +397,22 @@ fill at boot.
   - `trim` starts at `TRIM_KB` and changes by `TRIM_STEP` per piece.
   - The last piece keeps `size - trim*1024` bytes.
 
-`igs_e2000_extract.py` checks the result: the ELF section-header table must
-end exactly at the end of the file.
+**Pirate Revenge** (`/bin/HWtest` `sub_80481D0`, GECA `sub_80488C8`,
+constants at `0x804B34C`) swaps the partitions and keeps the other end of
+each piece:
+- `/mnt/head` = p1 sector 6813; `/mnt/GECA` = p2 sector 125515 +
+  `/etc/rc.d/rc0.d`.
+- The ramfs is `/pr/exec`, the executable `sship`; the pieces are
+  `/etc/rc.d/rc<d>.d`.
+- Each piece is `dd ... bs=1K skip=n`: everything after its first `n` KiB,
+  `n` starting at 9 and growing by 4.
 
-| Game | GECA_SECTOR | HEAD_SECTOR | PIECES | TRIM_KB | TRIM_STEP | Executable size |
+`igs_e2000_extract.py` checks the result: the ELF section-header table must
+end exactly at the end of the file.  Software-list features: `head_part`,
+`geca_part`, `geca_file`, `piece_file`, `piece_mode` (`trim` / `skip`), and
+`trim_kb` / `trim_step` for `n`.
+
+| Game | GECA | Head | Pieces | Mode | n, step | Executable size |
 | --- | --- | --- | --- | --- | --- | --- |
-| Gold Captain | 6813 | 125515 | `47632518` | 1004 | −17 | 1,506,192 |
+| Gold Captain | p1 6813 + `libdb0.a` | p2 125515 | `/lib/libdb<d>.a`, `47632518` | trim | 1004, −17 | 1,506,192 |
+| Pirate Revenge | p2 125515 + `rc0.d` | p1 6813 | `/etc/rc.d/rc<d>.d`, `6415237` | skip | 9, +4 | 2,336,328 |

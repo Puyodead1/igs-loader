@@ -38,4 +38,41 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		</part>
 	</software>
 
+	<software name="piraterevenge_m101cn">
+		<description>Pirate Revenge (M101CN)</description>
+		<year>2008</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="PirateRevenge-E2000-v05-e61"/>
+		<info name="usage" value="docs/PirateRevenge.md; tunables PR_STEER, PR_SCRIPT"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="piraterevenge"/>
+			<!-- /etc/X11/IGS: cd /pr/linux; ./sship  (p3, the same code as /pr/exec/sship) -->
+			<feature name="data" value="/pr/linux"/>
+			<feature name="binary" value="sship"/>
+			<feature name="video_driver" value="x11"/>
+			<feature name="audio_driver" value="dsp"/>
+			<feature name="preload" value="libcasmcard.so"/>
+			<!-- executable assembly: /bin/HWtest, then /mnt/GECA (skip mode) -->
+			<feature name="geca_part" value="p2"/>
+			<feature name="geca_sector" value="125515"/>
+			<feature name="geca_file" value="/etc/rc.d/rc0.d"/>
+			<feature name="head_part" value="p1"/>
+			<feature name="head_sector" value="6813"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="pieces" value="6415237"/>
+			<feature name="piece_mode" value="skip"/>
+			<feature name="trim_kb" value="9"/>
+			<feature name="trim_step" value="4"/>
+			<!-- the kernel mounts p3 on /pr/linux and p4 on /fec_data, GECA builds /pr/exec/sship -->
+			<feature name="build" value="root p2; assemble /pr/exec/sship; mount p3 /pr/linux; mount p4 /fec_data"/>
+			<diskarea name="harddriv">
+				<disk name="e2000_piraterevenge_m101cn" sha1="efacc4196b6cda659f69aafdb9bb00f04833a0e2"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/pr/linux/sship" size="2523471" sha1="29d5749c8756aa5d7a1ee42c2c9c00e2a997f36a"/>
+				<rom name="/pr/exec/sship" size="2336328" sha1="b40b52141007a0bd88045b4a69177d8de385b095"/>
+			</dataarea>
+		</part>
+	</software>
+
 </softwarelist>

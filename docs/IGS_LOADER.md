@@ -18,6 +18,7 @@ Status (2026-10-29), under WSLg:
 | Scratch m101cn | E2100 | playable, 1 keyboard player, register-table transport, made-up prizes, about 20 fps (`Scratch.md`) |
 | Hero of Robots m100fa | E2100 | plays a whole game: attract, coins, start, fights, card debit and dispense, game over; request/response transport, emulated smart card (RSA), dispenser and QR reader always ready, no card scanning; slow start-up from a Windows drive (`HeroOfRobots.md`) |
 | Gold Captain | E2000 | plays a full game: attract, captain select, stages, boss, result and tickets; IGS036 game logic reconstructed, weapon values made up (`GoldCaptain.md`) |
+| Pirate Revenge m101cn | E2000 | attract, coins, ship select, stage, boss, game over and name entry, back to attract; IGS036 game logic reconstructed, weapon values made up (`PirateRevenge.md`) |
 
 They run at about 56–60 fps (60 fps cap) on Mesa llvmpipe, with continuous
 sound through PulseAudio (WSLg).
@@ -40,7 +41,7 @@ or in WSL:
 `<id>` is a software name from the software lists (`hash/*.xml`, see Rom
 sets): `harpoonlagoon_m107us`, `harpoonlagoon_m001uswa`,
 `harpoonlagoon_m200uswa`, `oceanparty_md105cn`, `scratch_m101cn`,
-`heroofrobots_m100fa`, `goldcaptain`.  The per-game controls are on each
+`heroofrobots_m100fa`, `goldcaptain`, `piraterevenge_m101cn`.  The per-game controls are on each
 game's page (`HarpoonLagoon.md`, `OceanParty.md`).
 
 | Variable | Effect |
@@ -110,10 +111,10 @@ The loader runs games by id, MAME style.  Three pieces:
   unique across lists.
 - **Rom sets**: a set is the cabinet's file tree as the running game sees
   it.  The root fs (p2) at `/`; the game data partition (p3) at its mount
-  point (`/Fish`, `/OceanParty`, `/Scratch`, `/Robots`, `/GoldCaptain`); p4
-  where the game needs it (Hero of Robots' `rw_data`); the executable where
+  point (`/Fish`, `/OceanParty`, `/Scratch`, `/Robots`, `/GoldCaptain`, `/pr/linux`); p4
+  where the game needs it (Hero of Robots' `rw_data`, Pirate Revenge's `/fec_data`); the executable where
   the cabinet has it at run time (`/Fish.bin/fish`, `/Scratch.bin/swin`
-  decrypted, `/Game/GoldCaptain` reassembled).  A set is a folder `<id>/`,
+  decrypted, `/Game/GoldCaptain` and `/pr/exec/sship` reassembled).  A set is a folder `<id>/`,
   or an archive `<id>.7z` / `<id>.zip` with the tree at its root or under one
   top folder `<id>/`.  Symlinks are stored as links; absolute ones are made
   relative to the set root.
@@ -187,7 +188,7 @@ $ run.sh --verify scratch_m101cn       # the <rom> hashes, like mame -verifyroms
 | `video_driver` / `audio_driver` | SDL drivers when the default (`wayland` / `pulseaudio`) does not apply |
 | `asset_mask` | the asset-cipher mask (exported to the machine as `IGS_ASSET_MASK`; also Scratch's executable mask) |
 | `rofs_profile` / `rofs_key` | E2100 root filesystem variant (`romtool/igs_rofs.py` profile) and its key literal |
-| `geca_sector` … `trim_step` | E2000 executable assembly (`romtool/igs_e2000_extract.py`) |
+| `geca_sector` … `trim_step`, `head_part`, `geca_part`, `geca_file`, `piece_file`, `piece_mode` | E2000 executable assembly (`romtool/igs_e2000_extract.py`) |
 | `build` | the builder's recipe (below) |
 
 The description is the window title (exported as `IGS_NAME`).  The `<info
@@ -249,6 +250,7 @@ Set sizes (`7z -mx9`, 7-Zip 23.01) and build times on this machine:
 | `scratch_m101cn` | 122 MB | 0.58 GB | 5 min |
 | `heroofrobots_m100fa` | 2,083 MB | 5.8 GB | 44 min |
 | `goldcaptain` | 518 MB | 1.2 GB | 11 min |
+| `piraterevenge_m101cn` | 1,272 MB | 2.0 GB | 9 min |
 
 ### Reading archives (`romset/`)
 
@@ -293,6 +295,7 @@ tools/
     games/scratch/             scratch.c
     games/heroofrobots/        heroofrobots.c, libcasmcard.c (reader + card), card.h
     games/goldcaptain/         goldcaptain.c
+    games/piraterevenge/       piraterevenge.c
     build/                     igs_core.so  e2100.so  e2000.so  <game>.so  libcasmcard.so
                                libcasmcard-hero.so  igs-romset
 ```
@@ -305,7 +308,7 @@ symbols.
 | --- | --- | --- |
 | **core** (`igs_core.so`, the `LD_PRELOAD` library) | libc/SDL interposition, routing device files to the machine, MMIO traps, libc fixes, frame pacing, audio, the overlay renderer | the only Linux/SDL/GL-specific code |
 | **machine** (`$IGS_MACHINE`) | the board: device files, registers, DMA, the protection transport | `e2100`: `/dev/pccard0`, BARs, DMA, the asset cipher (mask from the software list), the ASIC handshake, and three runtime transports: batch framing (Harpoon, Ocean Party), the register table (Scratch) and request/response (Hero of Robots), chosen by the game plugin's `transport`; serial ports with a peripheral the game plugin answers for.  `e2000`: the PLX PCI9030 card (`/dev/plx/*`), shared-RAM transport to the IGS036 with RC4-wrapped keys, `/dev/roio`, `/dev/pccard0` |
-| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs) |
+| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs), `piraterevenge` (the same commands plus coin counters) |
 
 **Interfaces:**
 - **Core ↔ machine:** `core/igs.h`.
@@ -482,6 +485,7 @@ Status (2026-10-31, RTX 3060, Windows 11):
 | Ocean Party md105cn | attract, coins, rounds, overlay; sound |
 | Scratch m101cn | attract and coins at 60 fps; `libmikmod.so.2` missing (SDL_mixer's MOD support only) |
 | Gold Captain | attract after about 55 s, coins, captain select, stage; sound through `/dev/dsp`; windowed (the game asks for fullscreen) |
+| Pirate Revenge m101cn | attract, coins, ship select, stage, game over, back to attract; sound through `/dev/dsp`; 60 fps |
 | Hero of Robots m100fa | copyright screen after about 80 s, attract, coins, start, card input, fights, card debit and dispense, game over; sound; 60 fps |
 
 ### Usage

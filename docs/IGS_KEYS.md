@@ -183,6 +183,26 @@ executable-assembly recipe.
 | Accepted BIOS (group 1) | `0xFE0C1` `L4S5MG3`, `0xFEC84` `6A6IXE19C-00`, `0xFECDF` `I6A6IXE19` | table `0x8173320` |
 | PLX card | PCI9030, vendor `0x10B5`, serial `Pci9030-0`, SDK 4.3.0 | `sub_80CE840`, `sub_806B9D0` |
 
+## E2000: Pirate Revenge m101cn (`PirateRevenge-OS-57P`, Linux 2.4.31)
+
+Same filesystems and integrity constants as Gold Captain (the IGS_SHFS
+superblock is the plain layout, without game type or version).  Game
+addresses are in p3's `sship` (symbols kept).
+
+| Item | Value | Where |
+| --- | --- | --- |
+| Stage-1 loader | `/bin/HWtest`, argv `/etc/rc.d/rc0.d __KERNEL__ "-no-print -PR"` | kernel strings `0x3DC20D` (decompressed) |
+| Executable head | p1 sector 6813, 1 KiB | HWtest `sub_80481D0` |
+| Stage-2 stub (GECA) | p2 sector 125515, 1 KiB, + `/etc/rc.d/rc0.d` | same |
+| Pieces / skip | `/etc/rc.d/rc<d>.d`, order `6415237`, skip 9 KiB, +4 per piece | GECA `0x804B34C` (skip, step, mode 1 = add), `0x804B358` (order) |
+| Product string | `PirateRevenge-E2000-v05-e61` | HWtest, GECA (`--james`) |
+| IGS036 message-key RC4 keys | `PRIGS036\0`, `PR_LINUX\0` (as Gold Captain) | `ShareramOperator_ResetRC4Keys` `0x80CCE80` |
+| Message key | `rand() % 100000` | `ShareramOperator_BufferToShareram` `0x80CD360` |
+| BIOS fingerprint | `/dev/roio` ioctl `0xFC`, `^ 0x1FB8408E` / `^ 0xB8`; group 1 as Gold Captain | `BIOS_CRC` `0x813A4D0`, table `motherboard_serial_number` `0x8171760` |
+| Settings | 754 words (`SaveData` `0x8796480`); disk copy `/fec_data/gameset.bin` = `SHIP_800` + `0xBC8` bytes | `SettingSaveData` `0x8076F20` |
+| Rudder calibration | settings words 742, 743, 744 (`GameRudder_Init(w743, w742, w744)`) | `SettingLoadData` `0x80771B0` |
+| Key bits | 0 right, 1 left, 2 bomb, 3/4 coin, 5 test, 6 service, 7 ticket | `CRKey_Init` `0x80CBA30` |
+
 ## Asset cipher (sound/*.wav, action/*.rom)
 
 Details: `IGS_SOUND_CRYPTO.md`.
