@@ -705,6 +705,60 @@ static void materialise(struct rs_sink *s)
 }
 #endif
 
+/* ---- --list ------------------------------------------------------------------------------ */
+
+#define LIST_COLS 6
+
+static void list_row(FILE *out, const char *const *c, const int *w)
+{
+    int i;
+
+    for (i = 0; i < LIST_COLS - 1; i++)
+        fprintf(out, "%-*s  ", w[i], c[i]);
+    fprintf(out, "%s\n", c[LIST_COLS - 1]);
+}
+
+void rs_list(FILE *out)
+{
+    static const char *const head[LIST_COLS] = { "id", "machine", "year", "description", "parent", "set" };
+    static const char *const kinds[] = { "missing", "folder", "7z", "zip" };
+    const char *c[LIST_COLS];
+    char path[RS_PATH], rule[LIST_COLS][128];
+    int w[LIST_COLS], i, j;
+
+    for (j = 0; j < LIST_COLS; j++)
+        w[j] = (int)strlen(head[j]);
+    for (i = 0; i < sw_count(); i++) {
+        const struct sw_info *sw = sw_at(i);
+        const char *v[LIST_COLS] = { sw->name, sw->list, sw->year ? sw->year : "", sw->description,
+                                     sw->cloneof ? sw->cloneof : "", "missing" };
+
+        for (j = 0; j < LIST_COLS; j++)
+            if ((int)strlen(v[j]) > w[j])
+                w[j] = (int)strlen(v[j]);
+    }
+    list_row(out, head, w);
+    for (j = 0; j < LIST_COLS; j++) {
+        int n = w[j] < (int)sizeof(rule[j]) - 1 ? w[j] : (int)sizeof(rule[j]) - 1;
+
+        memset(rule[j], '-', n);
+        rule[j][n] = 0;
+        c[j] = rule[j];
+    }
+    list_row(out, c, w);
+    for (i = 0; i < sw_count(); i++) {
+        const struct sw_info *sw = sw_at(i);
+
+        c[0] = sw->name;
+        c[1] = sw->list;
+        c[2] = sw->year ? sw->year : "";
+        c[3] = sw->description;
+        c[4] = sw->cloneof ? sw->cloneof : "";
+        c[5] = kinds[rs_locate(sw->name, path, sizeof(path))];
+        list_row(out, c, w);
+    }
+}
+
 /* ---- the cache -------------------------------------------------------------------------- */
 
 static void make_stamp(const char *archive, char *out, size_t n)

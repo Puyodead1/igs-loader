@@ -49,22 +49,6 @@ static void set_path(const char *set, const char *data, const char *p, char *out
             *q = '\\';
 }
 
-static int list(void)
-{
-    int i;
-
-    printf("%-26s %-6s %-5s %-34s %-24s %s\n", "id", "list", "year", "description", "clone of", "set");
-    for (i = 0; i < sw_count(); i++) {
-        const struct sw_info *s = sw_at(i);
-        char path[RS_PATH];
-        int k = rs_locate(s->name, path, sizeof(path));
-        static const char *kinds[] = { "-", "folder", "7z", "zip" };
-
-        printf("%-26s %-6s %-5s %-34s %-24s %s%s%s\n", s->name, s->list, s->year ? s->year : "",
-               s->description, s->cloneof ? s->cloneof : "", kinds[k], k ? "  " : "", k ? path : "");
-    }
-    return 0;
-}
 
 static void setenv_kv(const char *k, const char *v)
 {
@@ -114,8 +98,10 @@ int main(int argc, char **argv)
         fprintf(stderr, "%s\n", rs_error);
         return 1;
     }
-    if (listing)
-        return list();
+    if (listing) {
+        rs_list(stdout);
+        return 0;
+    }
     if (!game) {
         fprintf(stderr, "usage: igs-loader [--check] <id> | --list | --verify <id>\n");
         return 2;

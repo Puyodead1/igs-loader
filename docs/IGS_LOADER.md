@@ -137,10 +137,11 @@ matter).  Extraction takes about 20–35 s for a Harpoon set.
 
 ```
 $ run.sh --list
-id                         list   year  description              clone of               set
-goldcaptain                e2000  2009  Gold Captain                                    7z  /mnt/t/.../roms/goldcaptain.7z
-harpoonlagoon_m107us       e2100  2013  Harpoon Lagoon (M107US)                         7z  ...
-harpoonlagoon_m001uswa     e2100  2013  Harpoon Lagoon (M001US-WA)  harpoonlagoon_m107us  7z  ...
+id                      machine  year  description                 parent                set
+----------------------  -------  ----  --------------------------  --------------------  -------
+goldcaptain             e2000    2009  Gold Captain                                      7z
+harpoonlagoon_m107us    e2100    2013  Harpoon Lagoon (M107US)                           7z
+harpoonlagoon_m001uswa  e2100    2013  Harpoon Lagoon (M001US-WA)  harpoonlagoon_m107us  7z
 $ run.sh --verify scratch_m101cn       # the <rom> hashes, like mame -verifyroms
 ```
 

@@ -60,6 +60,9 @@ int rs_locate(const char *id, char *path, size_t n);
  */
 int rs_open(const char *id, char *dir, size_t n);
 
+/* --list: every game, and which kind of set was found for it */
+void rs_list(FILE *out);
+
 /* check the list's <rom> entries in a set dir; prints a line each; 0 = all good */
 int rs_verify(const struct sw_info *sw, const char *dir, FILE *out);
 

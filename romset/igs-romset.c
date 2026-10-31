@@ -28,22 +28,6 @@ static void shq(const char *k, const char *v)
     puts("'");
 }
 
-static int list(void)
-{
-    int i;
-
-    printf("%-26s %-6s %-5s %-34s %-24s %s\n", "id", "list", "year", "description", "clone of", "set");
-    for (i = 0; i < sw_count(); i++) {
-        const struct sw_info *sw = sw_at(i);
-        char path[RS_PATH];
-        int k = rs_locate(sw->name, path, sizeof(path));
-        static const char *kinds[] = { "-", "folder", "7z", "zip" };
-
-        printf("%-26s %-6s %-5s %-34s %-24s %s%s%s\n", sw->name, sw->list, sw->year ? sw->year : "",
-               sw->description, sw->cloneof ? sw->cloneof : "", kinds[k], k ? "  " : "", k ? path : "");
-    }
-    return 0;
-}
 
 int main(int argc, char **argv)
 {
@@ -75,8 +59,10 @@ int main(int argc, char **argv)
         fprintf(stderr, "igs-romset: %s\n", rs_error);
         return 1;
     }
-    if (cmd && (!strcmp(cmd, "--list") || !strcmp(cmd, "-l")))
-        return list();
+    if (cmd && (!strcmp(cmd, "--list") || !strcmp(cmd, "-l"))) {
+        rs_list(stdout);
+        return 0;
+    }
     if (!cmd || !id) {
         fprintf(stderr, "usage: igs-romset [--root DIR] --list | --env <id> | --verify <id> | --path <id>\n");
         return 2;
