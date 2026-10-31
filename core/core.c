@@ -1441,6 +1441,11 @@ void *dlsym(void *h, const char *name)
 
         if (!f)
             return NULL;
+        /* a global-scope handle finds our own definition first: take the next */
+        if (f == (void *)glXSwapBuffers)
+            f = real(RTLD_NEXT, name);
+        if (!f)
+            return NULL;
         *(void **)&real_glXSwapBuffers = f;
         return (void *)hook_glXSwapBuffers;
     }
