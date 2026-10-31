@@ -1,0 +1,51 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the 32-bit toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-multilib
+      - name: Build
+        # core/font.h is committed; keep build.sh from regenerating it (needs PIL and a font)
+        run: |
+          touch core/font.h
+          bash build.sh
+      - name: Package
+        run: |
+          mkdir -p dist/igs-loader
+          cp -a build lib hash run.sh play.ps1 igs-loader.ini.example dist/igs-loader/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: igs-loader-linux
+          path: dist
+
+  windows:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the mingw-w64 i686 toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-i686-posix
+      - name: Build
+        run: |
+          touch core/font.h
+          bash win/build-win.sh
+      - name: Package
+        # igs-loader.exe finds hash\ and igs-loader.ini next to itself
+        run: |
+          mkdir -p dist/igs-loader
+          cp -a build/win/. hash igs-loader.ini.example dist/igs-loader/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: igs-loader-windows
+          path: dist
