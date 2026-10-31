@@ -1,0 +1,4 @@
+# LF: the scripts and sources build and run under WSL
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.deb binary

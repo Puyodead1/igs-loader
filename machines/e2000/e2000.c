@@ -1,0 +1,464 @@
+/*
+ * E2000 machine plugin: the PLX PCI9030 card and the IGS036 transport, for
+ * E2000 games.
+ *
+ *   - /dev/plx/Pci9030 (driver node) and /dev/plx/Pci9030-0 (the card):
+ *     the PLX SDK ioctls the games use (device find, version, location,
+ *     BAR size/properties/map).  The other PLX chip nodes do not exist.
+ *   - BAR0 (PLX local registers) and BAR2 (shared message RAM) are plain
+ *     memory; BAR3 (16-bit mailbox registers) is an MMIO trap with separate
+ *     read (IGS036 -> game) and write (game -> IGS036) sides.
+ *   - Writing 1 to BAR3+14 rings the doorbell: the IGS036 answers at once.
+ *     It reads the game's message from BAR2 (key word RC4-decrypted with the
+ *     game -> IGS036 stream, payload XOR key), asks the game plugin for the
+ *     reply, writes it back the same way with its own stream, and sets its
+ *     status registers to the game's command + 1.
+ *   - /dev/roio: BIOS byte reads (ioctl 0xFC, address ^ 0x1FB8408E, data
+ *     ^ 0xB8) served from the strings the game plugin lists.
+ *   - /dev/pccard0: must open; only used when the BIOS check fails.
+ * Protocol: docs/IGS_E2000.md.
+ */
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <errno.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+
+#include "e2000.h"
+
+#define BAR0_SIZE 0x80
+#define BAR2_SIZE 0x10000
+#define BAR3_SIZE 0x100
+#define BAR_PHYS(n) (0xE0000000u + (n) * 0x100000u)
+
+/* PLX SDK ioctls (struct of 0x24 bytes: return code at +0) */
+#define PLX_LOCATION   0xC0245100u   /* device location at +12 */
+#define PLX_VERSION    0xC0245101u   /* +8 rev, +9 minor, +10 major */
+#define PLX_RESET      0xC0245103u
+#define PLX_FIND       0xC0245104u   /* +8 index / count (80001 = count), location at +12 */
+#define PLX_BAR_PROPS  0xC0245105u   /* in: +4 bar; out: +8 phys address, +12 I/O flag */
+#define PLX_BAR_SIZE   0xC0245106u   /* in: +4 bar; out: +8 size */
+#define PLX_BAR_MAP    0xC024510Bu   /* binds the preceding mmap; status at +0 */
+#define PLX_OK 512
+
+#define ROIO_READ      0xFC
+#define ROIO_ADDR_XOR  0x1FB8408Eu
+#define ROIO_DATA_XOR  0xB8
+
+#define BAR3_DOORBELL  14
+
+enum { DEV_NONE, DEV_PLX_DRIVER, DEV_PLX_CARD, DEV_ROIO, DEV_PCCARD };
+
+static const struct igs_core *core;
+static const struct e2000_game *game;
+
+#define LOG(...) core->log("e2000: " __VA_ARGS__)
+#define VLOG(...) do { if (core->verbose) LOG(__VA_ARGS__); } while (0)
+
+/* ---- RC4 (the games use OpenSSL's; key = the tag string with its NUL) ------- */
+
+struct rc4 { uint8_t s[256], i, j; };
+
+static void rc4_init(struct rc4 *r, const char *key)
+{
+    size_t n = strlen(key) + 1;
+    unsigned i, j = 0;
+
+    for (i = 0; i < 256; i++)
+        r->s[i] = i;
+    for (i = 0; i < 256; i++) {
+        uint8_t t = r->s[i];
+
+        j = (j + t + (uint8_t)key[i % n]) & 0xff;
+        r->s[i] = r->s[j];
+        r->s[j] = t;
+    }
+    r->i = r->j = 0;
+}
+
+static uint32_t rc4_word(struct rc4 *r, uint32_t v)
+{
+    uint8_t b[4];
+    int k;
+
+    memcpy(b, &v, 4);
+    for (k = 0; k < 4; k++) {
+        uint8_t t;
+
+        r->i++;
+        r->j += r->s[r->i];
+        t = r->s[r->i];
+        r->s[r->i] = r->s[r->j];
+        r->s[r->j] = t;
+        b[k] ^= r->s[(uint8_t)(r->s[r->i] + r->s[r->j])];
+    }
+    memcpy(&v, b, 4);
+    return v;
+}
+
+/* ---- state -------------------------------------------------------------------- */
+
+static struct {
+    pthread_mutex_t lock;
+    int fds[8], kinds[8], nfds;
+    int pending_bar;                     /* BAR named by the last size/props query */
+    uint8_t *bar0, *bar2, *bar3_map;
+    uint16_t bar3_in[8];                 /* IGS036 -> game */
+    uint16_t bar3_out[8];                /* game -> IGS036 */
+    struct rc4 to_game, from_game;
+    uint32_t exchanges;
+} s = { .lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP };  /* the plugin's own fopen comes back */
+
+static int fd_kind(int fd)
+{
+    int i;
+
+    for (i = 0; i < s.nfds; i++)
+        if (s.fds[i] == fd)
+            return s.kinds[i];
+    return DEV_NONE;
+}
+
+/* ---- IGS036 ------------------------------------------------------------------- */
+
+static uint32_t bar2_ld(uint32_t w) { uint32_t v; memcpy(&v, s.bar2 + 4 * w, 4); return v; }
+static void bar2_st(uint32_t w, uint32_t v) { memcpy(s.bar2 + 4 * w, &v, 4); }
+
+static void igs036_reset(void)
+{
+    rc4_init(&s.to_game, game->key_to_game);
+    rc4_init(&s.from_game, game->key_from_game);
+    memset(s.bar3_in, 0, sizeof(s.bar3_in));
+    s.exchanges = 0;
+    if (game->reset)
+        game->reset();
+}
+
+/* the game rang the doorbell: answer its message */
+static void igs036_doorbell(void)
+{
+    uint32_t cmd = (s.bar3_out[0] & 0xff) | (s.bar3_out[1] & 0xff) << 8 |
+                   (s.bar3_out[2] & 0xff) << 16 | (uint32_t)(s.bar3_out[3] & 0xff) << 24;
+    static uint32_t req[E2000_MSG_MAX], reply[E2000_MSG_MAX];
+    uint32_t n = 0, key, i;
+    int k;
+
+    memset(reply, 0, sizeof(reply));
+
+    /* command 0 is the start-up ring: no message in BAR2 yet */
+    if (cmd) {
+        n = bar2_ld(0);
+        if (n < 2 || n > E2000_MSG_MAX) {
+            LOG("bad message length %u (cmd %u)", n, cmd);
+            n = 0;
+        } else {
+            req[0] = n;
+            req[1] = key = rc4_word(&s.from_game, bar2_ld(1));
+            for (i = 2; i < n; i++)
+                req[i] = bar2_ld(i) ^ key;
+        }
+    }
+    reply[0] = game->exchange(n ? req : NULL, n, reply);
+    if (reply[0] < 2 || reply[0] > E2000_MSG_MAX)
+        reply[0] = 2;
+    key = (uint32_t)rand() % 100000;
+    bar2_st(0, reply[0]);
+    bar2_st(1, rc4_word(&s.to_game, key));
+    for (i = 2; i < reply[0]; i++)
+        bar2_st(i, reply[i] ^ key);
+    /* status: the game's command + 1, as bytes in the low halves */
+    for (k = 0; k < 4; k++)
+        s.bar3_in[k] = ((cmd + 1) >> (8 * k)) & 0xff;
+    for (k = 4; k < 8; k++)
+        s.bar3_in[k] = 0;
+    if (core->verbose || s.exchanges < 3)
+        LOG("exchange %u: cmd %u, %u words in, %u out", s.exchanges, cmd, n, reply[0]);
+    s.exchanges++;
+}
+
+static uint32_t bar3_read(void *opaque, uint32_t off, int size)
+{
+    uint32_t v = 0;
+    int b;
+
+    (void)opaque;
+    pthread_mutex_lock(&s.lock);
+    for (b = 0; b < size; b += 2)
+        if ((off + b) / 2 < 8)
+            v |= (uint32_t)s.bar3_in[(off + b) / 2] << (8 * b);
+    pthread_mutex_unlock(&s.lock);
+    return size == 1 ? v & 0xff : v;
+}
+
+static void bar3_write(void *opaque, uint32_t off, int size, uint32_t v)
+{
+    int b;
+
+    (void)opaque;
+    pthread_mutex_lock(&s.lock);
+    for (b = 0; b < size; b += 2) {
+        uint32_t r = (off + b) / 2;
+
+        if (r >= 8)
+            continue;
+        s.bar3_out[r] = v >> (8 * b);
+        if (r * 2 == BAR3_DOORBELL && (s.bar3_out[r] & 1))
+            igs036_doorbell();
+    }
+    pthread_mutex_unlock(&s.lock);
+}
+
+/* ---- PLX SDK -------------------------------------------------------------------- */
+
+static void plx_location(uint8_t *loc)
+{
+    uint16_t dev = 0x9030, ven = 0x10B5;
+
+    memset(loc, 0, 18);
+    loc[0] = 1;                            /* bus */
+    loc[1] = 9;                            /* slot */
+    memcpy(loc + 2, &dev, 2);
+    memcpy(loc + 4, &ven, 2);
+    strcpy((char *)loc + 6, "Pci9030-0");
+}
+
+static uint32_t bar_size(int bar)
+{
+    switch (bar) {
+    case 0: return BAR0_SIZE;
+    case 2: return BAR2_SIZE;
+    case 3: return BAR3_SIZE;
+    default: return 0;
+    }
+}
+
+static int plx_ioctl(unsigned long req, uint8_t *a)
+{
+    uint32_t v, status = PLX_OK;
+    uint16_t bar;
+
+    switch (req) {
+    case PLX_FIND:
+        memcpy(&v, a + 8, 4);
+        if (v != 80001)
+            plx_location(a + 12);          /* index 0 is the only card */
+        v = 1;
+        memcpy(a + 8, &v, 4);
+        break;
+    case PLX_LOCATION:
+        plx_location(a + 12);
+        break;
+    case PLX_VERSION:
+        a[8] = 0;
+        a[9] = 3;
+        a[10] = 4;                         /* SDK 4.3, as the games require */
+        break;
+    case PLX_BAR_SIZE:
+        memcpy(&bar, a + 4, 2);
+        s.pending_bar = bar;
+        v = bar_size(bar);
+        memcpy(a + 8, &v, 4);
+        break;
+    case PLX_BAR_PROPS:
+        memcpy(&bar, a + 4, 2);
+        s.pending_bar = bar;
+        v = bar_size(bar) ? BAR_PHYS(bar) : 0;
+        memcpy(a + 8, &v, 4);
+        a[12] = 0;                         /* memory, not I/O */
+        break;
+    case PLX_BAR_MAP:
+    case PLX_RESET:
+        break;
+    default:
+        LOG("PLX ioctl 0x%lx", req);
+        break;
+    }
+    memcpy(a, &status, 4);
+    return 0;
+}
+
+/* ---- /dev/roio ------------------------------------------------------------------ */
+
+static int roio_byte(uint32_t addr)
+{
+    const struct e2000_bios *b;
+
+    for (b = game->bios; b && b->text; b++)
+        if (addr >= b->addr && addr < b->addr + strlen(b->text))
+            return (uint8_t)b->text[addr - b->addr];
+    return 0xff;
+}
+
+/* ---- device files --------------------------------------------------------------- */
+
+static int dev_kind(const char *path)
+{
+    if (!strcmp(path, "/dev/plx/Pci9030"))
+        return DEV_PLX_DRIVER;
+    if (!strcmp(path, "/dev/plx/Pci9030-0"))
+        return DEV_PLX_CARD;
+    if (!strcmp(path, "/dev/roio"))
+        return DEV_ROIO;
+    if (!strcmp(path, "/dev/pccard0"))
+        return DEV_PCCARD;
+    return DEV_NONE;
+}
+
+static int dev_handles(const char *path)
+{
+    /* every PLX node: the absent chips must fail to open */
+    return !strncmp(path, "/dev/plx/", 9) || dev_kind(path) != DEV_NONE;
+}
+
+static int dev_open(const char *path)
+{
+    int kind = dev_kind(path), fd;
+
+    if (kind == DEV_NONE) {
+        errno = ENOENT;
+        return -1;
+    }
+    pthread_mutex_lock(&s.lock);
+    if (kind == DEV_PLX_CARD && !s.bar2) {
+        s.bar0 = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        s.bar2 = mmap(NULL, BAR2_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        s.bar3_map = core->mmio_map(BAR3_SIZE, NULL, bar3_read, bar3_write);
+        igs036_reset();
+        LOG("PCI9030 card emulated");
+    }
+    fd = core->placeholder_fd();
+    if (fd >= 0 && s.nfds < 8) {
+        s.fds[s.nfds] = fd;
+        s.kinds[s.nfds++] = kind;
+    }
+    pthread_mutex_unlock(&s.lock);
+    VLOG("open %s -> %d", path, fd);
+    return fd;
+}
+
+static int dev_ioctl(int fd, unsigned long req, void *arg)
+{
+    int kind, ret = 0;
+
+    pthread_mutex_lock(&s.lock);
+    kind = fd_kind(fd);
+    switch (kind) {
+    case DEV_PLX_DRIVER:
+    case DEV_PLX_CARD:
+        ret = arg ? plx_ioctl(req, arg) : -1;
+        break;
+    case DEV_ROIO:
+        if (req == ROIO_READ)
+            ret = roio_byte((uint32_t)(uintptr_t)arg ^ ROIO_ADDR_XOR) ^ ROIO_DATA_XOR;
+        break;
+    default:
+        break;   /* pccard0: decoys and an unused challenge */
+    }
+    pthread_mutex_unlock(&s.lock);
+    return ret;
+}
+
+static void *dev_mmap(int fd, size_t len)
+{
+    void *p = MAP_FAILED;
+
+    pthread_mutex_lock(&s.lock);
+    if (fd_kind(fd) == DEV_PLX_CARD && len <= bar_size(s.pending_bar) + 0xfff) {
+        if (s.pending_bar == 0)
+            p = s.bar0;
+        else if (s.pending_bar == 2)
+            p = s.bar2;
+        else if (s.pending_bar == 3)
+            p = s.bar3_map;
+    }
+    pthread_mutex_unlock(&s.lock);
+    LOG("map BAR%d (%zu bytes) -> %p", s.pending_bar, len, p);
+    if (p == MAP_FAILED)
+        errno = EINVAL;
+    return p;
+}
+
+static void dev_close(int fd)
+{
+    (void)fd;  /* the card stays alive */
+}
+
+static void machine_key(int sym, int down)
+{
+    if (!game->key)
+        return;
+    pthread_mutex_lock(&s.lock);
+    game->key(sym, down);
+    pthread_mutex_unlock(&s.lock);
+}
+
+static void machine_draw(int w, int h)
+{
+    if (!game->draw)
+        return;
+    pthread_mutex_lock(&s.lock);
+    game->draw(w, h);
+    pthread_mutex_unlock(&s.lock);
+}
+
+static void machine_file_opened(const char *path)
+{
+    if (!game->file_opened)
+        return;
+    pthread_mutex_lock(&s.lock);
+    game->file_opened(path);
+    pthread_mutex_unlock(&s.lock);
+}
+
+static void machine_status(char *buf, size_t n)
+{
+    if (!game->status)
+        return;
+    pthread_mutex_lock(&s.lock);
+    game->status(buf, n);
+    pthread_mutex_unlock(&s.lock);
+}
+
+/* ---- plugin entry --------------------------------------------------------------- */
+
+static const struct igs_machine machine = {
+    .version = IGS_API_VERSION,
+    .name = "e2000",
+    .handles = dev_handles,
+    .open = dev_open,
+    .ioctl = dev_ioctl,
+    .mmap = dev_mmap,
+    .close = dev_close,
+    .key = machine_key,
+    .draw = machine_draw,
+    .file_opened = machine_file_opened,
+    .status = machine_status,
+};
+
+static struct e2000_api api = {
+    .version = E2000_API_VERSION,
+};
+
+__attribute__((visibility("default")))
+const struct igs_machine *igs_machine_entry(const struct igs_core *c)
+{
+    const char *path = getenv("IGS_GAME");
+    e2000_game_entry_fn entry;
+    void *h;
+
+    core = c;
+    api.core = c;
+    h = path ? dlopen(path, RTLD_NOW | RTLD_LOCAL) : NULL;
+    entry = h ? (e2000_game_entry_fn)dlsym(h, E2000_GAME_ENTRY) : NULL;
+    game = entry ? entry(&api) : NULL;
+    if (!game || game->version != E2000_API_VERSION) {
+        LOG("cannot load game plugin %s: %s", path ? path : "(IGS_GAME unset)",
+            h ? "bad plugin" : dlerror());
+        return NULL;
+    }
+    LOG("game plugin %s", game->name);
+    return &machine;
+}
