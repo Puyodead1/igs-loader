@@ -1,0 +1,1474 @@
+/*
+ * IGS loader, Windows core: glibc stand-in, part 2.
+ * Linux paths (the game's DATA dir is the cwd; absolute paths go to the
+ * cabinet root fs copy, then DATA; /mnt/<d>/ is drive <d>; WSL symlinks are
+ * followed by reading their reparse data), the fd table (CRT fds, device
+ * placeholders routed to the machine plugin), stat/dirent in glibc's 32-bit
+ * layouts, mmap, termios, time, signals (recorded, never delivered),
+ * setjmp/longjmp and process stubs.
+ */
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <winioctl.h>
+#include <direct.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <io.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <time.h>
+
+#include "lx.h"
+
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x2
+#endif
+#define IO_REPARSE_TAG_LX_SYMLINK_ 0xA000001Du
+
+char **lx_environ;
+
+/* ---- time base ------------------------------------------------------------------------ */
+
+static LARGE_INTEGER qpf, qp0;
+
+double lx_now(void)
+{
+    LARGE_INTEGER t;
+
+    if (!qpf.QuadPart) {
+        QueryPerformanceFrequency(&qpf);
+        QueryPerformanceCounter(&qp0);
+    }
+    QueryPerformanceCounter(&t);
+    return (double)(t.QuadPart - qp0.QuadPart) / qpf.QuadPart;
+}
+
+static __thread HANDLE hrtimer;
+
+void lx_usleep(int64_t us)
+{
+    LARGE_INTEGER due;
+
+    if (us <= 0) {
+        Sleep(0);
+        return;
+    }
+    if (!hrtimer)
+        hrtimer = CreateWaitableTimerExW(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                         TIMER_ALL_ACCESS);
+    if (!hrtimer) {
+        Sleep((DWORD)((us + 999) / 1000));
+        return;
+    }
+    due.QuadPart = -us * 10;
+    SetWaitableTimer(hrtimer, &due, 0, NULL, NULL, FALSE);
+    WaitForSingleObject(hrtimer, INFINITE);
+}
+
+void lx_sleep_until(double t)
+{
+    double d = t - lx_now();
+
+    if (d > 0)
+        lx_usleep((int64_t)(d * 1e6));
+}
+
+/* 100 ns since 1601 -> Unix */
+static int64_t unix_100ns(void)
+{
+    FILETIME ft;
+    ULARGE_INTEGER u;
+
+    GetSystemTimePreciseAsFileTime(&ft);
+    u.LowPart = ft.dwLowDateTime;
+    u.HighPart = ft.dwHighDateTime;
+    return (int64_t)u.QuadPart - 116444736000000000LL;
+}
+
+static int32_t ft_unix(const FILETIME *ft)
+{
+    ULARGE_INTEGER u;
+
+    u.LowPart = ft->dwLowDateTime;
+    u.HighPart = ft->dwHighDateTime;
+    return (int32_t)(((int64_t)u.QuadPart - 116444736000000000LL) / 10000000);
+}
+
+/* ---- paths ------------------------------------------------------------------------------ */
+
+static char data_dir[MAX_PATH], rootfs_dir[MAX_PATH];
+
+void lx_set_dirs(const char *data, const char *rootfs)
+{
+    snprintf(data_dir, sizeof(data_dir), "%s", data);
+    snprintf(rootfs_dir, sizeof(rootfs_dir), "%s", rootfs ? rootfs : "");
+}
+
+const char *lx_data_dir(void) { return data_dir; }
+
+static void slashes(char *p)
+{
+    for (; *p; p++)
+        if (*p == '/')
+            *p = '\\';
+}
+
+/* a WSL symlink's target (UTF-8, as stored), or -1 */
+static int read_lx_link(const char *path, char *out, size_t n)
+{
+    HANDLE h = CreateFileA(path, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                           OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    uint8_t buf[4096];
+    DWORD got;
+    uint32_t tag;
+    uint16_t len;
+
+    if (h == INVALID_HANDLE_VALUE)
+        return -1;
+    if (!DeviceIoControl(h, FSCTL_GET_REPARSE_POINT, NULL, 0, buf, sizeof(buf), &got, NULL)) {
+        CloseHandle(h);
+        return -1;
+    }
+    CloseHandle(h);
+    memcpy(&tag, buf, 4);
+    memcpy(&len, buf + 4, 2);
+    if (tag != IO_REPARSE_TAG_LX_SYMLINK_ || len < 4 || (size_t)(len - 4) >= n)
+        return -1;
+    memcpy(out, buf + 12, len - 4);
+    out[len - 4] = 0;
+    return 0;
+}
+
+/*
+ * Follow WSL symlinks anywhere in a Windows path, in place.  Cheap when the
+ * path exists as a plain file or directory.
+ */
+int lx_resolve(char *path, size_t n)
+{
+    int hops;
+
+    for (hops = 0; hops < 16; hops++) {
+        DWORD a = GetFileAttributesA(path);
+        char *p, prefix[MAX_PATH], target[MAX_PATH], rest[MAX_PATH], next[MAX_PATH];
+        int found = 0;
+
+        if (a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_REPARSE_POINT))
+            return 0;
+        /* walk the components to the first link */
+        p = path;
+        if (p[0] && p[1] == ':')
+            p += 2;
+        while (*p == '\\')
+            p++;
+        for (;;) {
+            char *end = strchr(p, '\\');
+            size_t plen = end ? (size_t)(end - path) : strlen(path);
+
+            memcpy(prefix, path, plen);
+            prefix[plen] = 0;
+            a = GetFileAttributesA(prefix);
+            if (a == INVALID_FILE_ATTRIBUTES)
+                return 0;              /* does not exist: leave it */
+            if (a & FILE_ATTRIBUTE_REPARSE_POINT) {
+                if (read_lx_link(prefix, target, sizeof(target)))
+                    return 0;          /* some other reparse point: Windows follows it */
+                snprintf(rest, sizeof(rest), "%s", end ? end : "");
+                found = 1;
+                break;
+            }
+            if (!end)
+                return 0;
+            p = end + 1;
+        }
+        if (!found)
+            return 0;
+        if (target[0] == '/') {
+            if (lx_path(target, next, sizeof(next)))
+                return -1;
+        } else {
+            char *slash = strrchr(prefix, '\\');
+
+            if (slash)
+                *slash = 0;
+            slashes(target);
+            snprintf(next, sizeof(next), "%s\\%s", prefix, target);
+        }
+        strncat(next, rest, sizeof(next) - strlen(next) - 1);
+        if (!GetFullPathNameA(next, (DWORD)n, path, NULL))
+            snprintf(path, n, "%s", next);
+    }
+    return -1;
+}
+
+static int exists(const char *win)
+{
+    return GetFileAttributesA(win) != INVALID_FILE_ATTRIBUTES;
+}
+
+int lx_path(const char *in, char *out, size_t n)
+{
+    char a[MAX_PATH], b[MAX_PATH];
+
+    if (!in || !*in)
+        return -1;
+    if (((in[0] | 32) >= 'a' && (in[0] | 32) <= 'z') && in[1] == ':') {
+        snprintf(out, n, "%s", in);
+    } else if (in[0] != '/') {
+        snprintf(out, n, "%s", in);        /* relative: the cwd is DATA */
+    } else if (!strncmp(in, "/mnt/", 5) && in[5] && (in[6] == '/' || !in[6])) {
+        snprintf(out, n, "%c:%s", in[5] & ~32, in[6] ? in + 6 : "/");
+    } else if (!strncmp(in, "/tmp", 4) && (in[4] == '/' || !in[4])) {
+        char tmp[MAX_PATH];
+
+        GetTempPathA(sizeof(tmp), tmp);
+        snprintf(out, n, "%sigs-tmp", tmp);
+        CreateDirectoryA(out, NULL);
+        strncat(out, in + 4, n - strlen(out) - 1);
+    } else if (!strncmp(in, "/dev/", 5) || !strncmp(in, "/proc/", 6) || !strncmp(in, "/sys/", 5)) {
+        return -1;
+    } else {
+        /* the cabinet's root fs copy, then the game dir */
+        snprintf(a, sizeof(a), "%s%s", rootfs_dir, in);
+        slashes(a);
+        lx_resolve(a, sizeof(a));
+        snprintf(b, sizeof(b), "%s%s", data_dir, in);
+        slashes(b);
+        lx_resolve(b, sizeof(b));
+        if (*rootfs_dir && exists(a))
+            snprintf(out, n, "%s", a);
+        else
+            snprintf(out, n, "%s", b);
+        return 0;
+    }
+    slashes(out);
+    lx_resolve(out, n);
+    return 0;
+}
+
+/* a Windows path as the Linux side sees it (/mnt/<d>/...) */
+static void linux_form(const char *win, char *out, size_t n)
+{
+    char *p;
+
+    if (win[0] && win[1] == ':')
+        snprintf(out, n, "/mnt/%c%s", win[0] | 32, win + 2);
+    else
+        snprintf(out, n, "%s", win);
+    for (p = out; *p; p++)
+        if (*p == '\\')
+            *p = '/';
+    if (strlen(out) > 1 && out[strlen(out) - 1] == '/')
+        out[strlen(out) - 1] = 0;
+}
+
+/* ---- the fd table ------------------------------------------------------------------------ */
+
+enum { FD_FREE, FD_CRT, FD_NULL, FD_DIR };
+#define NFD 1024
+static struct { int type, crt; } fds[NFD] = {
+    { FD_CRT, 0 }, { FD_CRT, 1 }, { FD_CRT, 2 },
+};
+static CRITICAL_SECTION fd_lock;
+
+static int fd_alloc(int type, int crt)
+{
+    int i;
+
+    EnterCriticalSection(&fd_lock);
+    for (i = 3; i < NFD; i++)
+        if (fds[i].type == FD_FREE) {
+            fds[i].type = type;
+            fds[i].crt = crt;
+            LeaveCriticalSection(&fd_lock);
+            return i;
+        }
+    LeaveCriticalSection(&fd_lock);
+    SET_ERRNO(24);                     /* EMFILE */
+    return -1;
+}
+
+int lx_fd_new_null(void) { return fd_alloc(FD_NULL, -1); }
+
+int lx_fd_from_crt(int crtfd)
+{
+    int i;
+
+    if (crtfd < 0)
+        return -1;
+    if (crtfd <= 2)
+        return crtfd;
+    for (i = 3; i < NFD; i++)
+        if (fds[i].type == FD_CRT && fds[i].crt == crtfd)
+            return i;
+    return fd_alloc(FD_CRT, crtfd);
+}
+
+int lx_crt_fd(int fd)
+{
+    return fd >= 0 && fd < NFD && fds[fd].type == FD_CRT ? fds[fd].crt : -1;
+}
+
+static int bad_fd(int fd)
+{
+    if (fd < 0 || fd >= NFD || fds[fd].type == FD_FREE) {
+        SET_ERRNO(EBADF);
+        return 1;
+    }
+    return 0;
+}
+
+static int l_open(const char *path, int flags, ...)
+{
+    char win[MAX_PATH];
+    int fd, c, cf = _O_BINARY | _O_NOINHERIT, mode = 0644;
+    DWORD a;
+
+    if (flags & L_O_CREAT) {
+        va_list ap;
+
+        va_start(ap, flags);
+        mode = va_arg(ap, int);
+        va_end(ap);
+    }
+    if (!path) {
+        SET_ERRNO(EFAULT);
+        return -1;
+    }
+    if (core_route_open(path, &fd))
+        return fd;
+    if (!strcmp(path, "/dev/null") || !strcmp(path, "/dev/zero"))
+        return lx_fd_new_null();
+    if (lx_path(path, win, sizeof(win))) {
+        LOG("open %s: no such device or file", path);
+        SET_ERRNO(ENOENT);
+        return -1;
+    }
+    a = GetFileAttributesA(win);
+    if (a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY)) {
+        if ((flags & L_O_ACCMODE) != 0) {
+            SET_ERRNO(EISDIR);
+            return -1;
+        }
+        return fd_alloc(FD_DIR, -1);
+    }
+    if (flags & L_O_DIRECTORY) {
+        SET_ERRNO(ENOTDIR);
+        return -1;
+    }
+    switch (flags & L_O_ACCMODE) {
+    case 0: cf |= _O_RDONLY; break;
+    case 1: cf |= _O_WRONLY; break;
+    default: cf |= _O_RDWR; break;
+    }
+    if (flags & L_O_CREAT) cf |= _O_CREAT;
+    if (flags & L_O_EXCL) cf |= _O_EXCL;
+    if (flags & L_O_TRUNC) cf |= _O_TRUNC;
+    if (flags & L_O_APPEND) cf |= _O_APPEND;
+    c = _open(win, cf, (mode & 0200) ? _S_IREAD | _S_IWRITE : _S_IREAD);
+    if (c < 0) {
+        SET_ERRNO(lx_errno_from_crt(errno));
+        if (lx_verbose)
+            LOG("open %s (%s): %s", path, win, strerror(errno));
+        return -1;
+    }
+    core_note_fopen(path);
+    return fd_alloc(FD_CRT, c);
+}
+
+static ssize_t l_read(int fd, void *buf, size_t n)
+{
+    long r;
+    int c;
+
+    if (core_read(fd, buf, n, &r))
+        return r;
+    if (bad_fd(fd))
+        return -1;
+    switch (fds[fd].type) {
+    case FD_CRT:
+        c = _read(fds[fd].crt, buf, (unsigned)n);
+        if (c < 0)
+            SET_ERRNO(lx_errno_from_crt(errno));
+        return c;
+    case FD_NULL:
+        return 0;
+    default:
+        SET_ERRNO(EISDIR);
+        return -1;
+    }
+}
+
+static ssize_t l_write(int fd, const void *buf, size_t n)
+{
+    long r;
+    int c;
+
+    if (core_write(fd, buf, n, &r))
+        return r;
+    if (bad_fd(fd))
+        return -1;
+    switch (fds[fd].type) {
+    case FD_CRT:
+        if (fd <= 2) {
+            fflush(fd == 1 ? stdout : stderr);
+        }
+        c = _write(fds[fd].crt, buf, (unsigned)n);
+        if (c < 0)
+            SET_ERRNO(lx_errno_from_crt(errno));
+        return c;
+    case FD_NULL:
+        return n;
+    default:
+        SET_ERRNO(EISDIR);
+        return -1;
+    }
+}
+
+static int l_close(int fd)
+{
+    if (core_close(fd))
+        return 0;
+    if (bad_fd(fd))
+        return -1;
+    if (fds[fd].type == FD_CRT && fd > 2)
+        _close(fds[fd].crt);
+    if (fd > 2)
+        fds[fd].type = FD_FREE;
+    return 0;
+}
+
+static long l_lseek(int fd, long off, int wh)
+{
+    if (bad_fd(fd))
+        return -1;
+    if (fds[fd].type != FD_CRT)
+        return 0;
+    return _lseek(fds[fd].crt, off, wh);
+}
+
+static long long l_lseek64(int fd, long long off, int wh)
+{
+    if (bad_fd(fd))
+        return -1;
+    if (fds[fd].type != FD_CRT)
+        return 0;
+    return _lseeki64(fds[fd].crt, off, wh);
+}
+
+static ssize_t l_pread(int fd, void *buf, size_t n, long off)
+{
+    long long cur = l_lseek64(fd, 0, SEEK_CUR);
+    ssize_t r;
+
+    l_lseek64(fd, off, SEEK_SET);
+    r = l_read(fd, buf, n);
+    l_lseek64(fd, cur, SEEK_SET);
+    return r;
+}
+
+struct l_iovec { void *base; size_t len; };
+
+static ssize_t l_writev(int fd, const struct l_iovec *iov, int n)
+{
+    ssize_t total = 0, r;
+    int i;
+
+    for (i = 0; i < n; i++) {
+        r = l_write(fd, iov[i].base, iov[i].len);
+        if (r < 0)
+            return total ? total : -1;
+        total += r;
+    }
+    return total;
+}
+
+static ssize_t l_readv(int fd, const struct l_iovec *iov, int n)
+{
+    ssize_t total = 0, r;
+    int i;
+
+    for (i = 0; i < n; i++) {
+        r = l_read(fd, iov[i].base, iov[i].len);
+        if (r < 0)
+            return total ? total : -1;
+        total += r;
+        if ((size_t)r < iov[i].len)
+            break;
+    }
+    return total;
+}
+
+static int l_dup(int fd)
+{
+    if (bad_fd(fd))
+        return -1;
+    if (fds[fd].type == FD_CRT)
+        return fd_alloc(FD_CRT, _dup(fds[fd].crt));
+    return fd_alloc(fds[fd].type, -1);
+}
+
+static int l_dup2(int fd, int to)
+{
+    if (bad_fd(fd) || to < 0 || to >= NFD)
+        return -1;
+    if (fd == to)
+        return to;
+    if (fds[to].type == FD_CRT && to > 2)
+        _close(fds[to].crt);
+    fds[to].type = fds[fd].type;
+    fds[to].crt = fds[fd].type == FD_CRT ? _dup(fds[fd].crt) : -1;
+    return to;
+}
+
+static int l_pipe(int p[2])
+{
+    int c[2];
+
+    if (_pipe(c, 65536, _O_BINARY | _O_NOINHERIT))
+        return -1;
+    p[0] = fd_alloc(FD_CRT, c[0]);
+    p[1] = fd_alloc(FD_CRT, c[1]);
+    return 0;
+}
+
+static int l_fcntl(int fd, int cmd, ...)
+{
+    va_list ap;
+    long arg;
+
+    va_start(ap, cmd);
+    arg = va_arg(ap, long);
+    va_end(ap);
+    if (bad_fd(fd))
+        return -1;
+    switch (cmd) {
+    case 0: {                         /* F_DUPFD */
+        int n = l_dup(fd);
+
+        (void)arg;
+        return n;
+    }
+    case 3: return 2;                 /* F_GETFL: O_RDWR */
+    default: return 0;                /* F_SETFL, F_GETFD, F_SETFD, locks */
+    }
+}
+
+static int l_isatty(int fd) { return fd >= 0 && fd <= 2 ? _isatty(fd) != 0 : 0; }
+static int l_poll(void *fds_, unsigned n, int timeout) { (void)fds_; (void)n; (void)timeout; return 0; }
+
+static int l_ioctl(int fd, unsigned long req, ...)
+{
+    va_list ap;
+    void *arg;
+    int r;
+
+    va_start(ap, req);
+    arg = va_arg(ap, void *);
+    va_end(ap);
+    if (core_ioctl(fd, req, arg, &r))
+        return r;
+    if (req == 0x541B && arg) {          /* FIONREAD */
+        *(int *)arg = 0;
+        return 0;
+    }
+    if (lx_verbose)
+        LOG("ioctl(%d, 0x%lx): not a device", fd, req);
+    SET_ERRNO(25);                       /* ENOTTY */
+    return -1;
+}
+
+/* termios: on the machine's ports as TCGETS / TCSETS+n / TCFLSH ioctls (as on Linux) */
+static int l_tcgetattr(int fd, void *t)
+{
+    int r;
+
+    if (core_ioctl(fd, 0x5401, t, &r))
+        return r;
+    memset(t, 0, 60);
+    return fd <= 2 ? 0 : 0;
+}
+static int l_tcsetattr(int fd, int act, const void *t)
+{
+    int r;
+
+    if (core_ioctl(fd, 0x5402 + act, (void *)t, &r))
+        return r;
+    return 0;
+}
+static int l_tcflush(int fd, int q)
+{
+    int r;
+
+    if (core_ioctl(fd, 0x540B, (void *)(intptr_t)q, &r))
+        return r;
+    return 0;
+}
+static int l_tcdrain(int fd) { (void)fd; return 0; }
+/* struct termios: c_cflag at 8, c_ispeed 52, c_ospeed 56; CBAUD 0x100f */
+static int l_cfsetospeed(void *t, unsigned s)
+{
+    uint32_t *c = (uint32_t *)((char *)t + 8);
+
+    *c = (*c & ~0x100fu) | (s & 0x100f);
+    *(uint32_t *)((char *)t + 56) = s;
+    return 0;
+}
+static int l_cfsetispeed(void *t, unsigned s) { *(uint32_t *)((char *)t + 52) = s; return 0; }
+static unsigned l_cfgetospeed(const void *t) { return *(const uint32_t *)((const char *)t + 8) & 0x100f; }
+static unsigned l_cfgetispeed(const void *t) { return l_cfgetospeed(t); }
+static void l_cfmakeraw(void *t)
+{
+    uint32_t *f = t;
+
+    f[0] &= ~0x5ebu;
+    f[1] &= ~1u;
+    f[3] &= ~0x804bu;
+    f[2] = (f[2] & ~0x130u) | 0x30;
+}
+
+/* ---- stat ----------------------------------------------------------------------------------- */
+
+static uint32_t path_ino(const char *s)
+{
+    uint32_t h = 2166136261u;
+
+    for (; *s; s++)
+        h = (h ^ (uint8_t)((*s >= 'A' && *s <= 'Z') ? *s + 32 : *s)) * 16777619u;
+    return h ? h : 1;
+}
+
+static int stat64_win(const char *win, struct l_stat64 *st)
+{
+    WIN32_FILE_ATTRIBUTE_DATA d;
+
+    if (!GetFileAttributesExA(win, GetFileExInfoStandard, &d)) {
+        SET_ERRNO(ENOENT);
+        return -1;
+    }
+    memset(st, 0, sizeof(*st));
+    st->st_dev = 0x801;
+    st->st_ino = st->__st_ino = path_ino(win);
+    st->st_mode = (d.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 0040755 :
+                  ((d.dwFileAttributes & FILE_ATTRIBUTE_READONLY) ? 0100555 : 0100755);
+    st->st_nlink = 1;
+    st->st_size = ((int64_t)d.nFileSizeHigh << 32) | d.nFileSizeLow;
+    st->st_blksize = 4096;
+    st->st_blocks = (st->st_size + 511) / 512;
+    st->st_atim.tv_sec = ft_unix(&d.ftLastAccessTime);
+    st->st_mtim.tv_sec = ft_unix(&d.ftLastWriteTime);
+    st->st_ctim.tv_sec = ft_unix(&d.ftCreationTime);
+    return 0;
+}
+
+static int dev_stat(const char *path, struct l_stat64 *st)
+{
+    int fd;
+
+    (void)fd;
+    memset(st, 0, sizeof(*st));
+    st->st_mode = 0020666;               /* character device */
+    st->st_nlink = 1;
+    st->st_ino = st->__st_ino = path_ino(path);
+    st->st_blksize = 4096;
+    return 0;
+}
+
+static int stat64_path(const char *path, struct l_stat64 *st)
+{
+    char win[MAX_PATH];
+
+    if (!path) {
+        SET_ERRNO(EFAULT);
+        return -1;
+    }
+    if (!strncmp(path, "/dev/", 5))
+        return dev_stat(path, st);
+    if (lx_path(path, win, sizeof(win))) {
+        SET_ERRNO(ENOENT);
+        return -1;
+    }
+    return stat64_win(win, st);
+}
+
+static int stat64_fd(int fd, struct l_stat64 *st)
+{
+    struct _stati64 s;
+
+    if (bad_fd(fd))
+        return -1;
+    memset(st, 0, sizeof(*st));
+    if (fds[fd].type != FD_CRT) {
+        st->st_mode = fds[fd].type == FD_DIR ? 0040755 : 0020666;
+        st->st_nlink = 1;
+        return 0;
+    }
+    if (_fstati64(fds[fd].crt, &s)) {
+        SET_ERRNO(EBADF);
+        return -1;
+    }
+    st->st_dev = 0x801;
+    st->st_ino = st->__st_ino = 1000 + fd;
+    st->st_mode = (s.st_mode & _S_IFDIR) ? 0040755 : (s.st_mode & _S_IFCHR) ? 0020666 :
+                  (s.st_mode & _S_IFIFO) ? 0010666 : 0100755;
+    st->st_nlink = 1;
+    st->st_size = s.st_size;
+    st->st_blksize = 4096;
+    st->st_blocks = (s.st_size + 511) / 512;
+    st->st_atim.tv_sec = (int32_t)s.st_atime;
+    st->st_mtim.tv_sec = (int32_t)s.st_mtime;
+    st->st_ctim.tv_sec = (int32_t)s.st_ctime;
+    return 0;
+}
+
+static int to_stat32(int r, const struct l_stat64 *s, struct l_stat *st)
+{
+    if (r)
+        return r;
+    if (s->st_size > 0x7fffffff) {
+        SET_ERRNO(L_EOVERFLOW);
+        return -1;
+    }
+    memset(st, 0, sizeof(*st));
+    st->st_dev = s->st_dev;
+    st->st_ino = (uint32_t)s->st_ino;
+    st->st_mode = s->st_mode;
+    st->st_nlink = s->st_nlink;
+    st->st_uid = s->st_uid;
+    st->st_gid = s->st_gid;
+    st->st_rdev = s->st_rdev;
+    st->st_size = (int32_t)s->st_size;
+    st->st_blksize = s->st_blksize;
+    st->st_blocks = (int32_t)s->st_blocks;
+    st->st_atim = s->st_atim;
+    st->st_mtim = s->st_mtim;
+    st->st_ctim = s->st_ctim;
+    return 0;
+}
+
+static int l___xstat(int v, const char *p, struct l_stat *st) { struct l_stat64 s; (void)v; return to_stat32(stat64_path(p, &s), &s, st); }
+static int l___xstat64(int v, const char *p, struct l_stat64 *st) { (void)v; return stat64_path(p, st); }
+static int l___fxstat(int v, int fd, struct l_stat *st) { struct l_stat64 s; (void)v; return to_stat32(stat64_fd(fd, &s), &s, st); }
+static int l___fxstat64(int v, int fd, struct l_stat64 *st) { (void)v; return stat64_fd(fd, st); }
+static int l_stat(const char *p, struct l_stat *st) { return l___xstat(3, p, st); }
+static int l_fstat(int fd, struct l_stat *st) { return l___fxstat(3, fd, st); }
+
+static int l_access(const char *path, int mode)
+{
+    char win[MAX_PATH];
+
+    (void)mode;
+    if (!strncmp(path, "/dev/", 5))
+        return 0;
+    if (lx_path(path, win, sizeof(win)) || !exists(win)) {
+        SET_ERRNO(ENOENT);
+        return -1;
+    }
+    return 0;
+}
+
+static int l_unlink(const char *path)
+{
+    char win[MAX_PATH];
+
+    if (lx_path(path, win, sizeof(win)) || !DeleteFileA(win)) {
+        SET_ERRNO(ENOENT);
+        return -1;
+    }
+    return 0;
+}
+
+static int l_mkdir(const char *path, int mode)
+{
+    char win[MAX_PATH];
+
+    (void)mode;
+    if (lx_path(path, win, sizeof(win)))
+        return -1;
+    if (!CreateDirectoryA(win, NULL)) {
+        SET_ERRNO(GetLastError() == ERROR_ALREADY_EXISTS ? EEXIST : ENOENT);
+        return -1;
+    }
+    return 0;
+}
+
+static int l_rmdir(const char *path)
+{
+    char win[MAX_PATH];
+
+    if (lx_path(path, win, sizeof(win)) || !RemoveDirectoryA(win))
+        return -1;
+    return 0;
+}
+
+static int l_chdir(const char *path)
+{
+    char win[MAX_PATH];
+
+    if (lx_path(path, win, sizeof(win)) || !SetCurrentDirectoryA(win)) {
+        SET_ERRNO(ENOENT);
+        return -1;
+    }
+    return 0;
+}
+
+static char *l_getcwd(char *buf, size_t size)
+{
+    char win[MAX_PATH], lin[MAX_PATH];
+
+    GetCurrentDirectoryA(sizeof(win), win);
+    linux_form(win, lin, sizeof(lin));
+    if (!buf) {
+        size = size ? size : strlen(lin) + 1;
+        buf = l_malloc(size);
+    }
+    if (strlen(lin) + 1 > size) {
+        SET_ERRNO(ERANGE);
+        return NULL;
+    }
+    strcpy(buf, lin);
+    return buf;
+}
+
+static char *l_realpath(const char *path, char *out)
+{
+    char full[1024], win[MAX_PATH];
+    char *parts[128], *p, *save = NULL;
+    int n = 0, i;
+    char res[1024] = "";
+
+    if (path[0] == '/')
+        snprintf(full, sizeof(full), "%s", path);
+    else {
+        char cwd[MAX_PATH];
+
+        l_getcwd(cwd, sizeof(cwd));
+        snprintf(full, sizeof(full), "%s/%s", cwd, path);
+    }
+    for (p = strtok_r(full, "/", &save); p; p = strtok_r(NULL, "/", &save)) {
+        if (!strcmp(p, "."))
+            continue;
+        if (!strcmp(p, "..")) {
+            if (n)
+                n--;
+            continue;
+        }
+        if (n < 128)
+            parts[n++] = p;
+    }
+    for (i = 0; i < n; i++) {
+        strcat(res, "/");
+        strcat(res, parts[i]);
+    }
+    if (!n)
+        strcpy(res, "/");
+    if (lx_path(res, win, sizeof(win)) || !exists(win)) {
+        SET_ERRNO(ENOENT);
+        return NULL;
+    }
+    if (!out)
+        out = l_malloc(4096);
+    strcpy(out, res);
+    return out;
+}
+
+/* ---- directories ------------------------------------------------------------------------- */
+
+struct ldir {
+    HANDLE h;
+    WIN32_FIND_DATAA fd;
+    int have;
+    long pos;
+    char pattern[MAX_PATH], dir[MAX_PATH];
+    struct l_dirent e;
+    struct l_dirent64 e64;
+};
+
+static void *l_opendir(const char *path)
+{
+    char win[MAX_PATH];
+    struct ldir *d;
+    DWORD a;
+
+    if (lx_path(path, win, sizeof(win)) || (a = GetFileAttributesA(win)) == INVALID_FILE_ATTRIBUTES) {
+        SET_ERRNO(ENOENT);
+        return NULL;
+    }
+    if (!(a & FILE_ATTRIBUTE_DIRECTORY)) {
+        SET_ERRNO(ENOTDIR);
+        return NULL;
+    }
+    d = calloc(1, sizeof(*d));
+    snprintf(d->dir, sizeof(d->dir), "%s", win);
+    snprintf(d->pattern, sizeof(d->pattern), "%s\\*", win);
+    d->h = FindFirstFileA(d->pattern, &d->fd);
+    d->have = d->h != INVALID_HANDLE_VALUE;
+    return d;
+}
+
+static int next_entry(struct ldir *d, uint8_t *type, uint32_t *ino, char *name)
+{
+    char full[MAX_PATH];
+
+    if (!d || !d->have)
+        return 0;
+    snprintf(name, 256, "%s", d->fd.cFileName);
+    snprintf(full, sizeof(full), "%s\\%s", d->dir, d->fd.cFileName);
+    *ino = path_ino(full);
+    if (d->fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
+        *type = 0;                        /* DT_UNKNOWN: stat follows the WSL link */
+    else
+        *type = (d->fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 4 : 8;
+    d->have = FindNextFileA(d->h, &d->fd);
+    d->pos++;
+    return 1;
+}
+
+static struct l_dirent *l_readdir(struct ldir *d)
+{
+    uint32_t ino;
+
+    memset(&d->e, 0, sizeof(d->e));
+    if (!next_entry(d, &d->e.d_type, &ino, d->e.d_name))
+        return NULL;
+    d->e.d_ino = ino;
+    d->e.d_off = d->pos;
+    d->e.d_reclen = sizeof(d->e);
+    return &d->e;
+}
+
+static struct l_dirent64 *l_readdir64(struct ldir *d)
+{
+    uint32_t ino;
+
+    memset(&d->e64, 0, sizeof(d->e64));
+    if (!next_entry(d, &d->e64.d_type, &ino, d->e64.d_name))
+        return NULL;
+    d->e64.d_ino = ino;
+    d->e64.d_off = d->pos;
+    d->e64.d_reclen = sizeof(d->e64);
+    return &d->e64;
+}
+
+static int l_closedir(struct ldir *d)
+{
+    if (!d)
+        return -1;
+    if (d->h != INVALID_HANDLE_VALUE)
+        FindClose(d->h);
+    free(d);
+    return 0;
+}
+
+static void l_rewinddir(struct ldir *d)
+{
+    if (d->h != INVALID_HANDLE_VALUE)
+        FindClose(d->h);
+    d->h = FindFirstFileA(d->pattern, &d->fd);
+    d->have = d->h != INVALID_HANDLE_VALUE;
+    d->pos = 0;
+}
+
+static long l_telldir(struct ldir *d) { return d->pos; }
+
+static void l_seekdir(struct ldir *d, long pos)
+{
+    uint8_t t;
+    uint32_t ino;
+    char name[256];
+
+    l_rewinddir(d);
+    while (d->pos < pos && next_entry(d, &t, &ino, name))
+        ;
+}
+
+static int l_dirfd(struct ldir *d) { (void)d; return -1; }
+
+/* ---- mmap ----------------------------------------------------------------------------------- */
+
+#define L_MAP_FIXED 0x10
+#define L_MAP_ANONYMOUS 0x20
+static struct { void *p; size_t len; } maps[256];
+
+static void *do_mmap(void *addr, size_t len, int prot, int flags, int fd, int64_t off)
+{
+    void *r, *p;
+    int c, i;
+
+    (void)prot;
+    if (fd >= 0 && core_mmap(fd, len, &r))
+        return r;
+    p = VirtualAlloc((flags & L_MAP_FIXED) ? addr : NULL, len, MEM_RESERVE | MEM_COMMIT,
+                     PAGE_EXECUTE_READWRITE);
+    if (!p && (flags & L_MAP_FIXED)) {
+        p = VirtualAlloc(addr, len, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+        if (p)
+            memset(p, 0, len);
+    }
+    if (!p) {
+        SET_ERRNO(ENOMEM);
+        return (void *)-1;
+    }
+    if (!(flags & L_MAP_ANONYMOUS) && fd >= 0) {
+        c = lx_crt_fd(fd);
+        if (c >= 0) {
+            int64_t cur = _lseeki64(c, 0, SEEK_CUR);
+
+            _lseeki64(c, off, SEEK_SET);
+            _read(c, p, (unsigned)len);
+            _lseeki64(c, cur, SEEK_SET);
+        }
+    }
+    for (i = 0; i < 256; i++)
+        if (!maps[i].p) {
+            maps[i].p = p;
+            maps[i].len = len;
+            break;
+        }
+    return p;
+}
+
+static void *l_mmap(void *addr, size_t len, int prot, int flags, int fd, long off)
+{
+    return do_mmap(addr, len, prot, flags, fd, off);
+}
+
+static void *l_mmap64(void *addr, size_t len, int prot, int flags, int fd, long long off)
+{
+    return do_mmap(addr, len, prot, flags, fd, off);
+}
+
+static int l_munmap(void *p, size_t len)
+{
+    int i;
+
+    (void)len;
+    for (i = 0; i < 256; i++)
+        if (maps[i].p == p) {
+            VirtualFree(p, 0, MEM_RELEASE);
+            maps[i].p = NULL;
+            return 0;
+        }
+    return 0;
+}
+
+static int l_mprotect(void *p, size_t len, int prot) { (void)p; (void)len; (void)prot; return 0; }
+static int l_msync(void *p, size_t len, int fl) { (void)p; (void)len; (void)fl; return 0; }
+static int l_madvise(void *p, size_t len, int a) { (void)p; (void)len; (void)a; return 0; }
+static int l_mlock(const void *p, size_t len) { (void)p; (void)len; return 0; }
+
+/* ---- time ------------------------------------------------------------------------------------- */
+
+static int32_t l_time(int32_t *t)
+{
+    int32_t v = (int32_t)(unix_100ns() / 10000000);
+
+    if (t)
+        *t = v;
+    return v;
+}
+
+static int l_gettimeofday(struct l_timeval *tv, void *tz)
+{
+    int64_t u = unix_100ns();
+
+    if (tv) {
+        tv->tv_sec = (int32_t)(u / 10000000);
+        tv->tv_usec = (int32_t)(u % 10000000 / 10);
+    }
+    if (tz)
+        memset(tz, 0, 8);
+    return 0;
+}
+
+static int l_clock_gettime(int clk, struct l_timespec *ts)
+{
+    if (clk == 0) {                     /* CLOCK_REALTIME */
+        int64_t u = unix_100ns();
+
+        ts->tv_sec = (int32_t)(u / 10000000);
+        ts->tv_nsec = (int32_t)(u % 10000000 * 100);
+    } else {
+        double t = lx_now() + 1000.0;   /* monotonic, never 0 */
+
+        ts->tv_sec = (int32_t)t;
+        ts->tv_nsec = (int32_t)((t - (int32_t)t) * 1e9);
+    }
+    return 0;
+}
+
+int l_clock_gettime_pub(int clk, struct l_timespec *ts) { return l_clock_gettime(clk, ts); }
+
+static int l_clock_getres(int clk, struct l_timespec *ts)
+{
+    (void)clk;
+    if (ts) {
+        ts->tv_sec = 0;
+        ts->tv_nsec = 100;
+    }
+    return 0;
+}
+
+static long l_clock(void) { return (long)(lx_now() * 1000000); }
+
+static long l_times(void *buf)
+{
+    if (buf)
+        memset(buf, 0, 16);
+    return (long)(lx_now() * 100);
+}
+
+static int l_ftime(struct l_timeb *tb)
+{
+    int64_t u = unix_100ns();
+    TIME_ZONE_INFORMATION tzi;
+
+    GetTimeZoneInformation(&tzi);
+    tb->time = (int32_t)(u / 10000000);
+    tb->millitm = (uint16_t)(u % 10000000 / 10000);
+    tb->timezone = (int16_t)tzi.Bias;
+    tb->dstflag = 0;
+    return 0;
+}
+
+static int l_nanosleep(const struct l_timespec *req, struct l_timespec *rem)
+{
+    lx_usleep((int64_t)req->tv_sec * 1000000 + req->tv_nsec / 1000);
+    if (rem)
+        rem->tv_sec = rem->tv_nsec = 0;
+    return 0;
+}
+
+static int l_clock_nanosleep(int clk, int flags, const struct l_timespec *req, struct l_timespec *rem)
+{
+    if (flags & 1) {                    /* TIMER_ABSTIME */
+        struct l_timespec now;
+        int64_t us;
+
+        l_clock_gettime(clk, &now);
+        us = (int64_t)(req->tv_sec - now.tv_sec) * 1000000 + (req->tv_nsec - now.tv_nsec) / 1000;
+        lx_usleep(us);
+        return 0;
+    }
+    return l_nanosleep(req, rem);
+}
+
+static int l_usleep(unsigned us) { lx_usleep(us); return 0; }
+static unsigned l_sleep(unsigned s) { lx_usleep((int64_t)s * 1000000); return 0; }
+
+static char tzname_std[64] = "UTC";
+
+static void tm_from_crt(const struct tm *c, struct l_tm *t, int32_t gmtoff)
+{
+    t->tm_sec = c->tm_sec;
+    t->tm_min = c->tm_min;
+    t->tm_hour = c->tm_hour;
+    t->tm_mday = c->tm_mday;
+    t->tm_mon = c->tm_mon;
+    t->tm_year = c->tm_year;
+    t->tm_wday = c->tm_wday;
+    t->tm_yday = c->tm_yday;
+    t->tm_isdst = c->tm_isdst;
+    t->tm_gmtoff = gmtoff;
+    t->tm_zone = tzname_std;
+}
+
+static struct l_tm *l_gmtime_r(const int32_t *t, struct l_tm *out)
+{
+    __time64_t v = *t;
+    struct tm c;
+
+    if (_gmtime64_s(&c, &v))
+        return NULL;
+    tm_from_crt(&c, out, 0);
+    out->tm_zone = "GMT";
+    return out;
+}
+
+static struct l_tm *l_localtime_r(const int32_t *t, struct l_tm *out)
+{
+    __time64_t v = *t;
+    struct tm c, g;
+
+    if (_localtime64_s(&c, &v) || _gmtime64_s(&g, &v))
+        return NULL;
+    g.tm_isdst = c.tm_isdst;
+    tm_from_crt(&c, out, (int32_t)(_mkgmtime64(&c) - v));
+    return out;
+}
+
+static struct l_tm *l_gmtime(const int32_t *t) { static __thread struct l_tm r; return l_gmtime_r(t, &r); }
+static struct l_tm *l_localtime(const int32_t *t) { static __thread struct l_tm r; return l_localtime_r(t, &r); }
+
+static int32_t l_mktime(struct l_tm *t)
+{
+    struct tm c;
+    __time64_t v;
+
+    memset(&c, 0, sizeof(c));
+    c.tm_sec = t->tm_sec;
+    c.tm_min = t->tm_min;
+    c.tm_hour = t->tm_hour;
+    c.tm_mday = t->tm_mday;
+    c.tm_mon = t->tm_mon;
+    c.tm_year = t->tm_year;
+    c.tm_isdst = t->tm_isdst;
+    v = _mktime64(&c);
+    if (v == -1)
+        return -1;
+    tm_from_crt(&c, t, t->tm_gmtoff);
+    return (int32_t)v;
+}
+
+static int32_t l_timegm(struct l_tm *t)
+{
+    struct tm c;
+
+    memset(&c, 0, sizeof(c));
+    c.tm_sec = t->tm_sec;
+    c.tm_min = t->tm_min;
+    c.tm_hour = t->tm_hour;
+    c.tm_mday = t->tm_mday;
+    c.tm_mon = t->tm_mon;
+    c.tm_year = t->tm_year;
+    return (int32_t)_mkgmtime64(&c);
+}
+
+static char *l_asctime_r(const struct l_tm *t, char *buf)
+{
+    static const char wd[] = "SunMonTueWedThuFriSat", mo[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+
+    sprintf(buf, "%.3s %.3s%3d %.2d:%.2d:%.2d %d\n", wd + 3 * (t->tm_wday % 7), mo + 3 * (t->tm_mon % 12),
+            t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec, 1900 + t->tm_year);
+    return buf;
+}
+static char *l_asctime(const struct l_tm *t) { static char b[32]; return l_asctime_r(t, b); }
+static char *l_ctime(const int32_t *t) { return l_asctime(l_localtime(t)); }
+static double l_difftime(int32_t a, int32_t b) { return (double)a - b; }
+
+/* the games set the system clock from the operator menu: not on a desktop */
+static int l_settimeofday(const void *tv, const void *tz) { (void)tv; (void)tz; return 0; }
+static int l_stime(const int32_t *t) { (void)t; return 0; }
+static void l_tzset(void) { }
+
+/* ---- signals: recorded, never delivered ------------------------------------------------------- */
+
+static void *sig_handler[65];
+
+static void *l_signal(int sig, void *h)
+{
+    void *old;
+
+    if (sig <= 0 || sig > 64)
+        return (void *)-1;
+    old = sig_handler[sig];
+    sig_handler[sig] = h;
+    if (lx_verbose)
+        LOG("signal(%d, %p) recorded", sig, h);
+    return old;
+}
+
+/* struct sigaction (i386): handler 0, mask 4 (128 bytes), flags 132, restorer 136 */
+static int l_sigaction(int sig, const void *act, void *old)
+{
+    if (sig <= 0 || sig > 64)
+        return -1;
+    if (old) {
+        memset(old, 0, 140);
+        *(void **)old = sig_handler[sig];
+    }
+    if (act)
+        sig_handler[sig] = *(void *const *)act;
+    return 0;
+}
+
+static int l_sigemptyset(uint32_t *s) { memset(s, 0, 128); return 0; }
+static int l_sigfillset(uint32_t *s) { memset(s, 0xff, 128); return 0; }
+static int l_sigaddset(uint32_t *s, int sig) { if (sig > 0 && sig <= 64) s[(sig - 1) / 32] |= 1u << ((sig - 1) % 32); return 0; }
+static int l_sigdelset(uint32_t *s, int sig) { if (sig > 0 && sig <= 64) s[(sig - 1) / 32] &= ~(1u << ((sig - 1) % 32)); return 0; }
+static int l_sigismember(const uint32_t *s, int sig) { return sig > 0 && sig <= 64 && (s[(sig - 1) / 32] >> ((sig - 1) % 32) & 1); }
+static int l_sigprocmask(int how, const void *set, void *old) { (void)how; (void)set; if (old) memset(old, 0, 128); return 0; }
+
+static int l_raise(int sig)
+{
+    void *h = sig > 0 && sig <= 64 ? sig_handler[sig] : NULL;
+
+    LOG("raise(%d)", sig);
+    if (h && h != (void *)1)           /* SIG_IGN */
+        elf_call1(h, sig);
+    else if (!h && sig != 17 && sig != 28 && sig != 23)   /* not CHLD/WINCH/URG */
+        ExitProcess(128 + sig);
+    return 0;
+}
+
+static int l_getpid(void) { return (int)GetCurrentProcessId(); }
+
+static int l_kill(int pid, int sig)
+{
+    if (pid == l_getpid() || pid == 0)
+        return sig ? l_raise(sig) : 0;
+    SET_ERRNO(3);                       /* ESRCH */
+    return -1;
+}
+
+static unsigned l_alarm(unsigned s) { (void)s; return 0; }
+static int l_pause(void) { Sleep(INFINITE); return -1; }
+
+/* ---- processes: none -------------------------------------------------------------------------- */
+
+static int l_fork(void) { LOG("fork(): not supported"); SET_ERRNO(L_ENOSYS); return -1; }
+static int l_execvp(const char *f, char *const *a) { (void)a; LOG("exec %s: not supported", f); SET_ERRNO(L_ENOSYS); return -1; }
+static int l_execv(const char *f, char *const *a) { return l_execvp(f, a); }
+static int l_system(const char *cmd)
+{
+    if (!cmd)
+        return 0;
+    LOG("system(\"%s\"): not run", cmd);
+    return -1;
+}
+static int l_waitpid(int pid, int *st, int opt) { (void)pid; (void)st; (void)opt; SET_ERRNO(10); return -1; }
+static int l_wait(int *st) { return l_waitpid(-1, st, 0); }
+static void *l_popen(const char *cmd, const char *m) { (void)m; LOG("popen(\"%s\"): not supported", cmd); return NULL; }
+static int l_pclose(void *f) { (void)f; return -1; }
+static int l_getppid(void) { return 1; }
+static int l_getuid(void) { return 0; }
+static int l_setsid(void) { return l_getpid(); }
+static int l_umask(int m) { (void)m; return 022; }
+static int l_nice(int n) { (void)n; return 0; }
+
+struct l_utsname { char s[6][65]; };
+static int l_uname(struct l_utsname *u)
+{
+    memset(u, 0, sizeof(*u));
+    strcpy(u->s[0], "Linux");
+    strcpy(u->s[1], "igs");
+    strcpy(u->s[2], "2.6.27");
+    strcpy(u->s[3], "#1 SMP");
+    strcpy(u->s[4], "i686");
+    return 0;
+}
+static int l_gethostname(char *b, size_t n) { snprintf(b, n, "igs"); return 0; }
+
+static long l_sysconf(int name)
+{
+    SYSTEM_INFO si;
+
+    GetSystemInfo(&si);
+    switch (name) {
+    case 2: return 100;                          /* _SC_CLK_TCK */
+    case 4: return 1024;                         /* _SC_OPEN_MAX */
+    case 30: return 4096;                        /* _SC_PAGESIZE */
+    case 83: case 84: return si.dwNumberOfProcessors;
+    case 85: return 262144;                      /* _SC_PHYS_PAGES: 1 GiB */
+    default: return -1;
+    }
+}
+static int l_getpagesize(void) { return 4096; }
+static void l_sync(void) { }
+static int l_fsync(int fd) { (void)fd; return 0; }
+static int l_getrlimit(int r, uint32_t *rl) { (void)r; rl[0] = rl[1] = 0xffffffff; return 0; }
+static int l_setrlimit(int r, const uint32_t *rl) { (void)r; (void)rl; return 0; }
+static int l_getrusage(int who, void *ru) { (void)who; memset(ru, 0, 72); return 0; }
+
+static int l_socket(int d, int t, int p)
+{
+    static int once;
+
+    if (!once++)
+        LOG("socket(%d, %d, %d): no network (logged once)", d, t, p);
+    SET_ERRNO(L_EAFNOSUPPORT);
+    return -1;
+}
+static int l_net_fail(void) { SET_ERRNO(L_ENOSYS); return -1; }
+
+/* syscall(): only what libstdc++ uses (futex for static-init guards, gettid) */
+static long l_syscall(long n, long a, long b, long c)
+{
+    switch (n) {
+    case 240:                                  /* futex */
+        if ((b & 0x7f) == 0) {                 /* FUTEX_WAIT */
+            if (*(volatile int *)a == (int)c)
+                Sleep(1);
+            return 0;
+        }
+        return 0;                              /* FUTEX_WAKE: waiters poll */
+    case 224:                                  /* gettid */
+        return GetCurrentThreadId();
+    case 20:
+        return l_getpid();
+    }
+    LOG("syscall(%ld): not supported", n);
+    SET_ERRNO(L_ENOSYS);
+    return -1;
+}
+
+/* ---- setjmp / longjmp (jmp_buf: ebx esi edi ebp esp eip, mask_was_saved) ---------------------- */
+
+__asm__(
+    ".globl _l__setjmp\n"
+    "_l__setjmp:\n"
+    "    movl 4(%esp), %eax\n"
+    "    movl %ebx, 0(%eax)\n"
+    "    movl %esi, 4(%eax)\n"
+    "    movl %edi, 8(%eax)\n"
+    "    movl %ebp, 12(%eax)\n"
+    "    leal 4(%esp), %ecx\n"
+    "    movl %ecx, 16(%eax)\n"
+    "    movl (%esp), %ecx\n"
+    "    movl %ecx, 20(%eax)\n"
+    "    movl $0, 24(%eax)\n"
+    "    xorl %eax, %eax\n"
+    "    ret\n"
+    ".globl _l_longjmp\n"
+    "_l_longjmp:\n"
+    "    movl 4(%esp), %edx\n"
+    "    movl 8(%esp), %eax\n"
+    "    testl %eax, %eax\n"
+    "    jnz 1f\n"
+    "    incl %eax\n"
+    "1:  movl 0(%edx), %ebx\n"
+    "    movl 4(%edx), %esi\n"
+    "    movl 8(%edx), %edi\n"
+    "    movl 12(%edx), %ebp\n"
+    "    movl 16(%edx), %esp\n"
+    "    jmp *20(%edx)\n");
+void l__setjmp(void);
+void l_longjmp(void);
+
+const struct nsym sys_syms[] = {
+    ND(environ, &lx_environ), ND(__environ, &lx_environ),
+    N(open), NA(open64, l_open), NA(__open, l_open), NA(__open64, l_open), N(read), N(write),
+    N(close), N(lseek), N(lseek64), NA(__lseek64, l_lseek64), N(pread), N(writev), N(readv),
+    N(dup), N(dup2), N(pipe), N(fcntl), N(isatty), N(poll), N(ioctl),
+    N(tcgetattr), N(tcsetattr), N(tcflush), N(tcdrain), N(cfsetospeed), N(cfsetispeed),
+    N(cfgetospeed), N(cfgetispeed), N(cfmakeraw),
+    N(__xstat), N(__xstat64), NA(__lxstat, l___xstat), NA(__lxstat64, l___xstat64),
+    N(__fxstat), N(__fxstat64), N(stat), NA(lstat, l_stat), N(fstat), N(access), N(unlink),
+    N(mkdir), N(rmdir), N(chdir), N(getcwd), N(realpath),
+    N(opendir), N(readdir), N(readdir64), N(closedir), N(rewinddir), N(telldir), N(seekdir), N(dirfd),
+    N(mmap), N(mmap64), N(munmap), N(mprotect), N(msync), N(madvise), N(mlock), NA(munlock, l_mlock),
+    N(time), N(gettimeofday), N(clock_gettime), N(clock_getres), N(clock), N(times), N(ftime),
+    N(nanosleep), N(clock_nanosleep), N(usleep), N(sleep), N(gmtime), N(gmtime_r), N(localtime),
+    N(localtime_r), N(mktime), N(timegm), N(asctime), N(asctime_r), N(ctime), N(difftime),
+    N(settimeofday), N(stime), N(tzset),
+    N(signal), NA(sysv_signal, l_signal), NA(bsd_signal, l_signal), N(sigaction), N(sigemptyset),
+    N(sigfillset), N(sigaddset), N(sigdelset), N(sigismember), N(sigprocmask), N(raise), N(kill),
+    N(alarm), N(pause),
+    N(fork), NA(vfork, l_fork), N(execvp), N(execv), NA(execve, l_execv), N(system), N(waitpid),
+    N(wait), N(popen), N(pclose), N(getpid), N(getppid), N(getuid), NA(geteuid, l_getuid),
+    NA(getgid, l_getuid), NA(getegid, l_getuid), N(setsid), N(umask), N(nice), N(uname),
+    N(gethostname), N(sysconf), N(getpagesize), N(sync), N(fsync), NA(fdatasync, l_fsync),
+    N(getrlimit), N(setrlimit), N(getrusage),
+    N(socket), NA(connect, l_net_fail), NA(bind, l_net_fail), NA(listen, l_net_fail),
+    NA(accept, l_net_fail), NA(setsockopt, l_net_fail), NA(sendto, l_net_fail),
+    NA(recvfrom, l_net_fail), N(syscall),
+    N(_setjmp), NA(setjmp, l__setjmp), NA(__sigsetjmp, l__setjmp), N(longjmp),
+    NA(_longjmp, l_longjmp), NA(siglongjmp, l_longjmp), NA(__longjmp_chk, l_longjmp),
+    { NULL, NULL },
+};
+
+void sys_init(void)
+{
+    InitializeCriticalSection(&fd_lock);
+    lx_now();
+}
