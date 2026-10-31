@@ -4,7 +4,7 @@
 # id: a software name from hash/<machine>.xml (run.sh --list shows them).
 # The game's rom set is <id>/, <id>.7z or <id>.zip on the rompath
 # (IGS_ROMPATH, or rompath= in igs-loader.ini, or roms/); archives are
-# extracted once into ~/.cache/igs-loader/<id> (IGS_CACHE / cachepath=).
+# extracted once into ~/.cache/igs-loader/linux/<id> (IGS_CACHE / cachepath=).
 #   run.sh --list           the games, and which sets are found
 #   run.sh --verify <id>    check a set against the list's hashes
 # Env (see docs/IGS_LOADER.md):

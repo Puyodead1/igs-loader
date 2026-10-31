@@ -302,6 +302,16 @@ void rs_config(const char *root)
     } else {
         default_cache(cfg_cache, sizeof(cfg_cache));
     }
+    /*
+     * one subfolder per platform: the stamps hold host paths, and Windows
+     * extracts symlinks as copies, so the two loaders cannot share a set
+     */
+    v = cfg_cache + strlen(cfg_cache);
+#ifdef _WIN32
+    snprintf((char *)v, sizeof(cfg_cache) - (v - cfg_cache), "\\windows");
+#else
+    snprintf((char *)v, sizeof(cfg_cache) - (v - cfg_cache), "/linux");
+#endif
 }
 
 const char *rs_hashpath(void) { return cfg_hash; }

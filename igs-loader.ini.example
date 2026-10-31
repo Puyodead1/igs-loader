@@ -12,9 +12,10 @@ rompath=roms
 
 # where .7z/.zip sets are extracted (writable: the games keep their settings
 # and bookkeeping there until the archive changes and is extracted again).
-# Default: %LOCALAPPDATA%\igs-loader\cache on Windows,
+# Each loader extracts into its own subfolder, linux\ or windows\, so one
+# setting serves both.  Default: %LOCALAPPDATA%\igs-loader\cache on Windows,
 # ${XDG_CACHE_HOME:-~/.cache}/igs-loader on Linux.
-#cachepath=
+#cachepath=D:\games\igs-cache
 
 # the software lists (default: hash)
 #hashpath=hash
