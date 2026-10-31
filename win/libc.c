@@ -1201,6 +1201,374 @@ void libc_init(void)
     std_init();
 }
 
+/* ---- odds and ends (Hero of Robots' Ogre and Cg) ----------------------------------------------------------- */
+
+/* _FORTIFY_SOURCE entry points: the checks are dropped */
+static void *l___memcpy_chk(void *d, const void *s, size_t n, size_t dn) { (void)dn; return memcpy(d, s, n); }
+static void *l___memmove_chk(void *d, const void *s, size_t n, size_t dn) { (void)dn; return memmove(d, s, n); }
+static void *l___memset_chk(void *d, int c, size_t n, size_t dn) { (void)dn; return memset(d, c, n); }
+static char *l___strcpy_chk(char *d, const char *s, size_t dn) { (void)dn; return strcpy(d, s); }
+static char *l___strcat_chk(char *d, const char *s, size_t dn) { (void)dn; return strcat(d, s); }
+static char *l___strncpy_chk(char *d, const char *s, size_t n, size_t dn) { (void)dn; return strncpy(d, s, n); }
+
+static int l___isinff(float f) { return isinf(f) ? (f > 0 ? 1 : -1) : 0; }
+static int l_finite(double d) { return isfinite(d); }
+static int l_finitef(float f) { return isfinite(f); }
+
+static void *l_memmem(const void *h, size_t hn, const void *n, size_t nn)
+{
+    const uint8_t *p = h;
+    size_t i;
+
+    if (!nn)
+        return (void *)h;
+    for (i = 0; i + nn <= hn; i++)
+        if (p[i] == *(const uint8_t *)n && !memcmp(p + i, n, nn))
+            return (void *)(p + i);
+    return NULL;
+}
+
+static void l_swab(const void *from, void *to, ssize_t n)
+{
+    const uint8_t *s = from;
+    uint8_t *d = to;
+    ssize_t i;
+
+    for (i = 0; i + 1 < n; i += 2) {
+        uint8_t t = s[i];
+
+        d[i] = s[i + 1];
+        d[i + 1] = t;
+    }
+}
+
+static void *l_lfind(const void *key, const void *base, size_t *n, size_t size, void *cmp)
+{
+    size_t i;
+
+    for (i = 0; i < *n; i++)
+        if (!elf_call2(cmp, U32(key), U32((const uint8_t *)base + i * size)))
+            return (void *)((const uint8_t *)base + i * size);
+    return NULL;
+}
+
+/* fnmatch: *, ?, [...] (FNM_PATHNAME 1, FNM_NOESCAPE 2, FNM_PERIOD 4) */
+static int l_fnmatch(const char *pat, const char *s, int flags)
+{
+    for (; *pat; pat++, s++) {
+        switch (*pat) {
+        case '?':
+            if (!*s || (*s == '/' && (flags & 1)))
+                return 1;
+            break;
+        case '*':
+            while (pat[1] == '*')
+                pat++;
+            if (!pat[1])
+                return (flags & 1) && strchr(s, '/') ? 1 : 0;
+            for (; *s; s++) {
+                if (!l_fnmatch(pat + 1, s, flags))
+                    return 0;
+                if (*s == '/' && (flags & 1))
+                    return 1;
+            }
+            return 1;
+        case '[': {
+            const char *p = pat + 1;
+            int neg = *p == '!' || *p == '^', ok = 0;
+
+            if (neg)
+                p++;
+            for (; *p && (*p != ']' || p == pat + 1 + neg); p++) {
+                if (p[1] == '-' && p[2] && p[2] != ']') {
+                    ok |= *s >= p[0] && *s <= p[2];
+                    p += 2;
+                } else {
+                    ok |= *s == *p;
+                }
+            }
+            if (!*p || !*s || ok == neg)
+                return 1;
+            pat = p;
+            break;
+        }
+        case '\\':
+            if (!(flags & 2) && pat[1])
+                pat++;
+            /* fall through */
+        default:
+            if (*s != *pat)
+                return 1;
+        }
+    }
+    return *s ? 1 : 0;
+}
+
+/* glibc's struct lconv, C locale */
+static void *l_localeconv(void)
+{
+    static char dot[] = ".", empty[] = "";
+    static struct { char *s[10]; char c[14]; } lc = {
+        { dot, empty, empty, empty, empty, empty, empty, empty, empty, empty },
+        { 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127 },
+    };
+
+    return &lc;
+}
+
+/* glibc's struct mallinfo (10 ints), returned through the hidden pointer the callee pops */
+struct l_mallinfo { int v[10]; };
+static struct l_mallinfo __attribute__((callee_pop_aggregate_return(1))) l_mallinfo(void)
+{
+    struct l_mallinfo m;
+
+    memset(&m, 0, sizeof(m));
+    return m;
+}
+
+static size_t l_mbstowcs(lwchar *d, const char *s, size_t n)
+{
+    size_t i = 0, len = strlen(s);
+
+    if (!d)
+        return len;
+    for (; i < n && s[i]; i++)
+        d[i] = (uint8_t)s[i];
+    if (i < n)
+        d[i] = 0;
+    return i;
+}
+
+static int l_wcscasecmp(const lwchar *a, const lwchar *b)
+{
+    for (;; a++, b++) {
+        lwchar x = *a < 128 ? (lwchar)tolower((int)*a) : *a, y = *b < 128 ? (lwchar)tolower((int)*b) : *b;
+
+        if (x != y || !x)
+            return (int)x - (int)y;
+    }
+}
+
+/* vswprintf on 32-bit wchar_t: the format narrowed, the result widened (no %ls) */
+static int l_vswprintf(lwchar *d, size_t n, const lwchar *fmt, va_list ap)
+{
+    char f[512], out[2048];
+    size_t i;
+    int r;
+
+    for (i = 0; fmt[i] && i < sizeof(f) - 1; i++)
+        f[i] = fmt[i] < 128 ? (char)fmt[i] : '?';
+    f[i] = 0;
+    if (strstr(f, "%ls") || strstr(f, "%S"))
+        LOG("vswprintf(\"%s\"): wide string arguments are not converted", f);
+    r = __mingw_vsnprintf(out, sizeof(out), f, ap);
+    if (r < 0 || (size_t)r >= n) {
+        SET_ERRNO(E2BIG);
+        return -1;
+    }
+    for (i = 0; i <= (size_t)r; i++)
+        d[i] = (uint8_t)out[i];
+    return r;
+}
+
+/*
+ * iconv: UTF-8, WCHAR_T / UCS-4LE / UTF-32LE, UTF-16LE / UCS-2LE, Latin-1,
+ * and Windows code pages for GBK / GB2312 / Big5 / Shift_JIS / EUC-KR.
+ */
+enum { IC_UTF8 = 1, IC_UTF32, IC_UTF16, IC_LATIN1 };
+struct l_iconv { int from, to; };
+
+static int ic_code(const char *name)
+{
+    static const struct { const char *n; int c; } codes[] = {
+        { "UTF-8", IC_UTF8 }, { "UTF8", IC_UTF8 }, { "WCHAR_T", IC_UTF32 }, { "UCS-4LE", IC_UTF32 },
+        { "UTF-32LE", IC_UTF32 }, { "UCS4LE", IC_UTF32 }, { "UTF-16LE", IC_UTF16 },
+        { "UCS-2LE", IC_UTF16 }, { "UNICODELITTLE", IC_UTF16 }, { "ISO-8859-1", IC_LATIN1 },
+        { "ISO8859-1", IC_LATIN1 }, { "LATIN1", IC_LATIN1 }, { "ASCII", IC_LATIN1 },
+        { "US-ASCII", IC_LATIN1 }, { "ANSI_X3.4-1968", IC_LATIN1 },
+        { "GBK", 936 }, { "GB2312", 936 }, { "CP936", 936 }, { "EUC-CN", 936 }, { "GB18030", 54936 },
+        { "BIG5", 950 }, { "BIG-5", 950 }, { "CP950", 950 }, { "SHIFT_JIS", 932 }, { "SJIS", 932 },
+        { "CP932", 932 }, { "EUC-KR", 949 }, { "CP949", 949 },
+    };
+    char n[32];
+    size_t i;
+
+    snprintf(n, sizeof(n), "%s", name);
+    if (strstr(n, "//"))
+        *strstr(n, "//") = 0;
+    for (i = 0; i < sizeof(codes) / sizeof(codes[0]); i++)
+        if (!_stricmp(codes[i].n, n))
+            return codes[i].c;
+    return 0;
+}
+
+static void *l_iconv_open(const char *to, const char *from)
+{
+    struct l_iconv *cd;
+    int t = ic_code(to), f = ic_code(from);
+
+    if (!t || !f) {
+        LOG("iconv_open(\"%s\", \"%s\"): not supported", to, from);
+        SET_ERRNO(EINVAL);
+        return (void *)-1;
+    }
+    cd = l_malloc(sizeof(*cd));
+    cd->from = f;
+    cd->to = t;
+    return cd;
+}
+
+static int l_iconv_close(void *cd) { l_free(cd); return 0; }
+
+/* one character from s (n bytes): its code point and length; 0 incomplete, -1 invalid */
+static int ic_decode(int code, const uint8_t *s, size_t n, uint32_t *cp)
+{
+    int len, i;
+
+    switch (code) {
+    case IC_LATIN1:
+        *cp = s[0];
+        return 1;
+    case IC_UTF32:
+        if (n < 4)
+            return 0;
+        memcpy(cp, s, 4);
+        return 4;
+    case IC_UTF16:
+        if (n < 2)
+            return 0;
+        *cp = s[0] | s[1] << 8;
+        if (*cp >= 0xd800 && *cp < 0xdc00) {
+            if (n < 4)
+                return 0;
+            *cp = 0x10000 + ((*cp - 0xd800) << 10) + ((s[2] | s[3] << 8) - 0xdc00);
+            return 4;
+        }
+        return 2;
+    case IC_UTF8:
+        if (s[0] < 0x80) {
+            *cp = s[0];
+            return 1;
+        }
+        len = s[0] >= 0xf0 ? 4 : s[0] >= 0xe0 ? 3 : s[0] >= 0xc0 ? 2 : -1;
+        if (len < 0)
+            return -1;
+        if (n < (size_t)len)
+            return 0;
+        *cp = s[0] & (0x7f >> len);
+        for (i = 1; i < len; i++) {
+            if ((s[i] & 0xc0) != 0x80)
+                return -1;
+            *cp = *cp << 6 | (s[i] & 0x3f);
+        }
+        return len;
+    default: {                               /* a Windows code page */
+        WCHAR w[2];
+
+        if (s[0] < 0x80) {
+            *cp = s[0];
+            return 1;
+        }
+        len = IsDBCSLeadByteEx(code, s[0]) ? 2 : 1;
+        if (n < (size_t)len)
+            return 0;
+        if (MultiByteToWideChar(code, MB_ERR_INVALID_CHARS, (const char *)s, len, w, 2) != 1)
+            return -1;
+        *cp = w[0];
+        return len;
+    }
+    }
+}
+
+/* cp into out (n bytes): length written, 0 if it does not fit */
+static int ic_encode(int code, uint32_t cp, uint8_t *out, size_t n)
+{
+    uint8_t b[8];
+    int len;
+
+    switch (code) {
+    case IC_LATIN1:
+        b[0] = cp < 256 ? (uint8_t)cp : '?';
+        len = 1;
+        break;
+    case IC_UTF32:
+        memcpy(b, &cp, 4);
+        len = 4;
+        break;
+    case IC_UTF16:
+        if (cp >= 0x10000) {
+            uint32_t v = cp - 0x10000, hi = 0xd800 + (v >> 10), lo = 0xdc00 + (v & 0x3ff);
+
+            b[0] = (uint8_t)hi; b[1] = (uint8_t)(hi >> 8); b[2] = (uint8_t)lo; b[3] = (uint8_t)(lo >> 8);
+            len = 4;
+        } else {
+            b[0] = (uint8_t)cp;
+            b[1] = (uint8_t)(cp >> 8);
+            len = 2;
+        }
+        break;
+    case IC_UTF8:
+        if (cp < 0x80) {
+            b[0] = (uint8_t)cp;
+            len = 1;
+        } else if (cp < 0x800) {
+            b[0] = 0xc0 | cp >> 6; b[1] = 0x80 | (cp & 0x3f);
+            len = 2;
+        } else if (cp < 0x10000) {
+            b[0] = 0xe0 | cp >> 12; b[1] = 0x80 | (cp >> 6 & 0x3f); b[2] = 0x80 | (cp & 0x3f);
+            len = 3;
+        } else {
+            b[0] = 0xf0 | cp >> 18; b[1] = 0x80 | (cp >> 12 & 0x3f); b[2] = 0x80 | (cp >> 6 & 0x3f);
+            b[3] = 0x80 | (cp & 0x3f);
+            len = 4;
+        }
+        break;
+    default: {
+        WCHAR w = (WCHAR)cp;
+
+        if (cp < 0x80) {
+            b[0] = (uint8_t)cp;
+            len = 1;
+        } else {
+            len = WideCharToMultiByte(code, 0, &w, 1, (char *)b, sizeof(b), NULL, NULL);
+            if (len <= 0) {
+                b[0] = '?';
+                len = 1;
+            }
+        }
+    }
+    }
+    if ((size_t)len > n)
+        return 0;
+    memcpy(out, b, len);
+    return len;
+}
+
+static size_t l_iconv(struct l_iconv *cd, char **in, size_t *inleft, char **out, size_t *outleft)
+{
+    if (!in || !*in)
+        return 0;
+    while (*inleft) {
+        uint32_t cp;
+        int r = ic_decode(cd->from, (const uint8_t *)*in, *inleft, &cp), w;
+
+        if (r <= 0) {
+            SET_ERRNO(r ? 84 : 22);                        /* EILSEQ / EINVAL */
+            return (size_t)-1;
+        }
+        w = ic_encode(cd->to, cp, (uint8_t *)*out, *outleft);
+        if (!w) {
+            SET_ERRNO(7);                                  /* E2BIG */
+            return (size_t)-1;
+        }
+        *in += r;
+        *inleft -= r;
+        *out += w;
+        *outleft -= w;
+    }
+    return 0;
+}
+
 static LFILE *l_fdopen(int fd, const char *mode);
 extern int lx_crt_fd(int fd);
 
@@ -1282,5 +1650,12 @@ const struct nsym libc_syms[] = {
     N(getenv), NA(secure_getenv, l_getenv), N(setenv), N(unsetenv), N(putenv),
     N(atexit), N(__cxa_atexit), N(__cxa_finalize), N(exit), N(_exit), NA(_Exit, l__exit),
     N(abort), N(__assert_fail), N(__stack_chk_fail), NA(__stack_chk_fail_local, l___stack_chk_fail),
+    /* odds and ends */
+    ND(_IO_2_1_stdin_, &lf_std[0]), ND(_IO_2_1_stdout_, &lf_std[1]), ND(_IO_2_1_stderr_, &lf_std[2]),
+    N(__isinff), N(finite), N(finitef), NA(__finitef, l_finitef), N(memmem), N(swab), N(lfind),
+    N(fnmatch), N(localeconv), N(mallinfo), N(mbstowcs), N(wcscasecmp), N(vswprintf),
+    N(iconv_open), N(iconv), N(iconv_close),
+    N(__memcpy_chk), N(__memmove_chk), N(__memset_chk), N(__strcpy_chk), N(__strcat_chk),
+    N(__strncpy_chk),
     { NULL, NULL },
 };

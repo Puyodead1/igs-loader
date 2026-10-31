@@ -7,7 +7,8 @@ shim libraries stop the walk; others are found by DT_SONAME in LIBS, the
 game's DATA lib dirs, then the set's /lib and /usr/lib), then prints every
 undefined symbol no loaded ELF module defines: the surface the native shims
 must provide.  Symbols win/ already provides are left out unless --all
-(it greps the NATIVE(...) / GLFN entries of win/*.c).  Run in WSL; the rom
+(it greps the N(...) entries of win/*.c; gl* are thunks, the preloaded DLLs'
+EXPORTs count too).  Run in WSL; the rom
 set comes from build/igs-romset (rompath and cache) unless --set names it.
 """
 import os, re, struct, subprocess, sys
@@ -17,8 +18,25 @@ NATIVE_LIBS = {
     "libc.so.6", "libm.so.6", "libpthread.so.0", "libdl.so.2", "librt.so.1",
     "libSDL-1.2.so.0", "libGL.so.1", "libXxf86vm.so.1", "libpci.so.3",
     "libncurses.so.5", "libX11.so.6", "libXext.so.6", "libXmu.so.6", "libXi.so.6",
-    "libtinfo.so.5", "libXt.so.6", "ld-linux.so.2",
+    "libtinfo.so.5", "libXt.so.6", "ld-linux.so.2", "libXaw.so.7", "libXpm.so.4",
+    "libXfont.so.1", "libSM.so.6", "libICE.so.6", "libXrandr.so.2",
 }
+
+
+def preloaded():
+    """The preloaded DLLs (igs_soname in their sources): their SONAMEs, and what they export."""
+    root = os.path.dirname(HERE)
+    names, syms = set(), set()
+    for top in ("machines", "games"):
+        for d, _, fs in os.walk(os.path.join(root, top)):
+            for f in fs:
+                if f.endswith(".c"):
+                    txt = open(os.path.join(d, f)).read()
+                    n = re.findall(r'igs_soname\[\]\s*=\s*"([^"]+)"', txt)
+                    if n:
+                        names |= set(n)
+                        syms |= set(re.findall(r'^EXPORT [^(=]*?\b(\w+)\s*\(', txt, re.M))
+    return names, syms
 
 
 def game(gid, setdir=None):
@@ -162,13 +180,15 @@ def main():
 
     exe = Elf(lib(sw.feature("binary")))
     mods, queue, seen, natives = [exe], [exe], set(), []
+    pre_names, pre_syms = preloaded() if sw.feature("preload", "") else (set(), set())
+    native = NATIVE_LIBS | pre_names
     while queue:
         e = queue.pop(0)
         for n in e.needed:
             if n in seen:
                 continue
             seen.add(n)
-            if n in NATIVE_LIBS:
+            if n in native:
                 natives.append(n)
                 continue
             f = find(n)
@@ -181,18 +201,19 @@ def main():
     print("native:", " ".join(natives))
     provided = set()
     if not show_all:
+        provided |= pre_syms
         for f in os.listdir(HERE):
             if f.endswith(".c"):
                 txt = open(os.path.join(HERE, f), errors="replace").read()
-                provided |= set(re.findall(r"\bN[DFA]?\(\s*([A-Za-z_][A-Za-z0-9_]*)", txt))
+                provided |= set(re.findall(r"\bN(?:[DFAZ]|OK)?\(\s*([A-Za-z_][A-Za-z0-9_]*)", txt))
     defs = set()
     for e in mods:
         defs |= e.defined()
     need = {}
     for e in mods:
         for n, v, weak in e.undefined():
-            if n in defs or n in provided:
-                continue
+            if n in defs or n in provided or (not show_all and re.match(r"gl[A-Z]", n)):
+                continue                     # gl*: thunks to opengl32 (gl.c)
             need.setdefault(n, set()).add("%s%s%s" % (os.path.basename(e.path), "@" + v if v else "", " (weak)" if weak else ""))
     print("native surface: %d symbols" % len(need))
     for n in sorted(need):

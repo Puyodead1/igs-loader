@@ -16,8 +16,8 @@ data is included.
 | `harpoonlagoon_m200uswa` | Harpoon Lagoon (M200US-WA) | E2100 | ✓ | ✓ |
 | `oceanparty_md105cn` | Ocean Party (MD105CN) | E2100 | ✓ | ✓ |
 | `scratch_m101cn` | Scratch (M101CN) | E2100 | ✓ | ✓ |
-| `heroofrobots_m100fa` | Hero of Robots (M100FA) | E2100 | ✓ | ✗ |
-| `goldcaptain` | Gold Captain | E2000 | ✓ | ✗ |
+| `heroofrobots_m100fa` | Hero of Robots (M100FA) | E2100 | ✓ | ✓ |
+| `goldcaptain` | Gold Captain | E2000 | ✓ | ✓ |
 
 Where the protection chip runs game logic whose code has not been dumped
 (Ocean Party's odds, Scratch's prizes, Gold Captain's weapon table), the
@@ -171,8 +171,8 @@ when `core/gen_font.py` is newer.
 ./win/build-win.sh
 ```
 
-This writes `build/win/igs-loader.exe`, `e2100.dll` and the game DLLs, all
-statically linked.
+This writes `build/win/igs-loader.exe`, the machine and game DLLs and the
+preloaded libraries, all statically linked.
 
 ## Documentation
 

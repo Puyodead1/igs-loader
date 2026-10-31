@@ -183,13 +183,12 @@ $ run.sh --verify scratch_m101cn       # the <rom> hashes, like mame -verifyroms
 | `binary` | the executable: relative to `data` (the cabinet runs `./FH` there) or a cabinet path |
 | `libs` | single libraries of the game's own (cabinet paths, or relative to `data`), exposed after the host's; the rest of the game's bundled libraries (SDL) stay hidden |
 | `env` | per-game environment, `NAME=value ...` (Mesa driconf workarounds, `IGS_NULL_DEVS`) |
-| `preload` | extra libraries from `build/` to preload (WSL) |
+| `preload` | extra libraries of the loader's to preload: `build/<name>.so` (WSL), `build\win\<name>.dll` (Windows; it exports `igs_soname`, the library it stands in for) |
 | `video_driver` / `audio_driver` | SDL drivers when the default (`wayland` / `pulseaudio`) does not apply |
 | `asset_mask` | the asset-cipher mask (exported to the machine as `IGS_ASSET_MASK`; also Scratch's executable mask) |
 | `rofs_profile` / `rofs_key` | E2100 root filesystem variant (`romtool/igs_rofs.py` profile) and its key literal |
 | `geca_sector` … `trim_step` | E2000 executable assembly (`romtool/igs_e2000_extract.py`) |
 | `build` | the builder's recipe (below) |
-| `windows` | `no`: the Windows loader refuses the game before extracting (`--check` still runs) |
 
 The description is the window title (exported as `IGS_NAME`).  The `<info
 name="usage">` line points at the game's page and its plugin tunables.
@@ -464,8 +463,8 @@ silent) and could stall the game.  Measure changes by recording
 - **X11.** On WSLg's Xwayland, Mesa's software GLX path answers the
   swap-interval request with `GLXBadContextTag` and the game dies.  Wayland
   with EGL avoids GLX entirely.
-- **Windows native.** See the next section: a native `.exe` runs the SDL
-  games (E2100) on the Windows GPU, with no WSL at run time.
+- **Windows native.** See the next section: a native `.exe` runs every game
+  here on the Windows GPU, with no WSL at run time.
 
 ## Windows
 
@@ -474,7 +473,7 @@ Windows program that loads the game's i386 ELF binary itself and runs it
 natively.  No WSL, VM or X server at run time; GL goes to the real Windows
 driver, so the games get the GPU.
 
-Status (2026-10-30, RTX 3060, Windows 11):
+Status (2026-10-31, RTX 3060, Windows 11):
 
 | Game | State |
 | --- | --- |
@@ -482,13 +481,14 @@ Status (2026-10-30, RTX 3060, Windows 11):
 | Harpoon Lagoon M001US-WA, M200US-WA | M001US-WA runs to attract from its `.7z` set (2026-10-30); M200US-WA links cleanly (`--check`) |
 | Ocean Party md105cn | attract, coins, rounds, overlay; sound |
 | Scratch m101cn | attract and coins at 60 fps; `libmikmod.so.2` missing (SDL_mixer's MOD support only) |
-| Hero of Robots, Gold Captain | not yet (see below) |
+| Gold Captain | attract after about 55 s, coins, captain select, stage; sound through `/dev/dsp`; windowed (the game asks for fullscreen) |
+| Hero of Robots m100fa | copyright screen after about 80 s, attract, coins, start, card input, fights, card debit and dispense, game over; sound; 60 fps |
 
 ### Usage
 
 ```powershell
 .\play-win.ps1 harpoonlagoon_m107us
-.\play-win.ps1 oceanparty_md105cn
+.\play-win.ps1 goldcaptain
 .\build\win\igs-loader.exe --list
 .\build\win\igs-loader.exe --verify scratch_m101cn
 .\build\win\igs-loader.exe --check scratch_m101cn
@@ -507,13 +507,13 @@ unresolved symbol, and exits (status 1 if any are missing).  It never starts the
 
 The variables from Usage above apply where they make sense: `IGS_SHOT`,
 `IGS_SHOT_EVERY`, `IGS_SCRIPT`, `IGS_FPS_CAP`, `IGS_FPS`, `IGS_VERBOSE`,
-`IGS_TITLE`, `IGS_FULLSCREEN`, `IGS_AUDIO_CHUNK`, `IGS_NULL_DEVS`, and the
-game plugins' own.  Windows only:
+`IGS_TITLE`, `IGS_FULLSCREEN`, `IGS_AUDIO_CHUNK`, `IGS_NULL_DEVS`,
+`IGS_DSP_LATENCY_MS`, and the game plugins' own.  Windows only:
 
 | Variable | Effect |
 | --- | --- |
-| `IGS_AUDIO_LOG=1` | log audio callback counts and peak level every 5 s (the first non-silent buffer is always logged) |
-| `IGS_BACKGROUND=1` | open the window without taking the keyboard focus (test runs) |
+| `IGS_AUDIO_LOG=1` | log audio callback (or `/dev/dsp` write) counts and peak level every 5 s (the first non-silent buffer is always logged) |
+| `IGS_BACKGROUND=1` | open the window without taking the keyboard focus (test runs; X11 games' windows also go to the bottom of the z-order) |
 | `IGS_VSYNC=1` | also wait for vblank (default: the frame cap alone paces) |
 | `IGS_MISSING_OK=1` | start even with unresolved symbols (they log and return 0 when called) |
 | `IGS_LDDEBUG=1` / `2` | loader detail: modules, inits, dlopen/dlsym / every symbol binding |
@@ -531,13 +531,15 @@ In WSL (needs `i686-w64-mingw32-gcc-posix`, mingw-w64 13):
 ./win/build-win.sh
 ```
 
-It produces `build/win/igs-loader.exe`, `e2100.dll` and the game plugin
-DLLs.  Everything is linked statically, so no other DLLs are needed.  The
-plugins build from their Linux sources unchanged:
-`win/compat/igs_plugin.h` is force-included, and `win/compat/` provides
-`<dlfcn.h>` (LoadLibrary) and `<sys/mman.h>` (anonymous VirtualAlloc).  It
-also pins the plugins' condition-variable deadlines to `CLOCK_REALTIME`,
-which is the clock winpthreads measures them against.
+It produces `build/win/igs-loader.exe`, `e2100.dll`, `e2000.dll`, the game
+plugin DLLs and the preloaded `libcasmcard.dll` / `libcasmcard-hero.dll`.
+Everything is linked statically, so no other DLLs are needed.  The plugins
+build from their Linux sources unchanged: `win/compat/igs_plugin.h` is
+force-included, and `win/compat/` provides `<dlfcn.h>` (LoadLibrary;
+`dlvsym(RTLD_NEXT, ...)` reaches the exe's native symbols through its export
+`igs_native_lookup`) and `<sys/mman.h>` (anonymous VirtualAlloc).  It also
+pins the plugins' condition-variable deadlines to `CLOCK_REALTIME`, which is
+the clock winpthreads measures them against.
 `win/elfdeps.py <id> [--set <dir>] [--all]` (WSL) follows `DT_NEEDED` offline the
 way the exe does and lists the symbols no loaded ELF module defines and
 `win/*.c` does not provide.
@@ -549,13 +551,20 @@ way the exe does and lists the symbols no loaded ELF module defines and
   `DATA/lib`, `DATA/libs` and `DATA`, then the set's `/lib` and
   `/usr/lib`.  That covers libstdc++ 6.0.10, libgcc_s 4.3.2,
   SDL_mixer, GLU, zlib, libmad, libjpeg, GLEW, zziplib, and
-  libvorbisfile/libogg (dlopened by SDL_mixer).  The OS-boundary libraries
-  are native (`win/*.c`):
+  libvorbisfile/libogg (dlopened by SDL_mixer), Ogre, Cg, freetype.  The
+  OS-boundary libraries are native (`win/*.c`):
   - libc, libm, libpthread, libdl;
   - SDL 1.2;
   - libGL/GLX;
-  - empty stand-ins for libXxf86vm, libpci, ncurses and X11 helpers that no
-    game here calls.
+  - libX11/libXext (`x11.c`);
+  - empty stand-ins for libXt, libXaw, libXpm, libXmu, libSM, libICE,
+    libXfont, libXrandr, libXxf86vm, libpci and ncurses (Ogre's config dialog
+    and helpers no game here calls).
+- **Preload.**  The `preload` libraries are DLLs next to the exe, built from
+  the same sources as `build/<name>.so`.  Each sits in the lookup order right
+  after the executable, as `LD_PRELOAD` puts it, under the SONAME it exports
+  as `igs_soname`: `/lib/libcasmcard.so` (E2000) and `libcasmcard.so` (Hero
+  of Robots' card, whose `rand()` wrapper reaches the native `rand()`).
 - **Loader (`elf.c`).**
   - Address space: the executable maps at its link address (main reserves
     `0x08000000` before anything else allocates).  Libraries map anywhere.
@@ -578,9 +587,13 @@ way the exe does and lists the symbols no loaded ELF module defines and
   `NT_TIB.ArbitraryUserPointer`, a per-thread word.  `__stack_chk_fail`
   logs once and returns.
 - **Calls into ELF code** (thread entries, the audio callback, qsort
-  comparators, init functions, RWops callbacks) go through `elf_call`, which
-  aligns the stack to 16 bytes.  Threads also set x87 precision to 64 bits,
-  as on Linux.
+  comparators, init functions, RWops callbacks, Xlib predicates) go through
+  `elf_call`, which aligns the stack to 16 bytes.  Threads also set x87
+  precision to 64 bits, as on Linux.
+- **Stacks** are committed in full (main thread 16 MiB, threads 8 MiB or
+  the game's size).  Linux code has no stack probes: a frame larger than a
+  page skips the guard page of a growing stack, and Windows then kills the
+  process without an exception (Hero of Robots at start-up).
 - **GL (`gl.c`).** Every GL entry point is a 16-byte stub into one shared
   thunk.  The thunk:
   1. saves the return address and `esp` in two TLS slots
@@ -591,6 +604,27 @@ way the exe does and lists the symbols no loaded ELF module defines and
   Targets come from opengl32's exports or, once a context exists,
   `wglGetProcAddress`.  Missing ones return 0.
   `glXGetProcAddressARB` answers with the same stubs.
+- **X11 and GLX (`x11.c`).**  For Gold Captain's built-in SDL (X11 video,
+  `dlopen("libGL.so.1")`) and Ogre's GLX render system with OIS.
+  - Structures use the i386 Xlib layouts (`Display`, `Screen`, `Visual`,
+    `XEvent`...), since the games read them through Xlib's macros.
+  - Displays: any number (Ogre opens two, OIS a third), each with its own
+    event queue.  `ConnectionNumber` is a placeholder fd; `select()` reports
+    it readable while events are queued.
+  - Windows: one UI thread owns the Win32 windows and turns their messages
+    into X events (keys, buttons, motion, focus, `WM_DELETE_WINDOW`) for
+    every display that selected them; map, configure, expose and visibility
+    events come from the calls themselves.  Top-level windows are captioned
+    windows, children are child windows (SDL's GL window in its WM window).
+  - Keyboard: keycode = scancode + 8 (+ 0x80 extended), keysyms from the
+    virtual keys.  Every key also goes to the machine plugin, as `core.c`'s
+    `XNextEvent` hook does.  Auto-repeat is dropped.
+  - GLX 1.2 and 1.3 on WGL: visuals and FBConfigs are fixed RGBA8
+    configurations (depth 24, stencil 8 when asked); a context gets its pixel
+    format and `HGLRC` at its first `glXMakeCurrent`.  `glXSwapBuffers` runs
+    the overlay, `IGS_SHOT` and the frame cap, so `dlsym("glXSwapBuffers")`
+    needs no hook.  Swap intervals are no-ops.
+  - The core's title goes on the top-level window the game titled.
 - **SDL (`sdl.c`).**
   - Video: a Win32 window with a WGL context; GL attributes become the
     pixel format.
@@ -627,6 +661,10 @@ way the exe does and lists the symbols no loaded ELF module defines and
 - **Core (`core_win.c`).** The same features as `core/core.c`:
   - the machine DLL's device files;
   - the empty OSS mixer, `IGS_NULL_DEVS`, no clock setting;
+  - OSS `/dev/dsp` on waveOut: `core.c`'s ioctls; writes queue waveOut
+    buffers and block while `IGS_DSP_LATENCY_MS` is queued, which paces the
+    game's audio thread.  A rate waveOut refuses (Gold Captain's 22000 Hz)
+    plays at the nearest standard one;
   - overlay, `IGS_SHOT`, `IGS_SCRIPT`, frame cap, window title.
 
   MMIO traps are `PAGE_NOACCESS` regions emulated in a vectored exception
@@ -647,24 +685,17 @@ way the exe does and lists the symbols no loaded ELF module defines and
   not written back.
 - **Locale:** the C locale only.
 - **Video:** `IGS_FULLSCREEN` switches the display mode with
-  `ChangeDisplaySettings` (untested).
-- **Audio:** WAV loading handles PCM only.  `/dev/dsp` (E2000) is not
-  implemented.
-
-### Not yet: Hero of Robots, Gold Captain
-
-- **Hero of Robots** (Ogre, OIS, X11).
-  - It needs a native X11/GLX layer: window, `glXChooseVisual` /
-    `glXCreateContext` / `glXMakeCurrent` / `glXSwapBuffers` on WGL, and
-    keyboard events as `XNextEvent` key events for OIS.
-  - Ogre and its plugins load as ELF through `dlopen`, which already works.
-  - The loader is `--large-address-aware` for its memory.
-  - Its `libcasmcard.so` preload would become a native module or an
-    `IGS_PRELOAD` of the plugin.
-- **Gold Captain** (SDL and X11 linked in statically, OSS `/dev/dsp`).
-  - It needs the same X11/GLX layer plus `/dev/dsp` on waveOut.  The OSS
-    ioctl handling of `core.c` carries over.
-  - The `XOpenDisplay` lock workaround and the X11 grab no-ops become
-    unnecessary.
-- Both are reached by adding native symbol tables (`win/x11.c`).  The loader
-  and the rest of the core do not need to change.
+  `ChangeDisplaySettings` (untested).  X11: SDL's fullscreen window
+  (override-redirect) stays hidden unless `IGS_FULLSCREEN`; the GL window
+  stays in its WM window, which takes its size.
+- **Audio:** WAV loading handles PCM only.  Without an audio device the SDL
+  callbacks and `/dev/dsp` writes still run, at the real rate, into nothing
+  (the games exit when audio fails to open).
+- **X11:** no extensions (XShm, XF86VidMode, DGA, RandR... report absent);
+  grabs, pointer warps and auto-repeat changes are no-ops; pixmaps, GCs and
+  drawing calls do nothing; window properties other than the title are
+  dropped.  Xt/Xaw calls return 0.
+- **libc:** `iconv` knows UTF-8, `WCHAR_T`/UCS-4LE, UTF-16LE, Latin-1 and
+  the Windows code pages for GBK, Big5, Shift_JIS and EUC-KR; `vswprintf`
+  does not convert `%ls` arguments; `mremap` always moves; no SysV shared
+  memory, mount table, users or port I/O.

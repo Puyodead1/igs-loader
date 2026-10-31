@@ -4,7 +4,8 @@
  * The .exe loads the game's i386 Linux ELF binary and its non-system
  * libraries (libstdc++, SDL_mixer, zlib...) itself, and provides the
  * OS-boundary libraries natively: glibc (libc/libm/libpthread/libdl), SDL 1.2,
- * libGL/GLX (thunks to opengl32) and empty stand-ins for X11 helpers.
+ * libGL/GLX (thunks to opengl32), Xlib/Xext on Win32 and empty stand-ins for
+ * the X toolkit libraries.
  * Native functions are named l_<linux name>; Linux structures are declared
  * here with the i386 glibc layout (l_ prefix).  See docs/IGS_LOADER.md.
  */
@@ -30,8 +31,9 @@ struct nsym {
 #define ND(name, p)    { #name, (void *)(p) }
 
 extern const struct nsym libc_syms[], sys_syms[], thread_syms[], elf_syms[],
-    sdl_syms[], gl_syms[];
+    sdl_syms[], gl_syms[], x11_syms[];
 void libc_init(void);
+void x11_init(void);
 void sys_init(void);
 void thread_init(void);
 void elf_reserve_low(void);
@@ -79,6 +81,7 @@ static inline uint32_t elf_call4(void *f, uint32_t a, uint32_t b, uint32_t c, ui
 struct elf_mod;
 void elf_add_search(const char *path);        /* a dir or one library file */
 void elf_set_native(const struct nsym *const *tables);
+void elf_preload(const char *soname, void *dll);   /* before elf_load_exe */
 struct elf_mod *elf_load_exe(const char *path);
 int elf_link_all(int check_only);             /* resolve + relocate; missing count */
 void elf_run_inits(int argc, char **argv, char **envp);

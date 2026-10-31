@@ -62,7 +62,7 @@ int main(int argc, char **argv)
     const char *game = NULL, *v, *bin;
     int check = 0, listing = 0, verify = 0, i, n, missing;
     struct elf_mod *em;
-    const struct nsym *tables[8];
+    const struct nsym *tables[9];
 
     /* first of all: keep the executable's link address range free */
     elf_reserve_low();
@@ -110,11 +110,6 @@ int main(int argc, char **argv)
         fprintf(stderr, "unknown game %s (igs-loader --list shows the ids)\n", game);
         return 1;
     }
-    /* before extracting: games the Windows loader cannot run yet (X11/GLX, OSS) */
-    if (!verify && !check && !strcmp(sw_feature(sw, "windows", ""), "no")) {
-        fprintf(stderr, "%s is not supported on Windows yet; use the Linux/WSL loader\n", sw->description);
-        return 1;
-    }
     if (rs_open(game, rootfs, sizeof(rootfs))) {
         fprintf(stderr, "%s\n", rs_error);
         return 1;
@@ -135,6 +130,11 @@ int main(int argc, char **argv)
     setenv_kv("IGS_ASSET_MASK", mget("asset_mask", ""));
     setenv_kv("IGS_VARIANT", mget("variant", ""));
     setenv_kv("IGS_NAME", sw->description);
+    /* SDL built into the game (E2000): its drivers, as run.sh sets them */
+    if ((v = mget("video_driver", NULL)) && !getenv("SDL_VIDEODRIVER"))
+        setenv_kv("SDL_VIDEODRIVER", v);
+    if ((v = mget("audio_driver", NULL)) && !getenv("SDL_AUDIODRIVER"))
+        setenv_kv("SDL_AUDIODRIVER", v);
     /* env: per-game NAME=value words */
     if ((v = mget("env", NULL))) {
         char envs[1024], *save = NULL, *w;
@@ -149,14 +149,43 @@ int main(int argc, char **argv)
     thread_init();
     sdl_init();
     gl_init();
+    x11_init();
     tables[0] = libc_syms;
     tables[1] = sys_syms;
     tables[2] = thread_syms;
     tables[3] = elf_syms;
     tables[4] = sdl_syms;
     tables[5] = gl_syms;
-    tables[6] = NULL;
+    tables[6] = x11_syms;
+    tables[7] = NULL;
     elf_set_native(tables);
+
+    /*
+     * preload: libraries of the loader's own (build/<name>.so on Linux) as
+     * DLLs next to the exe; each exports igs_soname, the library it stands in for
+     */
+    if ((v = mget("preload", NULL))) {
+        char pre[512], *save = NULL, *w;
+
+        snprintf(pre, sizeof(pre), "%s", v);
+        for (w = strtok_r(pre, " ", &save); w; w = strtok_r(NULL, " ", &save)) {
+            HMODULE h;
+            const char *soname;
+
+            snprintf(buf, sizeof(buf), "%s\\%s", exedir, w);
+            if ((p = strstr(buf, ".so")) && !p[3])
+                *p = 0;
+            strncat(buf, ".dll", sizeof(buf) - strlen(buf) - 1);
+            h = LoadLibraryA(buf);
+            soname = h ? (const char *)(void *)GetProcAddress(h, "igs_soname") : NULL;
+            if (!soname) {
+                LOG("preload %s: cannot load %s (error %lu)", w, buf, GetLastError());
+                return 1;
+            }
+            elf_preload(soname, h);
+            LOG("preload %s as %s", buf, soname);
+        }
+    }
 
     /* the set is the cabinet's root fs; DATA (the game's cwd) is inside it */
     lx_set_dirs("", "");

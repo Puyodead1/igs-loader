@@ -30,8 +30,10 @@ static __thread struct lthread *self_t;
 static DWORD WINAPI thread_main(void *p)
 {
     struct lthread *t = p;
+    ULONG guarantee = 64 << 10;
 
     self_t = t;
+    SetThreadStackGuarantee(&guarantee);           /* room to report a stack overflow */
     _control87(_PC_64, _MCW_PC);
     t->ret = (void *)(uintptr_t)elf_call1(t->fn, U32(t->arg));
     return 0;
@@ -43,8 +45,14 @@ void *lx_thread_create(void *fn, void *arg, size_t stack)
 
     t->fn = fn;
     t->arg = arg;
-    t->h = CreateThread(NULL, stack ? stack : 8 << 20, thread_main, t,
-                        STACK_SIZE_PARAM_IS_A_RESERVATION, &t->tid);
+    if (lx_verbose)
+        LOG("thread %p: stack %u KiB", fn, (unsigned)(stack ? stack : 8 << 20) >> 10);
+    /*
+     * Committed in full: Linux code has no stack probes, and a frame larger
+     * than a page can skip the guard page of a growing Windows stack (a fault
+     * Windows cannot even report).
+     */
+    t->h = CreateThread(NULL, stack ? stack : 8 << 20, thread_main, t, 0, &t->tid);
     if (!t->h) {
         free(t);
         return NULL;

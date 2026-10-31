@@ -36,7 +36,14 @@
 #define LOG(...) do { fputs("[igs] card: ", stderr); fprintf(stderr, __VA_ARGS__); \
                       fputc('\n', stderr); } while (0)
 
+#ifdef _WIN32
+#define EXPORT __declspec(dllexport)
+#else
 #define EXPORT __attribute__((visibility("default")))
+#endif
+
+/* the Windows loader's preload: the library this one stands in for (its SONAME) */
+EXPORT const char igs_soname[] = "libcasmcard.so";
 
 /* ---- 2048-bit arithmetic (little-endian 32-bit limbs) ------------------------- */
 

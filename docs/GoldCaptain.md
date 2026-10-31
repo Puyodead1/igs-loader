@@ -18,11 +18,12 @@ the executable was built 12 Mar 2009 and the kernel is `2.4.31-IGS_V1.0`
 ## Playing
 
 ```powershell
-.\play.ps1 goldcaptain
+.\play.ps1 goldcaptain        # WSL
+.\play-win.ps1 goldcaptain    # native Windows
 ```
 
-Loading takes about 50 s from the Windows drive, before the attract
-screen.
+Loading takes about 50 s before the attract screen.  The game asks for
+fullscreen; the Windows loader keeps it windowed unless `IGS_FULLSCREEN=1`.
 
 | Key | Cabinet |
 | --- | --- |
@@ -38,6 +39,7 @@ screen.
   the rom set (the IGS036's NVRAM; for a `.7z` set that is the cache,
   `<cache>/linux/goldcaptain/GoldCaptain/var/`).  Delete the file for
   factory settings.
+- **On Windows** the NVRAM is in `<cache>\windows\goldcaptain\GoldCaptain\var\`.
 - **The lever** turns while Left/Right is held, about 1.4 s from centre to
   full lock, and springs back to centre when released.  `GC_STEER=<n>`
   sets the turn rate in VR units per frame (default 3; the VR runs
@@ -108,6 +110,8 @@ Done:
       transport with RC4-wrapped keys, `/dev/roio`, `/dev/pccard0`.
 - [x] Core: X11 keys, the GLX swap hook, OSS `/dev/dsp` → PulseAudio, the
       Xlib lock and SIGSEGV-handler fixes (`IGS_LOADER.md`).
+- [x] Windows: Xlib/GLX on WGL, `/dev/dsp` on waveOut (`IGS_LOADER.md`,
+      Windows).
 - [x] `games/goldcaptain`: the sprite-group store (commands 6–10), NVRAM
       (13/14), inputs, coins, the overlay.
 

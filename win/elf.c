@@ -80,6 +80,7 @@ struct elf_mod {
     char name[128];             /* DT_SONAME, or the file name */
     char path[MAX_PATH];
     int native, is_exe;
+    HMODULE dll;                /* a preloaded native module: its exports */
     uintptr_t bias;             /* load address minus link address */
     uint8_t *map;
     size_t maplen;
@@ -191,6 +192,12 @@ void *native_lookup(const char *name)
     return NULL;
 }
 
+/* for preloaded DLLs: the shims behind dlvsym(RTLD_NEXT, ...) (win/compat/dlfcn.h) */
+__declspec(dllexport) void *igs_native_lookup(const char *name)
+{
+    return native_lookup(name);
+}
+
 /* libraries the .exe provides natively (or as empty stand-ins) */
 static int is_native_lib(const char *name)
 {
@@ -199,7 +206,7 @@ static int is_native_lib(const char *name)
         "libSDL-1.2.so", "libGL.so", "libXxf86vm.so", "libpci.so", "libncurses.so",
         "libtinfo.so", "libX11.so", "libXext.so", "libXmu.so", "libXi.so", "libXt.so",
         "libSM.so", "libICE.so", "libXrandr.so", "libXrender.so", "libXau.so", "libXdmcp.so",
-        "libxcb.so", NULL,
+        "libxcb.so", "libXaw.so", "libXpm.so", "libXfont.so", NULL,
     };
     int i;
 
@@ -767,6 +774,16 @@ static void *scope_lookup(const char *name, const char *ver, struct elf_mod *ski
 
             if (m == skip)
                 continue;
+            if (m->dll) {
+                void *p = (void *)GetProcAddress(m->dll, name);
+
+                if (p) {
+                    *def = m;
+                    *defsym = NULL;
+                    return p;
+                }
+                continue;
+            }
             if (m->native) {
                 void *p;
 
@@ -1006,7 +1023,7 @@ int elf_link_all(int check_only)
     n = link_new();
     LOG("modules:");
     for (m = mods; m; m = m->next)
-        LOG("  %-28s %s", m->name, m->native ? "(native)" : m->path);
+        LOG("  %-28s %s", m->name, m->dll ? m->path : m->native ? "(native)" : m->path);
     if (n) {
         LOG("%d unresolved symbol%s:", n, n > 1 ? "s" : "");
         for (mi = missing; mi; mi = mi->next)
@@ -1063,8 +1080,26 @@ void elf_run_inits(int argc, char **argv, char **envp)
         init_mod(m);
 }
 
+/*
+ * Preloaded native modules (the feature "preload"): DLLs whose exports stand
+ * in for the library named soname, ahead of everything but the executable
+ * in the lookup order, as LD_PRELOAD puts them.
+ */
+static struct { char soname[128]; HMODULE dll; } preloads[8];
+static int npreloads;
+
+void elf_preload(const char *soname, void *dll)
+{
+    if (npreloads < 8) {
+        snprintf(preloads[npreloads].soname, sizeof(preloads[0].soname), "%s", soname);
+        preloads[npreloads++].dll = dll;
+    }
+}
+
 struct elf_mod *elf_load_exe(const char *path)
 {
+    int i;
+
     if (!dl_lock_init) {
         InitializeCriticalSection(&dl_lock);
         dl_lock_init = 1;
@@ -1073,6 +1108,17 @@ struct elf_mod *elf_load_exe(const char *path)
     if (!exe_mod) {
         LOG("%s", dl_error);
         return NULL;
+    }
+    for (i = 0; i < npreloads; i++) {
+        struct elf_mod *m = calloc(1, sizeof(*m));
+
+        snprintf(m->name, sizeof(m->name), "%s", preloads[i].soname);
+        GetModuleFileNameA(preloads[i].dll, m->path, sizeof(m->path));
+        m->native = 1;
+        m->dll = preloads[i].dll;
+        m->linked = m->inited = m->loaded_deps = 1;
+        mods_tail->next = m;
+        mods_tail = m;
     }
     if (load_deps(exe_mod))
         return NULL;
@@ -1266,7 +1312,9 @@ void *elf_dlsym(void *h, const char *name)
     void *p = NULL;
 
     if (h && h != (void *)-1 && h != exe_mod) {
-        if (m->native)
+        if (m->dll)
+            p = (void *)GetProcAddress(m->dll, name);
+        else if (m->native)
             p = native_lookup(name);
         else if ((s = mod_find(m, name, NULL, 1)))
             p = (void *)(m->bias + s->st_value);

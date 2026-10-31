@@ -1052,6 +1052,23 @@ static int l_munmap(void *p, size_t len)
     return 0;
 }
 
+/* MREMAP_MAYMOVE (1): a new mapping and a copy */
+static void *l_mremap(void *old, size_t oldlen, size_t len, int flags, ...)
+{
+    void *p;
+
+    if (!(flags & 1)) {
+        SET_ERRNO(ENOMEM);
+        return (void *)-1;
+    }
+    p = do_mmap(NULL, len, 3, L_MAP_ANONYMOUS | 2, -1, 0);
+    if (p == (void *)-1)
+        return p;
+    memcpy(p, old, oldlen < len ? oldlen : len);
+    l_munmap(old, oldlen);
+    return p;
+}
+
 static int l_mprotect(void *p, size_t len, int prot) { (void)p; (void)len; (void)prot; return 0; }
 static int l_msync(void *p, size_t len, int fl) { (void)p; (void)len; (void)fl; return 0; }
 static int l_madvise(void *p, size_t len, int a) { (void)p; (void)len; (void)a; return 0; }
@@ -1364,6 +1381,33 @@ static long l_sysconf(int name)
     }
 }
 static int l_getpagesize(void) { return 4096; }
+static int l_get_nprocs(void) { return (int)l_sysconf(84); }
+
+/* the cabinet's /etc/mtab, users, port I/O and SysV shared memory: none here */
+static void *l_setmntent(const char *f, const char *m) { (void)f; (void)m; return NULL; }
+static void *l_getmntent(void *f) { (void)f; return NULL; }
+static int l_endmntent(void *f) { (void)f; return 1; }
+static void *l_getpwnam(const char *n) { (void)n; return NULL; }
+static int l_setuid(int u) { (void)u; return 0; }
+static int l_ioperm(unsigned long from, unsigned long n, int on)
+{
+    (void)from; (void)n; (void)on;
+    SET_ERRNO(EPERM);
+    return -1;
+}
+static int l_shm_fail(void) { SET_ERRNO(L_ENOSYS); return -1; }
+static void *l_shmat(int id, const void *a, int f) { (void)id; (void)a; (void)f; SET_ERRNO(L_ENOSYS); return (void *)-1; }
+
+static char *l_tmpnam(char *s)
+{
+    static char buf[64];
+    static LONG n;
+
+    if (!s)
+        s = buf;
+    snprintf(s, 20, "/tmp/igs%05ld", (long)InterlockedIncrement(&n));
+    return s;
+}
 static void l_sync(void) { }
 static int l_fsync(int fd) { (void)fd; return 0; }
 static int l_getrlimit(int r, uint32_t *rl) { (void)r; rl[0] = rl[1] = 0xffffffff; return 0; }
@@ -1458,7 +1502,10 @@ const struct nsym sys_syms[] = {
     N(wait), N(popen), N(pclose), N(getpid), N(getppid), N(getuid), NA(geteuid, l_getuid),
     NA(getgid, l_getuid), NA(getegid, l_getuid), N(setsid), N(umask), N(nice), N(uname),
     N(gethostname), N(sysconf), N(getpagesize), N(sync), N(fsync), NA(fdatasync, l_fsync),
-    N(getrlimit), N(setrlimit), N(getrusage),
+    N(getrlimit), N(setrlimit), N(getrusage), N(get_nprocs), NA(get_nprocs_conf, l_get_nprocs),
+    N(setmntent), N(getmntent), N(endmntent), N(getpwnam), N(setuid), N(ioperm),
+    NA(shmget, l_shm_fail), N(shmat), NA(shmdt, l_shm_fail), NA(shmctl, l_shm_fail), N(tmpnam),
+    N(mremap),
     N(socket), NA(connect, l_net_fail), NA(bind, l_net_fail), NA(listen, l_net_fail),
     NA(accept, l_net_fail), NA(setsockopt, l_net_fail), NA(sendto, l_net_fail),
     NA(recvfrom, l_net_fail), N(syscall),

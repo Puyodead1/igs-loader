@@ -21,7 +21,8 @@ WSL's 9p mount).
 ## Playing
 
 ```powershell
-.\play.ps1 heroofrobots_m100fa
+.\play.ps1 heroofrobots_m100fa        # WSL
+.\play-win.ps1 heroofrobots_m100fa    # native Windows: the copyright screen after about 80 s
 ```
 
 The game's own keyboard handling is off (`KeyMgr::keyPressed` ignores all
@@ -257,6 +258,10 @@ the first `Game::Process`.
   and global auto-repeat off into no-ops.
 - Shaders: most are `arbvp1`/`arbfp1`; a few effects are `vp40`/`fp40`
   only and are missing on llvmpipe (guess: billboards, water).
+- **Windows:** Ogre's GLX render system and OIS on the native Xlib/GLX
+  (`IGS_LOADER.md`, Windows), on the host GPU.  libXaw, libXt, libSM, libICE,
+  libXpm and libXfont are empty stand-ins; the card library is preloaded as
+  `libcasmcard-hero.dll`.
 
 ## Open
 

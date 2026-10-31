@@ -187,15 +187,12 @@ static const char *l_glXQueryExtensionsString(void *dpy, int screen)
     return "GLX_ARB_get_proc_address";
 }
 
-static int fake_display[64];
-static void *l_glXGetCurrentDisplay(void) { return fake_display; }
-static void *l_glXGetCurrentContext(void) { return wglGetCurrentContext(); }
 static int l_glXQueryExtension(void *dpy, int *e, int *v) { (void)dpy; if (e) *e = 0; if (v) *v = 0; return 1; }
 
+/* contexts, visuals and drawables: x11.c */
 const struct nsym gl_syms[] = {
     N(glXGetProcAddressARB), NA(glXGetProcAddress, l_glXGetProcAddressARB),
     N(glXQueryVersion), N(glXGetClientString), N(glXQueryExtensionsString),
-    NA(glXQueryServerString, l_glXGetClientString), N(glXGetCurrentDisplay),
-    N(glXGetCurrentContext), N(glXQueryExtension),
+    NA(glXQueryServerString, l_glXGetClientString), N(glXQueryExtension),
     { NULL, NULL },
 };

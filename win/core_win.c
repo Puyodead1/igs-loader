@@ -4,13 +4,14 @@
  *     device files (open/ioctl/mmap/close, read/write, termios) to it;
  *   - MMIO traps: PAGE_NOACCESS regions whose accesses (the games' plain
  *     movs) are emulated in a vectored exception handler;
- *   - an empty OSS mixer, IGS_NULL_DEVS;
+ *   - an empty OSS mixer, OSS /dev/dsp on waveOut, IGS_NULL_DEVS;
  *   - the overlay (fixed-function GL before each swap), IGS_SHOT frame dumps,
  *     IGS_SCRIPT key presses, the frame cap, the window title;
  *   - crash reports for faults in ELF code (module+offset, registers).
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <mmsystem.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -239,6 +240,11 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS *ep)
         crash_report(ep);
         fflush(NULL);
         ExitProcess(139);
+    }
+    /* IGS_VERBOSE: first-chance faults in native code too (drivers may handle their own) */
+    if ((lx_verbose && code == EXCEPTION_ACCESS_VIOLATION) || code == EXCEPTION_STACK_OVERFLOW) {
+        LOG("first-chance fault in native code:");
+        crash_report(ep);
     }
     return EXCEPTION_CONTINUE_SEARCH;
 }
@@ -601,6 +607,197 @@ void core_key(int sym, int down)
         machine->key(sym, down);
 }
 
+/* ---- OSS /dev/dsp on waveOut ------------------------------------------------------------------------- */
+
+/*
+ * For games with SDL's OSS driver built in (E2000).  The game's writes are
+ * queued as waveOut buffers and block while about IGS_DSP_LATENCY_MS
+ * (default 60) is queued, which paces the game's audio thread as a real
+ * /dev/dsp does.  The device opens at the first write, after the ioctls.
+ * Only the ioctls SDL 1.2's "dsp" driver uses (core.c's set).
+ */
+#define DSP_BUFS 32
+#define DSP_CHUNK 16384
+static struct {
+    int fd, rate, channels, fmt, fragsize, nfrags, bps;
+    HWAVEOUT wo;
+    HANDLE ev;
+    WAVEHDR hdr[DSP_BUFS];
+    int next, heard, peak;
+} dsp = { -1, 8000, 1, 8, 4096, 4, 0, NULL, NULL, { { 0 } }, 0, 0, 0 };
+
+static int dsp_open(void)
+{
+    dsp.fd = core_placeholder_fd();
+    dsp.rate = 8000;
+    dsp.channels = 1;
+    dsp.fmt = 8;
+    dsp.fragsize = 4096;
+    dsp.nfrags = 4;
+    return dsp.fd;
+}
+
+static void dsp_ioctl(unsigned long req, int *arg)
+{
+    switch (req) {
+    case 0xC0045002: dsp.rate = *arg; break;                         /* SPEED */
+    case 0xC0045003: dsp.channels = *arg ? 2 : 1; break;             /* STEREO */
+    case 0xC0045006: dsp.channels = *arg >= 2 ? 2 : 1; *arg = dsp.channels; break;
+    case 0xC0045005:                                                 /* SETFMT */
+        if (*arg != 8 && *arg != 16)
+            *arg = 16;
+        dsp.fmt = *arg;
+        break;
+    case 0x8004500B: *arg = 8 | 16; break;                           /* GETFMTS */
+    case 0xC004500A:                                                 /* SETFRAGMENT */
+        dsp.fragsize = 1 << (*arg & 0xffff);
+        dsp.nfrags = (*arg >> 16) & 0x7fff;
+        break;
+    case 0xC0045004: *arg = dsp.fragsize; break;                     /* GETBLKSIZE */
+    case 0x8010500C:                                                 /* GETOSPACE */
+        arg[0] = arg[1] = dsp.nfrags;
+        arg[2] = dsp.fragsize;
+        arg[3] = dsp.nfrags * dsp.fragsize;
+        break;
+    case 0x8004500F: *arg = 0; break;                                /* GETCAPS */
+    default: break;                                                  /* RESET, SYNC, POST, ... */
+    }
+}
+
+static int dsp_start(void)
+{
+    WAVEFORMATEX wf;
+    MMRESULT r;
+    int i;
+
+    memset(&wf, 0, sizeof(wf));
+    wf.wFormatTag = WAVE_FORMAT_PCM;
+    wf.nChannels = (WORD)dsp.channels;
+    wf.nSamplesPerSec = dsp.rate;
+    wf.wBitsPerSample = (WORD)(dsp.fmt == 16 ? 16 : 8);
+    wf.nBlockAlign = (WORD)(wf.nChannels * wf.wBitsPerSample / 8);
+    wf.nAvgBytesPerSec = wf.nSamplesPerSec * wf.nBlockAlign;
+    dsp.bps = wf.nAvgBytesPerSec;
+    dsp.ev = CreateEventA(NULL, FALSE, FALSE, NULL);
+    r = waveOutOpen(&dsp.wo, WAVE_MAPPER, &wf, (DWORD_PTR)dsp.ev, 0, CALLBACK_EVENT);
+    if (r == WAVERR_BADFORMAT) {
+        /* an odd rate (Gold Captain asks 22000 Hz): the nearest standard one, 0.2% off */
+        static const int rates[] = { 8000, 11025, 16000, 22050, 32000, 44100, 48000 };
+        int i, best = 0;
+
+        for (i = 1; i < 7; i++)
+            if (abs(rates[i] - dsp.rate) < abs(rates[best] - dsp.rate))
+                best = i;
+        wf.nSamplesPerSec = rates[best];
+        wf.nAvgBytesPerSec = wf.nSamplesPerSec * wf.nBlockAlign;
+        r = waveOutOpen(&dsp.wo, WAVE_MAPPER, &wf, (DWORD_PTR)dsp.ev, 0, CALLBACK_EVENT);
+        dsp.bps = wf.nAvgBytesPerSec;
+    }
+    LOG("dsp: %d Hz, %d ch, %d bit -> waveOut %lu Hz %s (%u)", dsp.rate, dsp.channels,
+        wf.wBitsPerSample, wf.nSamplesPerSec, r ? "failed" : "ok", r);
+    if (r) {
+        dsp.wo = NULL;
+        return -1;
+    }
+    for (i = 0; i < DSP_BUFS; i++) {
+        memset(&dsp.hdr[i], 0, sizeof(WAVEHDR));
+        dsp.hdr[i].lpData = malloc(DSP_CHUNK);
+    }
+    dsp.next = 0;
+    return 0;
+}
+
+/* the first non-silent write; IGS_AUDIO_LOG=1: writes and peak level every 5 s */
+static void dsp_stats(const uint8_t *buf, size_t n)
+{
+    static double t0;
+    static long writes;
+    int peak = 0;
+    size_t i;
+
+    for (i = 0; i + 1 < n; i += 2) {
+        int s = dsp.fmt == 16 ? abs(*(const int16_t *)(buf + i)) : abs(buf[i] - 128) * 256;
+
+        if (s > peak)
+            peak = s;
+    }
+    writes++;
+    if (peak > 64 && !dsp.heard++)
+        LOG("dsp: first non-silent write after %ld writes (peak %d)", writes, peak);
+    if (peak > dsp.peak)
+        dsp.peak = peak;
+    if (lx_env("IGS_AUDIO_LOG", NULL) && lx_now() - t0 >= 5) {
+        LOG("dsp: %ld writes, peak %d", writes, dsp.peak);
+        dsp.peak = 0;
+        t0 = lx_now();
+    }
+}
+
+static long dsp_write(const uint8_t *buf, size_t n)
+{
+    size_t done = 0;
+    long target;
+
+    if (!dsp.wo && !dsp.bps && dsp_start()) {
+        /* no device: drain at the real rate so the game keeps time */
+        dsp.bps = dsp.rate * dsp.channels * (dsp.fmt == 16 ? 2 : 1);
+    }
+    dsp_stats(buf, n);
+    if (!dsp.wo) {
+        lx_usleep((int64_t)n * 1000000 / (dsp.bps ? dsp.bps : 8000));
+        return (long)n;
+    }
+    target = dsp.bps * lx_env_long("IGS_DSP_LATENCY_MS", 60) / 1000;
+    while (done < n) {
+        size_t len = n - done < DSP_CHUNK ? n - done : DSP_CHUNK;
+        WAVEHDR *h = &dsp.hdr[dsp.next];
+
+        if ((long)len * 3 > target)
+            target = (long)len * 3;
+        for (;;) {
+            long queued = 0;
+            int i;
+
+            for (i = 0; i < DSP_BUFS; i++)
+                if ((dsp.hdr[i].dwFlags & WHDR_PREPARED) && !(dsp.hdr[i].dwFlags & WHDR_DONE))
+                    queued += dsp.hdr[i].dwBufferLength;
+            if ((!(h->dwFlags & WHDR_PREPARED) || (h->dwFlags & WHDR_DONE)) &&
+                (!queued || queued + (long)len <= target))
+                break;
+            WaitForSingleObject(dsp.ev, 5);
+        }
+        if (h->dwFlags & WHDR_PREPARED)
+            waveOutUnprepareHeader(dsp.wo, h, sizeof(*h));
+        memcpy(h->lpData, buf + done, len);
+        h->dwBufferLength = (DWORD)len;
+        h->dwFlags = 0;
+        waveOutPrepareHeader(dsp.wo, h, sizeof(*h));
+        waveOutWrite(dsp.wo, h, sizeof(*h));
+        dsp.next = (dsp.next + 1) % DSP_BUFS;
+        done += len;
+    }
+    return (long)n;
+}
+
+static void dsp_close(void)
+{
+    int i;
+
+    if (dsp.wo) {
+        waveOutReset(dsp.wo);
+        for (i = 0; i < DSP_BUFS; i++) {
+            if (dsp.hdr[i].dwFlags & WHDR_PREPARED)
+                waveOutUnprepareHeader(dsp.wo, &dsp.hdr[i], sizeof(WAVEHDR));
+            free(dsp.hdr[i].lpData);
+        }
+        waveOutClose(dsp.wo);
+        CloseHandle(dsp.ev);
+        dsp.wo = NULL;
+    }
+    dsp.bps = 0;
+    dsp.fd = -1;
+}
+
 /* ---- device files ------------------------------------------------------------------------------------ */
 
 #define FD_MAX 16
@@ -665,10 +862,15 @@ int core_route_open(const char *path, int *fd)
         *fd = mixer_fd = core_placeholder_fd();
         return 1;
     }
+    if (!strcmp(path, "/dev/dsp")) {
+        if (dsp.fd >= 0)
+            dsp_close();
+        *fd = dsp_open();
+        return 1;
+    }
     /*
      * IGS_NULL_DEVS: optional peripherals (lamp boards...).  Writes are
      * dropped and reads fail with EAGAIN.
-     * (/dev/dsp for E2000 games with SDL built in is not done here yet.)
      */
     if (null_dev(path)) {
         *fd = core_placeholder_fd();
@@ -690,6 +892,12 @@ int core_ioctl(int fd, unsigned long req, void *arg, int *ret)
     if (fd >= 0 && fd == mixer_fd && ((req >> 8) & 0xff) == 'M') {
         if ((req & 0x80000000u) && arg)  /* reads: no channels, volume 0 */
             *(int *)arg = 0;
+        *ret = 0;
+        return 1;
+    }
+    if (fd >= 0 && fd == dsp.fd) {
+        if (arg && ((req >> 8) & 0xff) == 'P')
+            dsp_ioctl(req, arg);
         *ret = 0;
         return 1;
     }
@@ -726,6 +934,10 @@ int core_read(int fd, void *buf, size_t n, long *ret)
 
 int core_write(int fd, const void *buf, size_t n, long *ret)
 {
+    if (fd >= 0 && fd == dsp.fd) {
+        *ret = dsp_write(buf, n);
+        return 1;
+    }
     if (nmachine_fd && machine->write && is_machine_fd(fd)) {
         *ret = machine->write(fd, buf, n);
         return 1;
@@ -746,6 +958,8 @@ int core_close(int fd)
     }
     if (fd >= 0 && fd == mixer_fd)
         mixer_fd = -1;
+    if (fd >= 0 && fd == dsp.fd)
+        dsp_close();
     return 0;
 }
 

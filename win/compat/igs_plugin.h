@@ -7,6 +7,11 @@
 #ifndef IGS_PLUGIN_COMPAT_H
 #define IGS_PLUGIN_COMPAT_H
 
+/* localtime_r and friends from <time.h> */
+#ifndef _POSIX_THREAD_SAFE_FUNCTIONS
+#define _POSIX_THREAD_SAFE_FUNCTIONS 200112L
+#endif
+
 #include <errno.h>
 #include <pthread.h>
 #include <time.h>
@@ -30,5 +35,10 @@ static inline int igs_clock_gettime(clockid_t c, struct timespec *t)
     return clock_gettime(CLOCK_REALTIME, t);
 }
 #define clock_gettime igs_clock_gettime
+
+/* glibc's name for it (machines/e2000) */
+#ifndef PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP
+#define PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP PTHREAD_RECURSIVE_MUTEX_INITIALIZER
+#endif
 
 #endif

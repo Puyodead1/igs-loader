@@ -1,7 +1,8 @@
 #!/bin/bash
 # win/build-win.sh - build the Windows loader (run in WSL; needs the mingw-w64
-# i686 posix toolchain): build/win/igs-loader.exe, the machine plugins and the
-# game plugins as DLLs.  Nothing here is needed at run time but those files.
+# i686 posix toolchain): build/win/igs-loader.exe, the machine plugins, the
+# game plugins and the preloaded libraries as DLLs.  Nothing here is needed at
+# run time but those files.
 set -e
 cd "$(dirname "$0")/.."
 OUT=build/win
@@ -14,15 +15,22 @@ LZ=third_party/lzma
 RS="romset/romset.c romset/softlist.c romset/zip.c romset/sevenzip.c romset/hash.c
     $LZ/7zArcIn.c $LZ/7zBuf.c $LZ/7zCrc.c $LZ/7zCrcOpt.c $LZ/7zDec.c $LZ/7zStream.c $LZ/Bcj2.c
     $LZ/Bra.c $LZ/Bra86.c $LZ/BraIA64.c $LZ/CpuArch.c $LZ/Delta.c $LZ/LzmaDec.c $LZ/Lzma2Dec.c"
-# the executable: no ASLR (ELF executables want 0x08048000 free), 16 MiB main stack
+# the executable: no ASLR (ELF executables want 0x08048000 free), 16 MiB main stack,
+# committed (ELF code has no stack probes: see libc_thread.c)
 $CC $CF -Wno-format-truncation -o "$OUT/igs-loader.exe" \
-    win/main.c win/elf.c win/libc.c win/libc_sys.c win/libc_thread.c win/sdl.c win/gl.c win/core_win.c $RS \
-    -static -Wl,--large-address-aware -Wl,--disable-dynamicbase -Wl,--stack,16777216 \
+    win/main.c win/elf.c win/libc.c win/libc_sys.c win/libc_thread.c win/sdl.c win/gl.c win/x11.c \
+    win/core_win.c $RS \
+    -static -Wl,--large-address-aware -Wl,--disable-dynamicbase -Xlinker --stack -Xlinker 16777216,16777216 \
     -lopengl32 -lgdi32 -lwinmm
 # plugins: the Linux sources unchanged, with dlfcn.h / sys/mman.h from win/compat
 PF="$CF -shared -static -Iwin/compat -include win/compat/igs_plugin.h"
-$CC $PF -o "$OUT/e2100.dll" machines/e2100/e2100.c
-for g in harpoonlagoon oceanparty scratch heroofrobots; do
+for m in e2100 e2000; do
+    $CC $PF -o "$OUT/$m.dll" "machines/$m/$m.c"
+done
+for g in harpoonlagoon oceanparty scratch heroofrobots goldcaptain; do
     $CC $PF -o "$OUT/$g.dll" "games/$g/$g.c" || echo "($g.dll not built)"
 done
+# the preloaded libraries (feature "preload"): build/<name>.so on Linux, <name>.dll here
+$CC $PF -o "$OUT/libcasmcard.dll" machines/e2000/libcasmcard.c
+$CC $PF -Wno-attributes -o "$OUT/libcasmcard-hero.dll" games/heroofrobots/libcasmcard.c
 ls -l "$OUT"

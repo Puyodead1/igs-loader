@@ -13,7 +13,6 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		<info name="usage" value="docs/GoldCaptain.md; tunables GC_STEER, GC_SCRIPT"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="goldcaptain"/>
-			<feature name="windows" value="no"/>
 			<!-- cd /GoldCaptain; ./GoldCaptain  (-> /Game/GoldCaptain) -->
 			<feature name="data" value="/GoldCaptain"/>
 			<feature name="binary" value="GoldCaptain"/>

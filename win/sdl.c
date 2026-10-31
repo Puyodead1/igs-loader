@@ -478,10 +478,13 @@ static void l_SDL_GL_SwapBuffers(void)
     SwapBuffers(hdc);
 }
 
+int x11_window_title(const char *s);
+
+/* the core's window title: on the SDL window, else on the X11 game's */
 int sdl_window_title(const char *s)
 {
     if (!hwnd)
-        return -1;
+        return x11_window_title(s);
     SetWindowTextA(hwnd, s);
     return 0;
 }
@@ -844,6 +847,17 @@ static DWORD WINAPI audio_main(void *arg)
 
     (void)arg;
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+    if (!au.wo) {
+        /* no audio device: the callbacks still run, at the real rate */
+        double next = lx_now(), period = (double)au.bufsize / (au.freq * au.ch * fmt_bytes(au.fmt));
+
+        while (!au.quit) {
+            audio_fill((uint8_t *)au.hdr[0].lpData);
+            next += period;
+            lx_sleep_until(next);
+        }
+        return 0;
+    }
     for (i = 0; i < NBUF; i++) {
         audio_fill((uint8_t *)au.hdr[i].lpData);
         waveOutWrite(au.wo, &au.hdr[i], sizeof(WAVEHDR));
@@ -906,18 +920,17 @@ static int l_SDL_OpenAudio(uint8_t *want, uint8_t *got)
     au.ev = CreateEventA(NULL, FALSE, FALSE, NULL);
     r = waveOutOpen(&au.wo, WAVE_MAPPER, &wf, (DWORD_PTR)au.ev, 0, CALLBACK_EVENT);
     LOG("audio open %d Hz fmt 0x%x ch %d samples %d (callback %d bytes, %d per buffer) -> %s",
-        au.freq, au.fmt, au.ch, au.samples, au.size, au.bufsize / au.size, r ? "failed" : "waveOut");
-    if (r) {
-        l_SDL_SetError("waveOutOpen failed (%u)", r);
-        CloseHandle(au.ev);
-        return -1;
-    }
+        au.freq, au.fmt, au.ch, au.samples, au.size, au.bufsize / au.size,
+        r ? "no device: silent" : "waveOut");
+    if (r)                      /* the games exit without audio: play into nothing instead */
+        au.wo = NULL;
     InitializeCriticalSection(&au.lock);
     for (i = 0; i < NBUF; i++) {
         memset(&au.hdr[i], 0, sizeof(WAVEHDR));
         au.hdr[i].lpData = malloc(au.bufsize);
         au.hdr[i].dwBufferLength = au.bufsize;
-        waveOutPrepareHeader(au.wo, &au.hdr[i], sizeof(WAVEHDR));
+        if (au.wo)
+            waveOutPrepareHeader(au.wo, &au.hdr[i], sizeof(WAVEHDR));
     }
     au.paused = 1;
     au.quit = 0;
@@ -940,12 +953,15 @@ static void l_SDL_CloseAudio(void)
     au.quit = 1;
     SetEvent(au.ev);
     WaitForSingleObject(au.thread, 1000);
-    waveOutReset(au.wo);
+    if (au.wo)
+        waveOutReset(au.wo);
     for (i = 0; i < NBUF; i++) {
-        waveOutUnprepareHeader(au.wo, &au.hdr[i], sizeof(WAVEHDR));
+        if (au.wo)
+            waveOutUnprepareHeader(au.wo, &au.hdr[i], sizeof(WAVEHDR));
         free(au.hdr[i].lpData);
     }
-    waveOutClose(au.wo);
+    if (au.wo)
+        waveOutClose(au.wo);
     CloseHandle(au.ev);
     au.open = 0;
 }

@@ -8,11 +8,27 @@
 #define RTLD_NOW    2
 #define RTLD_GLOBAL 0x100
 #define RTLD_LOCAL  0
+#define RTLD_NEXT   ((void *)-1)
 
 __declspec(dllimport) void *__stdcall LoadLibraryA(const char *);
 __declspec(dllimport) void *__stdcall GetProcAddress(void *, const char *);
+__declspec(dllimport) void *__stdcall GetModuleHandleA(const char *);
 __declspec(dllimport) int __stdcall FreeLibrary(void *);
 __declspec(dllimport) unsigned long __stdcall GetLastError(void);
+
+/*
+ * dlvsym(RTLD_NEXT, ...) in a preloaded library: the loader's own native
+ * symbol (its libc...), which igs-loader.exe exports as igs_native_lookup
+ */
+static inline void *dlvsym(void *h, const char *name, const char *version)
+{
+    void *(*lookup)(const char *);
+
+    (void)h;
+    (void)version;
+    *(void **)&lookup = GetProcAddress(GetModuleHandleA(NULL), "igs_native_lookup");
+    return lookup ? lookup(name) : (void *)0;
+}
 
 static inline void *dlopen(const char *path, int flags)
 {
