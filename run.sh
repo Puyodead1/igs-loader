@@ -1,7 +1,7 @@
 #!/bin/bash
 # run.sh [game] - run an IGS game's stock binary through the loader.
 #
-# game: a manifest in ../manifests/<game>.conf (default harpoonlagoon).  The
+# game: a manifest in manifests/<game>.conf (default harpoonlagoon).  The
 # manifest names the machine and game plugins, the data dir, the binary and
 # the asset mask.  Env (see docs/IGS_LOADER.md):
 #   IGS_FULLSCREEN=1   keep the game's fullscreen mode
@@ -14,7 +14,7 @@
 #   IGS_WRAP="cmd"     run the game under cmd (gdb, strace, ...)
 D=$(cd "$(dirname "$0")" && pwd)
 ID=${1:-harpoonlagoon}
-MANIFEST="$D/../manifests/$ID.conf"
+MANIFEST="$D/manifests/$ID.conf"
 [ -f "$MANIFEST" ] || { echo "no manifest $MANIFEST"; exit 1; }
 . "$MANIFEST"
 export IGS_MACHINE="$D/build/$MACHINE.so" IGS_GAME="$D/build/$PLUGIN.so"
