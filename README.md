@@ -21,8 +21,8 @@ data is included.
 
 Where the protection chip runs game logic whose code has not been dumped
 (Ocean Party's odds, Scratch's prizes, Gold Captain's weapon table), the
-plugin reconstructs or invents it, so gameplay is not identical to the real
-cabinet.
+plugin reconstructs or invents it, so gameplay may not be completely
+identical to the real cabinet.
 
 ## Getting the loader
 
