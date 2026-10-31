@@ -176,6 +176,8 @@ statically linked.
 
 ## Documentation
 
+Controls and per-game settings are on the [wiki](https://github.com/Puyodead1/igs-loader/wiki).
+
 | Doc | What |
 | --- | --- |
 | [IGS_LOADER.md](docs/IGS_LOADER.md) | the loader in depth: options, rom sets and software lists, architecture, the Windows loader, adding a game |
