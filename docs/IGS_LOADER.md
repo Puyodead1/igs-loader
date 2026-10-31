@@ -189,6 +189,7 @@ $ run.sh --verify scratch_m101cn       # the <rom> hashes, like mame -verifyroms
 | `rofs_profile` / `rofs_key` | E2100 root filesystem variant (`romtool/igs_rofs.py` profile) and its key literal |
 | `geca_sector` … `trim_step` | E2000 executable assembly (`romtool/igs_e2000_extract.py`) |
 | `build` | the builder's recipe (below) |
+| `windows` | `no`: the Windows loader refuses the game before extracting (`--check` still runs) |
 
 The description is the window title (exported as `IGS_NAME`).  The `<info
 name="usage">` line points at the game's page and its plugin tunables.

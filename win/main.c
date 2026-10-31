@@ -110,6 +110,11 @@ int main(int argc, char **argv)
         fprintf(stderr, "unknown game %s (igs-loader --list shows the ids)\n", game);
         return 1;
     }
+    /* before extracting: games the Windows loader cannot run yet (X11/GLX, OSS) */
+    if (!verify && !check && !strcmp(sw_feature(sw, "windows", ""), "no")) {
+        fprintf(stderr, "%s is not supported on Windows yet; use the Linux/WSL loader\n", sw->description);
+        return 1;
+    }
     if (rs_open(game, rootfs, sizeof(rootfs))) {
         fprintf(stderr, "%s\n", rs_error);
         return 1;
