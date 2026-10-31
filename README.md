@@ -1,20 +1,11 @@
 # igs-loader
 
-Runs IGS arcade games from the E2100 and E2000 PC-based boards by loading the
-cabinet's **stock game binary** directly, in the style of `lindbergh-loader`.
-There is no VM, no kernel and no guest X server: the game's own i386 ELF runs
-on the host, and the loader's plugins stand in for the arcade hardware (the
-FPGA/protection ASIC, smart-card readers, dispensers, I/O boards).
+A loader for IGS E2100 and E2000 arcade games, with a modular plugin design
+for the arcade hardware. Runs on Linux/WSL (`LD_PRELOAD`) and natively on
+Windows (`igs-loader.exe`).
 
-There are two front ends:
-
-- **Linux / WSL**: an `LD_PRELOAD` core (`core/`) plus machine and game
-  plugins, built as 32-bit shared libraries.
-- **Windows**: `igs-loader.exe` (`win/`), a 32-bit Windows program that loads
-  the ELF itself and runs it natively, with OpenGL on the real Windows driver.
-
-Games are run by id from **rom sets**, MAME style, built from the original
-disk dumps. No game data is included in this repository.
+Games run by id from MAME-style rom sets built from your own dumps; no game
+data is included.
 
 ## Supported games
 
