@@ -238,6 +238,18 @@ when `core/gen_font.py` is newer.
 This writes `build/win/igs-loader.exe`, `e2100.dll` and the game DLLs, all
 statically linked.
 
+## Documentation
+
+| Doc | What |
+| --- | --- |
+| [IGS_LOADER.md](docs/IGS_LOADER.md) | the loader in depth: options, rom sets and software lists, architecture, the Windows loader, adding a game |
+| [IGS_E2100_PROTECTION.md](docs/IGS_E2100_PROTECTION.md) | E2100 FPGA card and protection ASIC: kernel driver, boot handshake, runtime messages |
+| [IGS_E2000.md](docs/IGS_E2000.md) | E2000 hardware: PLX9030 interface, IGS036 shared-RAM transport, command set |
+| [IGS_SOUND_CRYPTO.md](docs/IGS_SOUND_CRYPTO.md) | the FPGA asset cipher used on sounds and sprite banks |
+| [IGS_ROFS_REVERSE_ENGINEERING.md](docs/IGS_ROFS_REVERSE_ENGINEERING.md) | the disk formats: E2100 `igs_rofs`, E2000 ROFS and IGS_SHFS, boot chains |
+| [IGS_KEYS.md](docs/IGS_KEYS.md) | every key, mask and constant per game |
+| [HarpoonLagoon.md](docs/HarpoonLagoon.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
+
 ## Repository layout
 
 | Path | What |
@@ -249,5 +261,6 @@ statically linked.
 | `romset/` | rom-set lookup, software-list parser, `.7z` / `.zip` reading |
 | `romtool/` | the set builder and the disk-image filesystem tools |
 | `hash/` | the software lists |
+| `docs/` | the documentation (above) |
 | `third_party/lzma/` | LZMA SDK 23.01 decoder (public domain) |
 | `debs/` | ncurses 5 (i386) from Ubuntu 22.04 |
