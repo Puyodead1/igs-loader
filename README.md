@@ -11,13 +11,13 @@ data is included.
 
 | Id | Game | Machine | Linux / WSL | Windows |
 | --- | --- | --- | --- | --- |
-| `harpoonlagoon_m107us` | Harpoon Lagoon (M107US) | E2100 | playable, 4 stations | playable |
-| `harpoonlagoon_m001uswa` | Harpoon Lagoon (M001US-WA) | E2100 | playable | playable |
-| `harpoonlagoon_m200uswa` | Harpoon Lagoon (M200US-WA) | E2100 | playable | links; not play-tested |
-| `oceanparty_md105cn` | Ocean Party (MD105CN) | E2100 | playable, re-implemented game logic | playable |
-| `scratch_m101cn` | Scratch (M101CN) | E2100 | playable, made-up prizes | playable |
-| `heroofrobots_m100fa` | Hero of Robots (M100FA) | E2100 | plays a whole game | not yet (needs X11/GLX) |
-| `goldcaptain` | Gold Captain | E2000 | plays a full game; weapon values made up | not yet (needs X11/GLX, OSS audio) |
+| `harpoonlagoon_m107us` | Harpoon Lagoon (M107US) | E2100 | ✓ | ✓ |
+| `harpoonlagoon_m001uswa` | Harpoon Lagoon (M001US-WA) | E2100 | ✓ | ✓ |
+| `harpoonlagoon_m200uswa` | Harpoon Lagoon (M200US-WA) | E2100 | ✓ | ✓ |
+| `oceanparty_md105cn` | Ocean Party (MD105CN) | E2100 | ✓ | ✓ |
+| `scratch_m101cn` | Scratch (M101CN) | E2100 | ✓ | ✓ |
+| `heroofrobots_m100fa` | Hero of Robots (M100FA) | E2100 | ✓ | ✗ |
+| `goldcaptain` | Gold Captain | E2000 | ✓ | ✗ |
 
 Where the protection chip runs game logic whose code has not been dumped
 (Ocean Party's odds, Scratch's prizes, Gold Captain's weapon table), the
