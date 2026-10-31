@@ -150,61 +150,6 @@ rate. Useful environment variables:
 | `IGS_WRAP="cmd"` | Linux: run the game under a command, e.g. `gdb -q --args` |
 | `IGS_VSYNC=1` | Windows: also wait for vblank |
 
-## Controls
-
-All games: `F2` is the operator Test button (settings and bookkeeping menu).
-
-**Harpoon Lagoon** (4 stations)
-
-| Station | Move | Fire | Bet | Coin |
-| --- | --- | --- | --- | --- |
-| 1 | arrow keys | Ctrl | Alt | `5` |
-| 2 | `R` `F` `G` `D` | `A` | `S` | `6` |
-| 3 | `I` `K` `L` `J` | `B` | `V` | `7` |
-| 4 | keypad `8` `2` `6` `4` | keypad `0` | keypad `.` | `8` |
-
-**Ocean Party**
-
-| Key | Action |
-| --- | --- |
-| `5` | coin (+10 credits) |
-| `Q` `W` `E` `R` | bet on Nemo / Butterfly / Snail / Angler (×5) |
-| `T` `Y` | bet on Turtle / Nautilus (×10) |
-| `U` / `I` | bet on Lobster (×20) / Crab (×40) |
-| `X` | take back all bets |
-
-**Scratch**
-
-| Key | Action |
-| --- | --- |
-| `5` | coin |
-| arrow keys | move between racks and tickets |
-| Ctrl, Space | red button: take a ticket, confirm |
-| Alt | yellow button |
-| `Z` / `X` | scratch dial left / right |
-
-**Hero of Robots**
-
-| Key | Action |
-| --- | --- |
-| `5` | coin |
-| `X`, Space, Enter, Ctrl | button 1 (confirm, start) |
-| `Z`, `C` | buttons 2 and 3 |
-| ↑ ↓ | lever |
-| `9` | service credit |
-| F1 | show / hide the key help |
-
-**Gold Captain**
-
-| Key | Action |
-| --- | --- |
-| `5` / `6` | coin 1 / coin 2 |
-| Space, Ctrl, Up | start / fire |
-| ← → | wheel |
-| `Z` / `X` | L / R button |
-| `9` | service |
-| F1 | show / hide the key help |
-
 ## Building
 
 **Linux plugins** (32-bit, needs `gcc-multilib`):
