@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-elfdeps.py <manifest> [--all]: the Windows loader's view of a game, offline.
+elfdeps.py <id> [--set <dir>] [--all]: the Windows loader's view of a game, offline.
 
 Follows DT_NEEDED from the game binary the way win/elf.c does (the native
 shim libraries stop the walk; others are found by DT_SONAME in LIBS, the
-game's DATA lib dirs, then ROOTFS/lib and ROOTFS/usr/lib), then prints every
+game's DATA lib dirs, then the set's /lib and /usr/lib), then prints every
 undefined symbol no loaded ELF module defines: the surface the native shims
 must provide.  Symbols win/ already provides are left out unless --all
-(it greps the NATIVE(...) / GLFN entries of win/*.c).  Run in WSL.
+(it greps the NATIVE(...) / GLFN entries of win/*.c).  Run in WSL; the rom
+set comes from build/igs-romset (rompath and cache) unless --set names it.
 """
-import os, re, struct, sys
+import os, re, struct, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NATIVE_LIBS = {
@@ -20,18 +21,16 @@ NATIVE_LIBS = {
 }
 
 
-def manifest(path):
-    env = {}
-    for line in open(path):
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        v = v.strip()
-        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
-            v = v[1:-1]
-        env[k.strip()] = v
-    return env
+def game(gid, setdir=None):
+    """The software-list entry (hash/*.xml) and its rom set directory."""
+    sys.path.insert(0, os.path.join(os.path.dirname(HERE), "romtool"))
+    import softlist
+    sw = softlist.get(gid)
+    if not setdir:
+        helper = os.path.join(os.path.dirname(HERE), "build", "igs-romset")
+        setdir = subprocess.run([helper, "-q", "--path", gid], check=True, capture_output=True,
+                                text=True).stdout.strip()
+    return sw, setdir
 
 
 class Elf:
@@ -123,13 +122,18 @@ class Elf:
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    show_all = "--all" in sys.argv
-    m = manifest(args[0])
-    data = m["DATA"]
-    work = m.get("WORK", os.path.dirname(data))
-    rootfs = m.get("ROOTFS", work + "/output")
-    dirs = [data + "/" + l for l in m.get("LIBS", "").split()]
+    argv = sys.argv[1:]
+    setdir = None
+    if "--set" in argv:
+        i = argv.index("--set")
+        setdir = argv[i + 1]
+        del argv[i:i + 2]
+    args = [a for a in argv if not a.startswith("--")]
+    show_all = "--all" in argv
+    sw, rootfs = game(args[0], setdir)
+    data = rootfs + sw.feature("data", "/")
+    lib = lambda l: rootfs + l if l.startswith("/") else data + "/" + l
+    dirs = [lib(l) for l in sw.feature("libs", "").split()]
     dirs += [data, data + "/lib", data + "/libs", rootfs + "/lib", rootfs + "/usr/lib"]
     files = []
     for d in dirs:
@@ -156,7 +160,7 @@ def main():
                 return e
         return None
 
-    exe = Elf(data + "/" + m["BINARY"] if os.path.exists(data + "/" + m["BINARY"]) else m["BINARY"])
+    exe = Elf(lib(sw.feature("binary")))
     mods, queue, seen, natives = [exe], [exe], set(), []
     while queue:
         e = queue.pop(0)

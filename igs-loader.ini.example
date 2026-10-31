@@ -1,0 +1,23 @@
+# igs-loader.ini: local settings for run.sh / play.ps1 (WSL) and
+# build\win\igs-loader.exe.  Copy to igs-loader.ini next to run.sh and edit;
+# that file is not in git.  Like mame.ini: KEY=value, '#' comments.
+# Paths may be written in either form (T:\games\igs or /mnt/t/games/igs):
+# each loader converts them, so one file serves both.  Relative paths are
+# relative to this directory.  IGS_ROMPATH, IGS_CACHE and IGS_HASHPATH in the
+# environment override these.
+
+# where rom sets are looked for, ';'-separated (':' also works on Linux):
+# <dir>\<id>\ (a folder), then <dir>\<id>.7z, then <dir>\<id>.zip
+rompath=roms
+
+# where .7z/.zip sets are extracted (writable: the games keep their settings
+# and bookkeeping there until the archive changes and is extracted again).
+# Default: %LOCALAPPDATA%\igs-loader\cache on Windows,
+# ${XDG_CACHE_HOME:-~/.cache}/igs-loader on Linux.
+#cachepath=
+
+# the software lists (default: hash)
+#hashpath=hash
+
+# chdman for romtool/mkromset.py, if it is not on PATH ($CHDMAN overrides)
+#chdman=C:\mame\chdman.exe

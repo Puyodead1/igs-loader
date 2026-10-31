@@ -22,6 +22,12 @@ for g in games/*/; do
     n=$(basename "$g")
     gcc $CF -fvisibility=hidden -o "build/$n.so" "$g$n.c"
 done
+# the rom-set helper (native 64-bit): software lists, rompath, .7z/.zip sets
+LZ=third_party/lzma
+gcc -O2 -Wall -Wno-format-truncation -D_FILE_OFFSET_BITS=64 -o build/igs-romset \
+    romset/igs-romset.c romset/romset.c romset/softlist.c romset/zip.c romset/sevenzip.c romset/hash.c \
+    $LZ/7zArcIn.c $LZ/7zBuf.c $LZ/7zCrc.c $LZ/7zCrcOpt.c $LZ/7zDec.c $LZ/7zStream.c $LZ/Bcj2.c \
+    $LZ/Bra.c $LZ/Bra86.c $LZ/BraIA64.c $LZ/CpuArch.c $LZ/Delta.c $LZ/LzmaDec.c $LZ/Lzma2Dec.c
 if [ ! -e lib/libncurses.so.5 ]; then
     for d in debs/*.deb; do
         dpkg -x "$d" /tmp/igs-debs

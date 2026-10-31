@@ -1,12 +1,18 @@
 /*
- * IGS loader for Windows: igs-loader.exe [--check] <game | manifest.conf>
+ * IGS loader for Windows:
+ *   igs-loader.exe [--check] <id>     run (--check: only load and link)
+ *   igs-loader.exe --list             the games, and which rom sets are found
+ *   igs-loader.exe --verify <id>      check a set against the list's hashes
  *
- * Reads manifests/<game>.conf (KEY=VALUE, shell-style quotes), sets up the
- * same IGS_* environment run.sh does, loads the machine plugin DLL and the
- * game's i386 ELF binary with its libraries, and starts it.  --check only
- * loads and links, listing every module and unresolved symbol.
- * Linux paths in the manifest (/mnt/<d>/...) are mapped to <D>:\...
- * See docs/IGS_LOADER.md, "Windows".
+ * <id> is a software name from hash/<machine>.xml.  The rom set (<id>\,
+ * <id>.7z or <id>.zip on the rompath; archives are extracted once into
+ * %LOCALAPPDATA%\igs-loader\cache\<id>) is the cabinet's file tree: the
+ * game's cwd is <set>\<DATA>, system libraries come from <set>\lib and
+ * <set>\usr\lib, absolute paths resolve inside the set.  Sets up the same
+ * IGS_* environment run.sh does, loads the machine plugin DLL and the
+ * game's i386 ELF binary with its libraries, and starts it.  --check lists
+ * every module and unresolved symbol.  See docs/IGS_LOADER.md, "Windows"
+ * and "Rom sets".
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -16,62 +22,47 @@
 #include <string.h>
 
 #include "lx.h"
+#include "../romset/romset.h"
 
 void log_init(void);
 void sdl_init(void);
 void sdl_shutdown(void);
 
-#define MAXKEYS 64
-static struct { char key[32]; char val[1024]; } kv[MAXKEYS];
-static int nkv;
+static const struct sw_info *sw;
 
 static const char *mget(const char *key, const char *def)
 {
-    int i;
-
-    for (i = 0; i < nkv; i++)
-        if (!strcmp(kv[i].key, key))
-            return kv[i].val;
-    return def;
+    return sw_feature(sw, key, def);
 }
 
-static int parse_manifest(const char *path)
+/* a cabinet path (or one relative to DATA) as a Windows path inside the set */
+static void set_path(const char *set, const char *data, const char *p, char *out, size_t n)
 {
-    FILE *f = fopen(path, "r");
-    char line[2048];
+    char *q;
 
-    if (!f)
-        return -1;
-    while (fgets(line, sizeof(line), f)) {
-        char *p = line, *eq, *v, *o;
+    if (p[0] == '/')
+        snprintf(out, n, "%s%s", set, p);
+    else
+        snprintf(out, n, "%s\\%s", data, p);
+    for (q = out; *q; q++)
+        if (*q == '/')
+            *q = '\\';
+}
 
-        while (*p == ' ' || *p == '\t')
-            p++;
-        if (*p == '#' || !(eq = strchr(p, '=')) || nkv == MAXKEYS)
-            continue;
-        *eq = 0;
-        snprintf(kv[nkv].key, sizeof(kv[nkv].key), "%s", p);
-        /* the value: shell words with '...' / "..." quoting, up to a comment */
-        v = eq + 1;
-        o = kv[nkv].val;
-        while (*v && *v != '\n' && *v != '\r' && o < kv[nkv].val + sizeof(kv[nkv].val) - 1) {
-            if (*v == '"' || *v == '\'') {
-                char q = *v++;
+static int list(void)
+{
+    int i;
 
-                while (*v && *v != q && o < kv[nkv].val + sizeof(kv[nkv].val) - 1)
-                    *o++ = *v++;
-                if (*v)
-                    v++;
-            } else if (*v == ' ' || *v == '\t' || *v == '#') {
-                break;
-            } else {
-                *o++ = *v++;
-            }
-        }
-        *o = 0;
-        nkv++;
+    printf("%-26s %-6s %-5s %-34s %-24s %s\n", "id", "list", "year", "description", "clone of", "set");
+    for (i = 0; i < sw_count(); i++) {
+        const struct sw_info *s = sw_at(i);
+        char path[RS_PATH];
+        int k = rs_locate(s->name, path, sizeof(path));
+        static const char *kinds[] = { "-", "folder", "7z", "zip" };
+
+        printf("%-26s %-6s %-5s %-34s %-24s %s%s%s\n", s->name, s->list, s->year ? s->year : "",
+               s->description, s->cloneof ? s->cloneof : "", kinds[k], k ? "  " : "", k ? path : "");
     }
-    fclose(f);
     return 0;
 }
 
@@ -80,19 +71,12 @@ static void setenv_kv(const char *k, const char *v)
     _putenv_s(k, v ? v : "");
 }
 
-static int win_dir(const char *lin, char *out, size_t n)
-{
-    if (lx_path(lin, out, n))
-        return -1;
-    return GetFileAttributesA(out) == INVALID_FILE_ATTRIBUTES ? -1 : 0;
-}
-
 int main(int argc, char **argv)
 {
-    char exedir[MAX_PATH], manifest[MAX_PATH], data[MAX_PATH], rootfs[MAX_PATH], buf[MAX_PATH * 2];
+    char exedir[MAX_PATH], root[MAX_PATH], data[MAX_PATH], rootfs[MAX_PATH], buf[MAX_PATH * 2];
     char exe[MAX_PATH], *p, **envp, *eargv[2];
-    const char *game = NULL, *v;
-    int check = 0, i, n, missing;
+    const char *game = NULL, *v, *bin;
+    int check = 0, listing = 0, verify = 0, i, n, missing;
     struct elf_mod *em;
     const struct nsym *tables[8];
 
@@ -106,40 +90,62 @@ int main(int argc, char **argv)
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--check"))
             check = 1;
+        else if (!strcmp(argv[i], "--list") || !strcmp(argv[i], "-l"))
+            listing = 1;
+        else if (!strcmp(argv[i], "--verify"))
+            verify = 1;
         else if (argv[i][0] != '-')
             game = argv[i];
-    }
-    if (!game) {
-        fprintf(stderr, "usage: igs-loader [--check] <game | manifest.conf>\n");
-        return 2;
     }
     GetModuleFileNameA(NULL, exedir, sizeof(exedir));
     if ((p = strrchr(exedir, '\\')))
         *p = 0;
-    n = (int)strlen(game);
-    if (n > 5 && !strcmp(game + n - 5, ".conf"))
-        snprintf(manifest, sizeof(manifest), "%s", game);
-    else if ((v = getenv("IGS_MANIFESTS")))
-        snprintf(manifest, sizeof(manifest), "%s\\%s.conf", v, game);
-    else
-        snprintf(manifest, sizeof(manifest), "%s\\..\\..\\manifests\\%s.conf", exedir, game);
-    if (parse_manifest(manifest)) {
-        fprintf(stderr, "no manifest %s\n", manifest);
+    /* the loader root (hash\, igs-loader.ini): next to the exe, or two up (build\win\) */
+    snprintf(root, sizeof(root), "%s\\hash", exedir);
+    if (GetFileAttributesA(root) != INVALID_FILE_ATTRIBUTES) {
+        snprintf(root, sizeof(root), "%s", exedir);
+    } else {
+        snprintf(buf, sizeof(buf), "%s\\..\\..", exedir);
+        if (!GetFullPathNameA(buf, sizeof(root), root, NULL))
+            snprintf(root, sizeof(root), "%s", exedir);
+    }
+    rs_config(root);
+    if (sw_load(rs_hashpath())) {
+        fprintf(stderr, "%s\n", rs_error);
         return 1;
+    }
+    if (listing)
+        return list();
+    if (!game) {
+        fprintf(stderr, "usage: igs-loader [--check] <id> | --list | --verify <id>\n");
+        return 2;
+    }
+    if (!(sw = sw_find(game))) {
+        fprintf(stderr, "unknown game %s (igs-loader --list shows the ids)\n", game);
+        return 1;
+    }
+    if (rs_open(game, rootfs, sizeof(rootfs))) {
+        fprintf(stderr, "%s\n", rs_error);
+        return 1;
+    }
+    if (verify) {
+        n = rs_verify(sw, rootfs, stdout);
+        printf("%s: %s\n", game, n ? "BAD" : sw->nrom ? "good" : "no hashes listed");
+        return n ? 1 : 0;
     }
     lx_verbose = getenv("IGS_VERBOSE") != NULL;
     lx_lddebug = (int)lx_env_long("IGS_LDDEBUG", 0);
 
     /* the environment run.sh sets up */
-    snprintf(buf, sizeof(buf), "%s\\%s.dll", exedir, mget("MACHINE", "e2100"));
+    snprintf(buf, sizeof(buf), "%s\\%s.dll", exedir, sw->list);
     setenv_kv("IGS_MACHINE", buf);
-    snprintf(buf, sizeof(buf), "%s\\%s.dll", exedir, mget("PLUGIN", ""));
+    snprintf(buf, sizeof(buf), "%s\\%s.dll", exedir, mget("plugin", ""));
     setenv_kv("IGS_GAME", buf);
-    setenv_kv("IGS_ASSET_MASK", mget("ASSET_MASK", ""));
-    setenv_kv("IGS_VARIANT", mget("VARIANT", ""));
-    setenv_kv("IGS_NAME", mget("NAME", game));
-    /* ENV: per-game NAME=value words */
-    if ((v = mget("ENV", NULL))) {
+    setenv_kv("IGS_ASSET_MASK", mget("asset_mask", ""));
+    setenv_kv("IGS_VARIANT", mget("variant", ""));
+    setenv_kv("IGS_NAME", sw->description);
+    /* env: per-game NAME=value words */
+    if ((v = mget("env", NULL))) {
         char envs[1024], *save = NULL, *w;
 
         snprintf(envs, sizeof(envs), "%s", v);
@@ -161,35 +167,25 @@ int main(int argc, char **argv)
     tables[6] = NULL;
     elf_set_native(tables);
 
-    /* DATA (the game's cwd) and the cabinet's root fs copy (ROOTFS, default $WORK/output) */
+    /* the set is the cabinet's root fs; DATA (the game's cwd) is inside it */
     lx_set_dirs("", "");
-    if (win_dir(mget("DATA", ""), data, sizeof(data))) {
-        LOG("DATA %s not found", mget("DATA", "(unset)"));
+    set_path(rootfs, rootfs, mget("data", "/"), data, sizeof(data));
+    lx_resolve(data, sizeof(data));
+    if (GetFileAttributesA(data) == INVALID_FILE_ATTRIBUTES) {
+        LOG("DATA %s not found in the set %s", mget("data", "(unset)"), rootfs);
         return 1;
-    }
-    v = mget("ROOTFS", NULL);
-    if (!v) {
-        snprintf(buf, sizeof(buf), "%s/output", mget("WORK", mget("DATA", "")));
-        v = buf;
-    }
-    if (win_dir(v, rootfs, sizeof(rootfs))) {
-        LOG("ROOTFS %s not found: system libraries come from DATA only", v);
-        rootfs[0] = 0;
     }
     lx_set_dirs(data, rootfs);
     SetCurrentDirectoryA(data);
-    LOG("%s: DATA %s, root fs %s", mget("NAME", game), data, rootfs[0] ? rootfs : "-");
+    LOG("%s: set %s, DATA %s", sw->description, rootfs, data);
 
-    /* libraries: LIBS (the game's own, relative to DATA), DATA's lib dirs, the root fs */
-    if ((v = mget("LIBS", NULL))) {
+    /* libraries: LIBS (the game's own: cabinet paths or relative to DATA), DATA's lib dirs, the root fs */
+    if ((v = mget("libs", NULL))) {
         char libs[1024], *save = NULL, *w;
 
         snprintf(libs, sizeof(libs), "%s", v);
         for (w = strtok_r(libs, " ", &save); w; w = strtok_r(NULL, " ", &save)) {
-            snprintf(buf, sizeof(buf), "%s\\%s", data, w);
-            for (p = buf; *p; p++)
-                if (*p == '/')
-                    *p = '\\';
+            set_path(rootfs, data, w, buf, sizeof(buf));
             elf_add_search(buf);
         }
     }
@@ -205,7 +201,8 @@ int main(int argc, char **argv)
         elf_add_search(buf);
     }
 
-    snprintf(exe, sizeof(exe), "%s\\%s", data, mget("BINARY", ""));
+    bin = mget("binary", "");
+    set_path(rootfs, data, bin, exe, sizeof(exe));
     lx_resolve(exe, sizeof(exe));
     em = elf_load_exe(exe);
     if (!em)
@@ -229,7 +226,7 @@ int main(int argc, char **argv)
         envp[i] = l_strdup(_environ[i]);
     envp[n] = NULL;
     lx_environ = envp;
-    snprintf(buf, sizeof(buf), "./%s", mget("BINARY", "game"));
+    snprintf(buf, sizeof(buf), "%s%s", bin[0] == '/' ? "" : "./", bin);
     eargv[0] = l_strdup(buf);
     eargv[1] = NULL;
 

@@ -1,0 +1,189 @@
+<?xml version="1.0"?>
+<!--
+IGS E2100 games: the software list of machine "e2100" (machines/e2100).
+
+Modelled on MAME's hash/*.xml software lists.  Each <software name="id">
+is one dump, run by id: run.sh <id>, igs-loader.exe <id>.  The rom set
+<id>/, <id>.7z or <id>.zip on the rompath holds the cabinet's file tree
+as the running game sees it; romtool/mkromset.py builds it from the disk
+image named in <diskarea>.  docs/IGS_LOADER.md, "Rom sets", describes
+every feature; docs/IGS_KEYS.md tabulates the keys.
+
+<disk sha1> is the SHA-1 of the raw disk image (chdman's "data SHA-1").
+<dataarea name="files"> lists files of the built set by cabinet path, for
+verification (the loaders' verify option; mkromset.py checks them too).
+-->
+<softwarelist name="e2100" description="IGS E2100">
+
+	<software name="harpoonlagoon_m107us">
+		<description>Harpoon Lagoon (M107US)</description>
+		<year>2013</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M107US"/>
+		<info name="usage" value="docs/HarpoonLagoon.md"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="harpoonlagoon"/>
+			<!-- /etc/X11/IGS: cd /Fish; ./FH  (FH -> ../Fish.bin/fish) -->
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="FH"/>
+			<feature name="rofs_profile" value="fish4p"/>
+			<feature name="rofs_key" value="Hunter4PFishV1.0"/>
+			<feature name="asset_mask" value="eea8543c6a16835d0900d7739f6bf77f"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_harpoonlagoon_m107us" sha1="ea090e8835a926b688119c5b254facf900cc2596"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2777608" sha1="eede9d07f469a839c8eba4ee118aa68d0bbccca3"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="52d8cb0f2b254a4aa9ec8ca20150ef26117241d1"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="harpoonlagoon_m001uswa" cloneof="harpoonlagoon_m107us">
+		<description>Harpoon Lagoon (M001US-WA)</description>
+		<year>2013</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M001US-WA"/>
+		<info name="usage" value="docs/HarpoonLagoon.md"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="harpoonlagoon"/>
+			<!-- US-WA operator-settings layout (games/harpoonlagoon) -->
+			<feature name="variant" value="wa"/>
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="FH"/>
+			<feature name="rofs_profile" value="fish4p"/>
+			<feature name="rofs_key" value="Hunter4PFishV1.0"/>
+			<feature name="asset_mask" value="eea8543c6a16835d0900d7739f6bf77f"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_harpoonlagoon_m001uswa" sha1="ab44a4f7de3a17b955751bca7f7e761778e798e0"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2774920" sha1="88553712ad85e982a8f49eb5be9218cc2be1a6c1"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="14195c750c177e5a84e5801ee525a2aea4428859"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="harpoonlagoon_m200uswa" cloneof="harpoonlagoon_m107us">
+		<description>Harpoon Lagoon (M200US-WA)</description>
+		<year>2013</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M200US-WA"/>
+		<info name="usage" value="docs/HarpoonLagoon.md"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="harpoonlagoon"/>
+			<feature name="variant" value="wa"/>
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="FH"/>
+			<feature name="rofs_profile" value="fish4p"/>
+			<feature name="rofs_key" value="Hunter4PFishV1.0"/>
+			<feature name="asset_mask" value="eea8543c6a16835d0900d7739f6bf77f"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_harpoonlagoon_m200uswa" sha1="ad851e721abcad170dde7d36e66d77431d239629"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2774536" sha1="d87e021160f203182a12731ac0bf2014ca531562"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="0fa6a2dc72c0418e93a1f8181365c4489ac21e88"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="oceanparty_md105cn">
+		<description>Ocean Party (MD105CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="MD105CN"/>
+		<info name="usage" value="docs/OceanParty.md; tunables OCEAN_BET_SECONDS (20), OCEAN_COIN (10), OCEAN_CREDITS (0)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="oceanparty"/>
+			<!-- cd /OceanParty; ./OceanParty  (-> ../OceanParty.bin/OceanParty) -->
+			<feature name="data" value="/OceanParty"/>
+			<feature name="binary" value="OceanParty"/>
+			<feature name="rofs_profile" value="oceanparty"/>
+			<feature name="rofs_key" value="PartyOcean6PV1.0"/>
+			<feature name="asset_mask" value="9528df6122f17c6ec8a249c24b63db9a"/>
+			<feature name="build" value="root p2; mount p3 /OceanParty"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_oceanparty_md105cn" sha1="ee56bb261533c389619ed8d3b49d5e65b3471683"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/OceanParty.bin/OceanParty" size="2720152" sha1="1082a4b7363a0d476ed614adfafb79413876b151"/>
+				<rom name="/OceanParty.bin/asic36.bin" size="524288" sha1="78084339bfc25fd2b0d97d697714320dffa57e3e"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="scratch_m101cn">
+		<description>Scratch (M101CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M101CN"/>
+		<info name="usage" value="docs/Scratch.md; tunable SCRATCH_COIN (credits per coin, 100)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="scratch"/>
+			<!-- cd /Scratch; ./SWIN  (-> ../Scratch.bin/swin) -->
+			<feature name="data" value="/Scratch"/>
+			<feature name="binary" value="SWIN"/>
+			<!-- its own GLEW 1.6 and zziplib (its bundled SDL is not used) -->
+			<feature name="libs" value="lib/libGLEW.so.1.6 lib/libzzip-0.so.13"/>
+			<!-- its fragment shader opens with 'precision lowp float;' (GLSL ES),
+			     which Mesa rejects in unversioned GLSL 1.10; 1.30 accepts it.
+			     /dev/ttyS0 is the lamp board (RS232, write-only). -->
+			<feature name="env" value="force_glsl_version=130 IGS_NULL_DEVS=/dev/ttyS0"/>
+			<feature name="rofs_profile" value="scratch"/>
+			<feature name="rofs_key" value="SwinV1.00Scratch"/>
+			<!-- swin's FPGA-cipher mask (key string Hello-ScratchWin); the
+			     game's own assets are not encrypted -->
+			<feature name="asset_mask" value="e4be1b4e7f081654fa6b81698b039a06"/>
+			<!-- the kernel runs /bin/unrar /Scratch/swin /Scratch.bin/swin and
+			     /etc/X11/IGS copies asic36.bin, before p3 covers /Scratch -->
+			<feature name="build" value="root p2; decrypt /Scratch/swin /Scratch.bin/swin 1801508; copy /Scratch/asic36.bin /Scratch.bin/asic36.bin; mount p3 /Scratch"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_scratch_m101cn" sha1="22f0c8a9a6c1bce7fae7febc3cb9f84730164e8a"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Scratch.bin/swin" size="1801508" sha1="b14064fe955318b2f4b8ac72e48e81ca4b0b564b"/>
+				<rom name="/Scratch.bin/asic36.bin" size="524288" sha1="f62d2d0456cd4b845ee65eac0e70d87a00f14919"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="heroofrobots_m100fa">
+		<description>Hero of Robots (M100FA)</description>
+		<year>2016</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M100FA"/>
+		<info name="usage" value="docs/HeroOfRobots.md; tunables HERO_REGION (area byte, 0x24 USA), HERO_CARD_CREDIT (points on the emulated card, 100)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="heroofrobots"/>
+			<!-- cd /Robots/exe; ./child_linux  (-> ../../Robots.bin/child_linux) -->
+			<feature name="data" value="/Robots/exe"/>
+			<feature name="binary" value="child_linux"/>
+			<!-- its own Ogre 1.6.1, Cg, zziplib and the NVPerfSDK stub (the
+			     render-system plugins load by path from plugins.cfg), and
+			     libXfont 1 from the root fs.  Host i386 Mesa, never the root
+			     fs's NVIDIA libGL. -->
+			<feature name="libs" value="/Robots/data/so/libOgreMain-1.6.1.so /Robots/data/so/libCg.so /Robots/data/so/libNVPerfSDK.so.1 /Robots/data/so/libzzip-0.so.13 /usr/lib/libXfont.so.1"/>
+			<!-- the smart-card reader and card (games/heroofrobots/libcasmcard.c) -->
+			<feature name="preload" value="libcasmcard-hero.so"/>
+			<!-- Ogre uses the system libX11 from several threads: keep its locks -->
+			<feature name="env" value="IGS_X11_LOCKS=1"/>
+			<feature name="rofs_profile" value="heroofrobots"/>
+			<feature name="rofs_key" value="RobotsHeroOfV1.0"/>
+			<!-- the FPGA asset cipher (media/osmbin/*.osmenc) -->
+			<feature name="asset_mask" value="4626ed14dc0ee8baed434037f7574619"/>
+			<!-- p4 (ext3, writable) holds rw_data: music, videos, bookkeeping -->
+			<feature name="build" value="root p2; mount p3 /Robots; mount p4 /Robots/exe/rw_data"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_heroofrobots_m100fa" sha1="9ba1d1f99de1585d207736dbc0411671007f97bb"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Robots.bin/child_linux" size="88956077" sha1="97a19a36dcf6291717a9540501dc1bd5728a638f"/>
+			</dataarea>
+		</part>
+	</software>
+
+</softwarelist>

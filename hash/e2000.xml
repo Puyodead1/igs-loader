@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<!--
+IGS E2000 games: the software list of machine "e2000" (machines/e2000).
+Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
+-->
+<softwarelist name="e2000" description="IGS E2000">
+
+	<software name="goldcaptain">
+		<description>Gold Captain</description>
+		<year>2009</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="GoldCaptian-E2000-v1-e65"/>
+		<info name="usage" value="docs/GoldCaptain.md; tunables GC_STEER, GC_SCRIPT"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="goldcaptain"/>
+			<!-- cd /GoldCaptain; ./GoldCaptain  (-> /Game/GoldCaptain) -->
+			<feature name="data" value="/GoldCaptain"/>
+			<feature name="binary" value="GoldCaptain"/>
+			<!-- SDL 1.2 is linked into the executable: X11/GLX video, OSS audio only -->
+			<feature name="video_driver" value="x11"/>
+			<feature name="audio_driver" value="dsp"/>
+			<!-- stands in for /lib/libcasmcard.so, which the executable links by path -->
+			<feature name="preload" value="libcasmcard.so"/>
+			<!-- executable assembly (romtool/igs_e2000_extract.py): from /bin/csh and /mnt/GECA -->
+			<feature name="geca_sector" value="6813"/>
+			<feature name="head_sector" value="125515"/>
+			<feature name="pieces" value="47632518"/>
+			<feature name="trim_kb" value="1004"/>
+			<feature name="trim_step" value="-17"/>
+			<!-- the kernel builds /Game/GoldCaptain (csh + GECA), then mounts p3 -->
+			<feature name="build" value="root p2; assemble /Game/GoldCaptain; mount p3 /GoldCaptain"/>
+			<diskarea name="harddriv">
+				<disk name="e2000_goldcaptain" sha1="5b96fb35f38e3618f5b9e0885acc4285e50a4a10"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Game/GoldCaptain" size="1506192" sha1="252ca4861239b7ee47744822de3b813043febc7d"/>
+			</dataarea>
+		</part>
+	</software>
+
+</softwarelist>
