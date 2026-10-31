@@ -19,9 +19,11 @@ data is included.
 | `heroofrobots_m100fa` | Hero of Robots (M100FA) | E2100 | ✓ | ✓ |
 | `goldcaptain` | Gold Captain | E2000 | ✓ | ✓ |
 | `piraterevenge_m101cn` | Pirate Revenge (M101CN) | E2000 | ✓ | ✓ |
+| `gogoball2_dx` | Go Go Ball 2 DX | E2000 | ✓ | ✓ |
 
 Where the protection chip runs game logic whose code has not been dumped
-(Ocean Party's odds, Scratch's prizes, the E2000 games' weapon tables), the
+(Ocean Party's odds, Scratch's prizes, the E2000 games' weapon tables and
+game flow), the
 plugin reconstructs or invents it, so gameplay may not be completely
 identical to the real cabinet.
 
@@ -183,11 +185,11 @@ Controls and per-game settings are on the [wiki](https://github.com/Puyodead1/ig
 | --- | --- |
 | [IGS_LOADER.md](docs/IGS_LOADER.md) | the loader in depth: options, rom sets and software lists, architecture, the Windows loader, adding a game |
 | [IGS_E2100_PROTECTION.md](docs/IGS_E2100_PROTECTION.md) | E2100 FPGA card and protection ASIC: kernel driver, boot handshake, runtime messages |
-| [IGS_E2000.md](docs/IGS_E2000.md) | E2000 hardware: PLX9030 interface, IGS036 shared-RAM transport, command set |
+| [IGS_E2000.md](docs/IGS_E2000.md) | E2000 hardware: PLX9030 interface, IGS036 shared-RAM and IGS027A packet transports, command sets |
 | [IGS_SOUND_CRYPTO.md](docs/IGS_SOUND_CRYPTO.md) | the FPGA asset cipher used on sounds and sprite banks |
 | [IGS_ROFS_REVERSE_ENGINEERING.md](docs/IGS_ROFS_REVERSE_ENGINEERING.md) | the disk formats: E2100 `igs_rofs`, E2000 ROFS and IGS_SHFS, boot chains |
 | [IGS_KEYS.md](docs/IGS_KEYS.md) | every key, mask and constant per game |
-| [HarpoonLagoon.md](docs/HarpoonLagoon.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md), [PirateRevenge.md](docs/PirateRevenge.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
+| [HarpoonLagoon.md](docs/HarpoonLagoon.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md), [PirateRevenge.md](docs/PirateRevenge.md), [GoGoBall2.md](docs/GoGoBall2.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
 
 ## Repository layout
 

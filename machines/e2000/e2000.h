@@ -2,14 +2,17 @@
  * E2000 machine: interface for game plugins.
  *
  * The machine emulates what E2000 games share: the PLX SDK driver
- * (/dev/plx/Pci9030*) for the PCI9030 bridge in front of the IGS036
- * protection CPU, the shared-RAM transport (BAR2 message words, BAR3 mailbox
- * registers, RC4-wrapped message keys), the /dev/roio BIOS fingerprint and
- * the unused /dev/pccard0.  See docs/IGS_E2000.md.
+ * (/dev/plx/Pci9030*) for the PCI9030 bridge in front of the protection CPU,
+ * its transport, the /dev/roio BIOS fingerprint and the unused /dev/pccard0.
+ * Two transports (docs/IGS_E2000.md):
+ *   - E2000_IGS036: shared-RAM message words, BAR3 status registers,
+ *     RC4-wrapped message keys (Gold Captain, Pirate Revenge);
+ *   - E2000_IGS027A: RC4-encrypted packets in BAR2 behind a sequenced
+ *     mailbox byte (Go Go Ball 2).
  *
- * A game plugin supplies what the IGS036 firmware does for its game: the
- * reply to each message (inputs, coins, acks), input and its overlay.
- * Every callback runs with the machine lock held.
+ * A game plugin supplies what the protection firmware does for its game:
+ * the reply to each message or packet (inputs, coins, acks), input and its
+ * overlay.  Every callback runs with the machine lock held.
  */
 #ifndef E2000_H
 #define E2000_H
@@ -19,10 +22,27 @@
 #define E2000_API_VERSION 1
 #define E2000_MSG_MAX     2048             /* words per message, header included */
 
+enum { E2000_IGS036, E2000_IGS027A };
+
+/*
+ * IGS027A packet (32-bit words).  The machine decrypts words PKT_PR..
+ * PKT_PR + 39 (160 bytes) and checks PKT_SUM; data run on from PKT_DATA.
+ */
+#define E2000_PKT_WORDS   2081             /* the game's buffer: 8324 bytes */
+#define E2000_PKT_LEN     16               /* reply: data bytes from PKT_DATA */
+#define E2000_PKT_SUM     17               /* sum of the 40 encrypted words */
+#define E2000_PKT_PR      18               /* type, function, -, param 0 (data length), params 1.. */
+#define E2000_PKT_RET     29               /* reply: result (PR + 11) */
+#define E2000_PKT_RET2    30               /* reply: second result */
+#define E2000_PKT_ERROR   31               /* reply: nonzero = "a27 error", the game exits */
+#define E2000_PKT_DATA    33               /* bulk data (byte 132) */
+
 /* machine services for game plugins */
 struct e2000_api {
     int version;
     const struct igs_core *core;
+    /* IGS027A: restart a packet RC4 stream with a new key (from the next packet on) */
+    void (*rekey)(int to_game, const void *key, int len);
 };
 
 struct e2000_game {
@@ -37,9 +57,9 @@ struct e2000_game {
 
     void (*reset)(void);
     /*
-     * One exchange.  req: the game's message, decrypted (req[0] = word count,
-     * req[1] = key, payload from req[2]); NULL for the start-up doorbell.
-     * Fill reply[2..] and return the reply's word count (reply[0]).
+     * IGS036: one exchange.  req: the game's message, decrypted (req[0] =
+     * word count, req[1] = key, payload from req[2]); NULL for the start-up
+     * doorbell.  Fill reply[2..] and return the reply's word count (reply[0]).
      */
     uint32_t (*exchange)(const uint32_t *req, uint32_t nreq, uint32_t *reply);
 
@@ -47,6 +67,18 @@ struct e2000_game {
     void (*draw)(int width, int height);   /* optional overlay */
     void (*file_opened)(const char *path); /* optional: the game fopen'ed a file */
     void (*status)(char *buf, size_t n);   /* optional: window title status line */
+
+    int transport;                         /* E2000_IGS036 (default) or E2000_IGS027A */
+    /* IGS027A: RC4 keys of the packet streams, pkt_key_len bytes each */
+    const char *pkt_key_to_game, *pkt_key_from_game;
+    int pkt_key_len;
+    /*
+     * IGS027A: one packet.  port: the mailbox port nibble (0x20, 0x30; 0x50
+     * is the start-up packet, sent in clear).  msg: E2000_PKT_WORDS words,
+     * decrypted; write the reply over it and return its data length in
+     * bytes (from E2000_PKT_DATA).
+     */
+    uint32_t (*packet)(int port, uint32_t *msg);
 };
 
 /* exported by a game plugin .so */

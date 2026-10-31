@@ -407,12 +407,34 @@ each piece:
 - Each piece is `dd ... bs=1K skip=n`: everything after its first `n` KiB,
   `n` starting at 9 and growing by 4.
 
+Speed Driver 2 and Speed Rider use a third mode, `cut`: each piece is
+`dd bs=1K skip=s count=size/1K-s-t` (the last one `bs=1` in bytes), `s`
+and `t` each with their own step; empty or missing pieces are passed over.
+
 `igs_e2000_extract.py` checks the result: the ELF section-header table must
 end exactly at the end of the file.  Software-list features: `head_part`,
 `geca_part`, `geca_file`, `piece_file`, `piece_mode` (`trim` / `skip`), and
-`trim_kb` / `trim_step` for `n`.
+`trim_kb` / `trim_step` for `n`.  `cut` is not implemented.
 
-| Game | GECA | Head | Pieces | Mode | n, step | Executable size |
-| --- | --- | --- | --- | --- | --- | --- |
-| Gold Captain | p1 6813 + `libdb0.a` | p2 125515 | `/lib/libdb<d>.a`, `47632518` | trim | 1004, −17 | 1,506,192 |
-| Pirate Revenge | p2 125515 + `rc0.d` | p1 6813 | `/etc/rc.d/rc<d>.d`, `6415237` | skip | 9, +4 | 2,336,328 |
+| Game | Stage 1 | GECA | Head | Pieces | Mode | n, step | Executable | Size |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Gold Captain | `/bin/csh` | p1 6813 + `libdb0.a` | p2 125515 | `/lib/libdb<d>.a`, `47632518` | trim | 1004, −17 | `/Game/GoldCaptain` | 1,506,192 |
+| Pirate Revenge | `/bin/HWtest` | p2 125515 + `rc0.d` | p1 6813 | `/etc/rc.d/rc<d>.d`, `6415237` | skip | 9, +4 | `/pr/exec/sship` | 2,336,328 |
+| Go Go Ball 2 DX | `/bin/csh` | p1 6692 + `rc0.d` | p2 129912 | `/etc/rc.d/rc<d>.d`, `2163547` | skip | 168, −17 | `/GoGoBall2/linux/pitch` | 1,936,100 |
+| Panda Family (CN) | `/bin/csh` | first KiB of `/bin/tcsh` + `/bin/ksh` | p1 6658 | `/lib/libfun<d>.so`, `413256` | skip | 2, +12 | `/linux/PF` | 2,100,388 |
+| Speed Driver 2 | `/bin/HWtest` | p2 114921 + `rc4.d` | p1 7145 | `/lib/libc<d>.so`, `143287569` | cut | s 3 +4, t 141 −9 | `/race/exec/sd2` | 4,134,548 |
+| Speed Rider m109cnc | `/bin/csh` | p1 7145 + `rc0.d` | p2 114921 | `/etc/rc.d/rc<d>.d`, `147568329` | cut | s 17 +3, t 413 −9 | `/sr/exec/SR` | 11,010,392 |
+| We Dance Online 2 | `/bin/tcsh` | p1 6693 + `rc0.d` | p2 129918 | `/etc/rc.d/rc<d>.d`, `314256` | skip | 299, −3 | `/WeDo/exec/poweron` | 43,756 |
+
+Sectors are relative to the partition.  Each stage 1 runs as `<GECA
+file> __KERNEL__ "-no-print -<tag>"` (tags `GC`, `PR`, `GGB2`, `PF`, `SD2`,
+`SR`, `WeDo`).  The static ELFs at the executables' paths on p2/p3 (Go Go
+Ball 2's `pitch`, Panda Family's `PF`) are decoys that wipe the disks.
+
+| Game | p3 (IGS_SHFS) at | p4 (ext3) at |
+| --- | --- | --- |
+| Go Go Ball 2 DX | `/GoGoBall2` | `/rf_data` |
+| Panda Family (CN) | `/PF` | `/PF/pf_data` |
+| Speed Driver 2 | `/race/linux` | `/data` |
+| Speed Rider m109cnc | `/sr/Game` | `/rewrite` |
+| We Dance Online 2 | `/WeDo/system` | `/WeDo/linux` (3.6 GB: the game data and `wedo`) |

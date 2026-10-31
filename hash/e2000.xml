@@ -75,4 +75,40 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		</part>
 	</software>
 
+	<software name="gogoball2_dx">
+		<description>Go Go Ball 2 DX</description>
+		<year>2008</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="GoGoBall2-E2000-v1-e63"/>
+		<info name="usage" value="docs/GoGoBall2.md; tunables GGB_REGION, GGB_AIM, GGB_SCRIPT"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="gogoball2"/>
+			<!-- /etc/X11/IGS: cd /GoGoBall2; ./pitch  (-> linux/pitch, the ramfs GECA fills) -->
+			<feature name="data" value="/GoGoBall2"/>
+			<feature name="binary" value="pitch"/>
+			<feature name="video_driver" value="x11"/>
+			<feature name="audio_driver" value="dsp"/>
+			<feature name="preload" value="libcasmcard.so"/>
+			<!-- executable assembly: /bin/csh, then /mnt/GECA (skip mode, n falling) -->
+			<feature name="geca_part" value="p1"/>
+			<feature name="geca_sector" value="6692"/>
+			<feature name="geca_file" value="/etc/rc.d/rc0.d"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="129912"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="pieces" value="2163547"/>
+			<feature name="piece_mode" value="skip"/>
+			<feature name="trim_kb" value="168"/>
+			<feature name="trim_step" value="-17"/>
+			<!-- the kernel mounts p3 on /GoGoBall2 and p4 on /rf_data; GECA mounts a ramfs on /GoGoBall2/linux -->
+			<feature name="build" value="root p2; mount p3 /GoGoBall2; assemble /GoGoBall2/linux/pitch; mount p4 /rf_data"/>
+			<diskarea name="harddriv">
+				<disk name="e2000_gogoball2_dx" sha1="c3ed2351d6f6284fac3dba0069374637a72db1b4"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/GoGoBall2/linux/pitch" size="1936100" sha1="0d751f9aa0f7865e2317fcbfaa0f2e17a3591a58"/>
+			</dataarea>
+		</part>
+	</software>
+
 </softwarelist>

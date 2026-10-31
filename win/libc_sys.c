@@ -1424,6 +1424,17 @@ static int l_socket(int d, int t, int p)
     return -1;
 }
 static int l_net_fail(void) { SET_ERRNO(L_ENOSYS); return -1; }
+static void *l_net_null(void) { SET_ERRNO(L_ENOSYS); return NULL; }
+static void l_if_freenameindex(void *p) { (void)p; }
+static char *l_inet_ntoa(uint32_t a)
+{
+    static char buf[16];
+
+    snprintf(buf, sizeof(buf), "%u.%u.%u.%u", a & 0xff, a >> 8 & 0xff, a >> 16 & 0xff, a >> 24);
+    return buf;
+}
+/* modes are not kept (Go Go Ball 2 chmods its logs) */
+static int l_chmod(const char *p, unsigned m) { (void)p; (void)m; return 0; }
 
 /* syscall(): only what libstdc++ uses (futex for static-init guards, gettid) */
 static long l_syscall(long n, long a, long b, long c)
@@ -1508,7 +1519,9 @@ const struct nsym sys_syms[] = {
     N(mremap),
     N(socket), NA(connect, l_net_fail), NA(bind, l_net_fail), NA(listen, l_net_fail),
     NA(accept, l_net_fail), NA(setsockopt, l_net_fail), NA(sendto, l_net_fail),
-    NA(recvfrom, l_net_fail), N(syscall),
+    NA(recvfrom, l_net_fail), NA(send, l_net_fail), NA(recv, l_net_fail),
+    NA(gethostbyname, l_net_null), NA(if_nameindex, l_net_null), N(if_freenameindex), N(inet_ntoa),
+    N(chmod), N(syscall),
     N(_setjmp), NA(setjmp, l__setjmp), NA(__sigsetjmp, l__setjmp), N(longjmp),
     NA(_longjmp, l_longjmp), NA(siglongjmp, l_longjmp), NA(__longjmp_chk, l_longjmp),
     { NULL, NULL },

@@ -203,6 +203,43 @@ addresses are in p3's `sship` (symbols kept).
 | Rudder calibration | settings words 742, 743, 744 (`GameRudder_Init(w743, w742, w744)`) | `SettingLoadData` `0x80771B0` |
 | Key bits | 0 right, 1 left, 2 bomb, 3/4 coin, 5 test, 6 service, 7 ticket | `CRKey_Init` `0x80CBA30` |
 
+## E2000: Go Go Ball 2 DX (`GoGoBall2-OS-e63`, Linux 2.4.31)
+
+Same filesystems as Gold Captain; IGS_SHFS game type `0x5CAAEC43`, version
+`0x55BBF972`, major `0x2FDB9F2B`, minor `0x3DC88801`.  Game addresses are
+in the assembled `pitch` (stripped).
+
+| Item | Value | Where |
+| --- | --- | --- |
+| Stage-1 loader | `/bin/csh`, argv `/etc/rc.d/rc0.d __KERNEL__ "-no-print -GGB2"` | kernel strings |
+| Stage-2 stub (GECA) | p1 sector 6692, 1 KiB, + `/etc/rc.d/rc0.d` | csh |
+| Executable head | p2 sector 129912, 1 KiB | csh |
+| Pieces / skip | `/etc/rc.d/rc<d>.d`, order `2163547`, skip 168 KiB, −17 per piece; ramfs `/GoGoBall2/linux`, file `pitch` | GECA `0x804B3CC` (skip, step, mode 2 = subtract), main `0x8048718` |
+| Product string | `GoGoBall2-E2000-v1-e63` | csh, GECA (`--james`) |
+| IGS027A packet RC4 keys | 12 bytes `EncodeGGB   ` (game → chip, state `0x8546260`), `DecodeGGB   ` (chip → game, `0x8546680`); standard RC4, continuous | `sub_80832F0`; RC4 `sub_808BB50` / `sub_808B800` |
+| Packet checksum | word 17 = sum of words 18..57 (plaintext) | `sub_8083470`, `sub_80834E0` |
+| Re-key (type 16) | 20 bytes: function 0 mday, hour, min, sec, ms (chip → game); function 1 ms, sec, min, hour, mday (game → chip) | `sub_8083550`, `sub_8083610` |
+| Mailbox | BAR3 byte 0 = sequence (1..15) \| port (`0x20`, `0x30`, `0x50`); chip answers `next \| 0x40`, start-up `0x80`; doorbell BAR3+14 | `sub_806B3D0`, `sub_806B290` |
+| BIOS fingerprint | as Gold Captain (group 1) | table `0x81E3560`, check `sub_81A1B10` |
+| Light-curtain calibration | factory `390, 292, 187, 249, 0, 800, 0, 600, 0, 78, 0, 46` | `0x81E5EE0` |
+| Key bits (type 13) | 1 KEY2, 2 KEY1, 6 test, 7 service, 30 coin | `sub_8063A10` |
+| Region (type 18, u16 at 8) | 1 `0CN`, 2 `0HK`, 3 `0FA`, 4 `0US`, 5 `0KR`, 6 `0TL`, other `0TW` | `sub_8072270` |
+
+**Other E2000 images** (triage only; executables assembled, not run):
+
+| Game | Stage 1 / tag | GECA | Head | Pieces | Executable |
+| --- | --- | --- | --- | --- | --- |
+| Panda Family (CN) `PF-E2000-v1-e65` | `/bin/csh`, `-PF` | first KiB of `/bin/tcsh` + `/bin/ksh` | p1 6658 | `/lib/libfun<d>.so`, `413256`, skip 2 +12 | `/linux/PF` |
+| Speed Driver 2 `SD2-E2000-v05-e61` | `/bin/HWtest`, `-SD2` | p2 114921 + `rc4.d` | p1 7145 | `/lib/libc<d>.so`, `143287569`, cut s 3 +4, t 141 −9 | `/race/exec/sd2` |
+| Speed Rider m109cnc `SR-E2000-v1-e64` | `/bin/csh`, `-SR` | p1 7145 + `rc0.d` | p2 114921 | `/etc/rc.d/rc<d>.d`, `147568329`, cut s 17 +3, t 413 −9 | `/sr/exec/SR` |
+| We Dance Online 2 `WeDo-e2000-v1-e64` | `/bin/tcsh`, `-WeDo` | p1 6693 + `rc0.d` | p2 129918 | `/etc/rc.d/rc<d>.d`, `314256`, skip 299 −3 | `/WeDo/exec/poweron` |
+
+Constants: Panda GECA `0x804B5CC`, Speed Driver 2 `0x804B54C`, Speed Rider
+`0x804B5AC`, We Dance `0x804B5EC`.  Speed Rider's shared-RAM RC4 key list
+starts `ILoveIGS` (9-byte entries, the chip picks one, `sub_82D9B20`).
+IGS_SHFS game types: Panda `0x2AD566DC`, Speed Rider `0x3AEF3EEC`, We Dance
+`0x8E1673C2`; Speed Driver 2 has the plain layout.
+
 ## Asset cipher (sound/*.wav, action/*.rom)
 
 Details: `IGS_SOUND_CRYPTO.md`.

@@ -1,18 +1,22 @@
 /*
- * E2000 machine plugin: the PLX PCI9030 card and the IGS036 transport, for
- * E2000 games.
+ * E2000 machine plugin: the PLX PCI9030 card and the protection CPU's
+ * transport, for E2000 games.
  *
  *   - /dev/plx/Pci9030 (driver node) and /dev/plx/Pci9030-0 (the card):
  *     the PLX SDK ioctls the games use (device find, version, location,
  *     BAR size/properties/map).  The other PLX chip nodes do not exist.
  *   - BAR0 (PLX local registers) and BAR2 (shared message RAM) are plain
  *     memory; BAR3 (16-bit mailbox registers) is an MMIO trap with separate
- *     read (IGS036 -> game) and write (game -> IGS036) sides.
- *   - Writing 1 to BAR3+14 rings the doorbell: the IGS036 answers at once.
- *     It reads the game's message from BAR2 (key word RC4-decrypted with the
- *     game -> IGS036 stream, payload XOR key), asks the game plugin for the
- *     reply, writes it back the same way with its own stream, and sets its
- *     status registers to the game's command + 1.
+ *     read (chip -> game) and write (game -> chip) sides.
+ *   - Writing 1 to BAR3+14 rings the doorbell: the chip answers at once.
+ *     IGS036: it reads the game's message from BAR2 (key word RC4-decrypted
+ *     with the game -> IGS036 stream, payload XOR key), asks the game plugin
+ *     for the reply, writes it back the same way with its own stream, and
+ *     sets its status registers to the game's command + 1.
+ *     IGS027A: the game's mailbox byte is sequence | port; the chip answers
+ *     the next sequence number | 0x40.  Of the two rings per packet, the
+ *     first carries the packet (RC4-decrypted, checksummed), whose reply the
+ *     chip writes back encrypted with its own stream.
  *   - /dev/roio: BIOS byte reads (ioctl 0xFC, address ^ 0x1FB8408E, data
  *     ^ 0xB8) served from the strings the game plugin lists.
  *   - /dev/pccard0: must open; only used when the BIOS check fails.
@@ -62,9 +66,9 @@ static const struct e2000_game *game;
 
 struct rc4 { uint8_t s[256], i, j; };
 
-static void rc4_init(struct rc4 *r, const char *key)
+static void rc4_init_len(struct rc4 *r, const void *key, size_t n)
 {
-    size_t n = strlen(key) + 1;
+    const uint8_t *k = key;
     unsigned i, j = 0;
 
     for (i = 0; i < 256; i++)
@@ -72,20 +76,23 @@ static void rc4_init(struct rc4 *r, const char *key)
     for (i = 0; i < 256; i++) {
         uint8_t t = r->s[i];
 
-        j = (j + t + (uint8_t)key[i % n]) & 0xff;
+        j = (j + t + k[i % n]) & 0xff;
         r->s[i] = r->s[j];
         r->s[j] = t;
     }
     r->i = r->j = 0;
 }
 
-static uint32_t rc4_word(struct rc4 *r, uint32_t v)
+static void rc4_init(struct rc4 *r, const char *key)
 {
-    uint8_t b[4];
-    int k;
+    rc4_init_len(r, key, strlen(key) + 1);
+}
 
-    memcpy(b, &v, 4);
-    for (k = 0; k < 4; k++) {
+static void rc4_crypt(struct rc4 *r, uint8_t *b, size_t n)
+{
+    size_t k;
+
+    for (k = 0; k < n; k++) {
         uint8_t t;
 
         r->i++;
@@ -95,7 +102,11 @@ static uint32_t rc4_word(struct rc4 *r, uint32_t v)
         r->s[r->j] = t;
         b[k] ^= r->s[(uint8_t)(r->s[r->i] + r->s[r->j])];
     }
-    memcpy(&v, b, 4);
+}
+
+static uint32_t rc4_word(struct rc4 *r, uint32_t v)
+{
+    rc4_crypt(r, (uint8_t *)&v, 4);
     return v;
 }
 
@@ -110,7 +121,8 @@ static struct {
     uint16_t bar3_out[8];                /* game -> IGS036 */
     struct rc4 to_game, from_game;
     uint32_t exchanges;
-} s = { .lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP };  /* the plugin's own fopen comes back */
+    int mbox_written, pkt_phase;         /* IGS027A: mailbox byte since the last ring; ring 1 or 2 */
+} s ={ .lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP };  /* the plugin's own fopen comes back */
 
 static int fd_kind(int fd)
 {
@@ -129,12 +141,83 @@ static void bar2_st(uint32_t w, uint32_t v) { memcpy(s.bar2 + 4 * w, &v, 4); }
 
 static void igs036_reset(void)
 {
-    rc4_init(&s.to_game, game->key_to_game);
-    rc4_init(&s.from_game, game->key_from_game);
+    if (game->transport == E2000_IGS027A) {
+        rc4_init_len(&s.to_game, game->pkt_key_to_game, game->pkt_key_len);
+        rc4_init_len(&s.from_game, game->pkt_key_from_game, game->pkt_key_len);
+    } else {
+        rc4_init(&s.to_game, game->key_to_game);
+        rc4_init(&s.from_game, game->key_from_game);
+    }
     memset(s.bar3_in, 0, sizeof(s.bar3_in));
     s.exchanges = 0;
+    s.mbox_written = s.pkt_phase = 0;
     if (game->reset)
         game->reset();
+}
+
+static void api_rekey(int to_game, const void *key, int len)
+{
+    rc4_init_len(to_game ? &s.to_game : &s.from_game, key, len);
+}
+
+/* ---- IGS027A ------------------------------------------------------------------ */
+
+#define PKT_CRYPT_OFF (E2000_PKT_PR * 4)
+#define PKT_CRYPT_LEN 160
+
+static uint32_t pkt_sum(const uint32_t *p)
+{
+    uint32_t sum = 0;
+    int i;
+
+    for (i = 0; i < PKT_CRYPT_LEN / 4; i++)
+        sum += p[E2000_PKT_PR + i];
+    return sum;
+}
+
+/*
+ * The game rang.  The start-up ring comes without a mailbox byte and is
+ * answered 0x80.  Every packet then takes two rings: the first with the
+ * packet in BAR2, the second to collect the reply; each is answered with the
+ * next sequence number (1..15) | 0x40.
+ */
+static void igs027_doorbell(void)
+{
+    static uint32_t pkt[E2000_PKT_WORDS];
+    uint8_t w = s.bar3_out[0] & 0xff;
+    int port = w & 0xf0, seq = w & 15;
+    uint32_t len, sum;
+
+    if (!s.mbox_written) {
+        s.bar3_in[0] = 0x80;
+        s.pkt_phase = 0;
+        VLOG("IGS027A start-up ring");
+        return;
+    }
+    s.mbox_written = 0;
+    if (!s.pkt_phase) {
+        memcpy(pkt, s.bar2, sizeof(pkt));
+        if (port != 0x50) {
+            rc4_crypt(&s.from_game, (uint8_t *)pkt + PKT_CRYPT_OFF, PKT_CRYPT_LEN);
+            if ((sum = pkt_sum(pkt)) != pkt[E2000_PKT_SUM])
+                LOG("IGS027A packet checksum 0x%08x, expected 0x%08x (type %u)", sum,
+                    pkt[E2000_PKT_SUM], pkt[E2000_PKT_PR]);
+        }
+        if (s.exchanges < 3)
+            LOG("packet %u: port 0x%x, type %u.%u", s.exchanges, port, pkt[E2000_PKT_PR],
+                pkt[E2000_PKT_PR + 1]);
+        len = game->packet(port, pkt);
+        if (len > (E2000_PKT_WORDS - E2000_PKT_DATA) * 4)
+            len = (E2000_PKT_WORDS - E2000_PKT_DATA) * 4;
+        pkt[0] = 0;                        /* no debug text */
+        pkt[E2000_PKT_LEN] = len;
+        pkt[E2000_PKT_SUM] = pkt_sum(pkt);
+        rc4_crypt(&s.to_game, (uint8_t *)pkt + PKT_CRYPT_OFF, PKT_CRYPT_LEN);
+        memcpy(s.bar2, pkt, len > 0x63 ? len + E2000_PKT_DATA * 4 : PKT_CRYPT_OFF + PKT_CRYPT_LEN);
+        s.exchanges++;
+    }
+    s.pkt_phase ^= 1;
+    s.bar3_in[0] = (seq % 15 + 1) | 0x40;
 }
 
 /* the game rang the doorbell: answer its message */
@@ -205,8 +288,14 @@ static void bar3_write(void *opaque, uint32_t off, int size, uint32_t v)
         if (r >= 8)
             continue;
         s.bar3_out[r] = v >> (8 * b);
-        if (r * 2 == BAR3_DOORBELL && (s.bar3_out[r] & 1))
-            igs036_doorbell();
+        if (r == 0)
+            s.mbox_written = 1;
+        if (r * 2 == BAR3_DOORBELL && (s.bar3_out[r] & 1)) {
+            if (game->transport == E2000_IGS027A)
+                igs027_doorbell();
+            else
+                igs036_doorbell();
+        }
     }
     pthread_mutex_unlock(&s.lock);
 }
@@ -440,6 +529,7 @@ static const struct igs_machine machine = {
 
 static struct e2000_api api = {
     .version = E2000_API_VERSION,
+    .rekey = api_rekey,
 };
 
 __attribute__((visibility("default")))
