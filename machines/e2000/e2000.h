@@ -10,7 +10,9 @@
  *   - E2000_IGS027A: RC4-encrypted packets in BAR2 behind a sequenced
  *     mailbox byte (Go Go Ball 2);
  *   - E2000_IGS036_MSG: shared-RAM header words and a stream of short
- *     sub-messages, one RC4 stream for both directions (Speed Rider).
+ *     sub-messages, one RC4 stream for both directions (Speed Rider);
+ *   - E2000_IGS036_PKT: a byte packet of sub-messages behind a checksum
+ *     word, RC4 on the checksum only, a stream per direction (Panda Family).
  *
  * A game plugin supplies what the protection firmware does for its game:
  * the reply to each message or packet (inputs, coins, acks), input and its
@@ -24,7 +26,9 @@
 #define E2000_API_VERSION 1
 #define E2000_MSG_MAX     2048             /* words per message, header included */
 
-enum { E2000_IGS036, E2000_IGS027A, E2000_IGS036_MSG };
+enum { E2000_IGS036, E2000_IGS027A, E2000_IGS036_MSG, E2000_IGS036_PKT };
+
+#define E2000_PKT36_MAX    0x1000          /* IGS036 packet transport: bytes per packet (the game's buffers) */
 
 /*
  * IGS036 message transport: the chip's header words.  The first
@@ -83,8 +87,8 @@ struct e2000_game {
     void (*file_opened)(const char *path); /* optional: the game fopen'ed a file */
     void (*status)(char *buf, size_t n);   /* optional: window title status line */
 
-    int transport;                         /* E2000_IGS036 (default) or E2000_IGS027A */
-    /* IGS027A: RC4 keys of the packet streams, pkt_key_len bytes each */
+    int transport;                         /* E2000_IGS036 (default), E2000_IGS027A, ... */
+    /* IGS027A, IGS036 packet transport: RC4 keys of the two streams, pkt_key_len bytes each */
     const char *pkt_key_to_game, *pkt_key_from_game;
     int pkt_key_len;
     /*
@@ -103,6 +107,8 @@ struct e2000_game {
      * bytes (nin of them; NULL at power-on).  Fill hdr[E2000_MSG_HDR] and up
      * to max bytes of sub-messages into out; return their length (the
      * machine adds the ending 0).
+     * IGS036 packet transport: the same, with sub-messages [type, length
+     * (16-bit), data] and hdr NULL; the machine pads the packet.
      */
     uint32_t (*message)(const uint8_t *in, uint32_t nin, uint32_t *hdr, uint8_t *out, uint32_t max);
 };

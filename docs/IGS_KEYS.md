@@ -249,17 +249,35 @@ minor `0x993F2B99`.  Game addresses are in the assembled `SR` (stripped).
 | Member-card bit order | 672 words (sub-message 0x42); code alphabet 128 bytes | `sub_846AA30`, `0x8948AE0` |
 | Model numbers | `M:M-109CNC`, `O:S-109CNC`, `I:S-100CNC` | static init `sub_80BBB40` |
 
+## E2000: Panda Family (CN) (`PF-E2000-v1-e65`, Linux 2.4.31)
+
+IGS_SHFS game type `0x2AD566DC`, version `0xEDEB1E16`, major `0x59A415B4`,
+minor `0x85986F65`.  Game addresses are in the assembled `PF` (stripped).
+
+| Item | Value | Where |
+| --- | --- | --- |
+| Stage-1 loader | `/bin/csh`, tag `-PF` | |
+| Stage-2 stub (GECA) | first KiB of `/bin/tcsh` + `/bin/ksh` (feature `geca_head`) | GECA constants `0x804B5CC` |
+| Executable head | p1 sector 6658, 1 KiB | csh |
+| Pieces / skip | `/lib/libfun<d>.so`, order `413256`, skip 2 KiB, +12 per piece; ramfs `/linux`, file `PF` | GECA `0x804B5CC` |
+| IGS036 packet RC4 | 7 bytes `RC4_36` (chip → game, state `0x86E17A0`), `RC4_PC` (game → chip, `0x86E1C00`), NUL included; OpenSSL RC4 over the checksum word only, continuous per direction | `sub_80726A0`; RC4 `sub_804DEA0`, `RC4_set_key` `sub_804DDA0` |
+| Packet checksum | 32-bit sum of bytes 4..n−1; those bytes XOR its low byte | `sub_8072880`, `sub_8072990` |
+| Status | BAR3 registers 0..3 low bytes: sequence \| length << 8; game writes sequence + 1 to registers 0..6, doorbell BAR3+14; first sequence 1 | `sub_804E4D0`, `sub_804E470`, `sub_804E360`, `byte_81C19B4` |
+| Sub-message handler | `[type, length u16, data]` | `sub_8072E40` (`ShareRAM_36Packet_Handler`), add `sub_8072820` |
+| Key bits (type 2) | 0..3 1P, 4..7 2P, 8 service, 9 test; keyboard fallback `asdfhjklv678` | `sub_8072B90`, table `0x8153F00` |
+| Settings | 3132 bytes at `0x86EF2A0`; check `sub_8077C90`; defaults `sub_8078C20`: 2 coins / 1 credit, password 1234, volume 4/4, tickets on, 5..15, camera on | load `sub_8078EF0`, store `sub_8078FC0` |
+| Models | `M:M%03d%s` (`M100CN`), `I:S%01d%02d%s` / `O:S…` from types 5 / 6 | `sub_8077D60` |
+| Camera | `/proc/video/dev/video0..4`: `TP6800`, `TP6810`, `OV511`, `IP293 USB Camera` → types 1..4; photo when found and the setting is on | `libIGS_API` `CameraInfo_Read`; `sub_8068470`, `sub_808C2D0` |
+
 **Other E2000 images** (triage only; executables assembled, not run):
 
 | Game | Stage 1 / tag | GECA | Head | Pieces | Executable |
 | --- | --- | --- | --- | --- | --- |
-| Panda Family (CN) `PF-E2000-v1-e65` | `/bin/csh`, `-PF` | first KiB of `/bin/tcsh` + `/bin/ksh` | p1 6658 | `/lib/libfun<d>.so`, `413256`, skip 2 +12 | `/linux/PF` |
 | Speed Driver 2 `SD2-E2000-v05-e61` | `/bin/HWtest`, `-SD2` | p2 114921 + `rc4.d` | p1 7145 | `/lib/libc<d>.so`, `143287569`, cut s 3 +4, t 141 −9 | `/race/exec/sd2` |
 | We Dance Online 2 `WeDo-e2000-v1-e64` | `/bin/tcsh`, `-WeDo` | p1 6693 + `rc0.d` | p2 129918 | `/etc/rc.d/rc<d>.d`, `314256`, skip 299 −3 | `/WeDo/exec/poweron` |
 
-Constants: Panda GECA `0x804B5CC`, Speed Driver 2 `0x804B54C`, We Dance
-`0x804B5EC`.  IGS_SHFS game types: Panda `0x2AD566DC`, We Dance
-`0x8E1673C2`; Speed Driver 2 has the plain layout.
+Constants: Speed Driver 2 `0x804B54C`, We Dance `0x804B5EC`.  IGS_SHFS
+game types: We Dance `0x8E1673C2`; Speed Driver 2 has the plain layout.
 
 ## Asset cipher (sound/*.wav, action/*.rom)
 

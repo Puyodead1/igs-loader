@@ -4,7 +4,7 @@ elfdeps.py <id> [--set <dir>] [--all]: the Windows loader's view of a game, offl
 
 Follows DT_NEEDED from the game binary the way win/elf.c does (the native
 shim libraries stop the walk; others are found by DT_SONAME in LIBS, the
-game's DATA lib dirs, then the set's /lib and /usr/lib), then prints every
+game's DATA lib dirs, then the set's /lib, /usr/lib and /usr/X11R6/lib), then prints every
 undefined symbol no loaded ELF module defines: the surface the native shims
 must provide.  Symbols win/ already provides are left out unless --all
 (it greps the N(...) entries of win/*.c; gl* are thunks, the preloaded DLLs'
@@ -152,7 +152,7 @@ def main():
     data = rootfs + sw.feature("data", "/")
     lib = lambda l: rootfs + l if l.startswith("/") else data + "/" + l
     dirs = [lib(l) for l in sw.feature("libs", "").split()]
-    dirs += [data, data + "/lib", data + "/libs", rootfs + "/lib", rootfs + "/usr/lib"]
+    dirs += [data, data + "/lib", data + "/libs", rootfs + "/lib", rootfs + "/usr/lib", rootfs + "/usr/X11R6/lib"]
     files = []
     for d in dirs:
         if os.path.isfile(d):

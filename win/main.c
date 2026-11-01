@@ -219,6 +219,9 @@ int main(int argc, char **argv)
         elf_add_search(buf);
         snprintf(buf, sizeof(buf), "%s\\usr\\lib", rootfs);
         elf_add_search(buf);
+        /* the cabinets' LD_LIBRARY_PATH (/etc/X11/IGS): Panda Family's SDL_mixer and GLU */
+        snprintf(buf, sizeof(buf), "%s\\usr\\X11R6\\lib", rootfs);
+        elf_add_search(buf);
     }
 
     bin = mget("binary", "");

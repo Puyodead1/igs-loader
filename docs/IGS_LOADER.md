@@ -8,7 +8,7 @@ Nothing is modified: the game runs from a **rom
 set**, the cabinet's file tree as the running game sees it, built from the
 original disk image (see Rom sets).
 
-Status (2026-10-29), under WSLg:
+Status (2026-11-01), under WSLg:
 
 | Game | Machine | State |
 | --- | --- | --- |
@@ -21,6 +21,7 @@ Status (2026-10-29), under WSLg:
 | Pirate Revenge m101cn | E2000 | attract, coins, ship select, stage, boss, game over and name entry, back to attract; IGS036 game logic reconstructed, weapon values made up (`PirateRevenge.md`) |
 | Go Go Ball 2 DX | E2000 | attract, coins, stages, score, tickets, game over, back to attract; IGS027A packet transport, light curtain as a crosshair, attract order and game flow reconstructed (`GoGoBall2.md`) |
 | Speed Rider m109cnc | E2000 | attract, coins, story and time-attack races with AI riders, continue, ranking, back to attract; IGS036 message transport, UI table reconstructed, game modes and AI invented, lost archive bytes rebuilt; races about 7 fps on llvmpipe (`SpeedRider.md`) |
+| Panda Family CN | E2000 | attract, coins, stages, ranking, tickets, back to attract; IGS036 packet transport (I/O board and settings, game logic in the executable), no camera (`PandaFamily.md`) |
 
 They run at about 56–60 fps (60 fps cap) on Mesa llvmpipe, with continuous
 sound through PulseAudio (WSLg).
@@ -44,7 +45,7 @@ or in WSL:
 sets): `harpoonlagoon_m107us`, `harpoonlagoon_m001uswa`,
 `harpoonlagoon_m200uswa`, `oceanparty_md105cn`, `scratch_m101cn`,
 `heroofrobots_m100fa`, `goldcaptain`, `piraterevenge_m101cn`, `gogoball2_dx`,
-`speedrider_m109cnc`.  The per-game controls are on each
+`speedrider_m109cnc`, `pandafamily_cn`.  The per-game controls are on each
 game's page (`HarpoonLagoon.md`, `OceanParty.md`).
 
 | Variable | Effect |
@@ -54,7 +55,7 @@ game's page (`HarpoonLagoon.md`, `OceanParty.md`).
 | `IGS_FPS=1` | log the frame rate every 5 s |
 | `IGS_VERBOSE=1` | log every ASIC message from the game |
 | `IGS_AUDIO_CHUNK` | audio buffer in samples (default: the game's) |
-| `IGS_AUDIO_LOG=1` | log the game's SDL_mixer calls |
+| `IGS_AUDIO_LOG=1` | log the game's SDL_mixer calls, with SDL's error when a sound fails to load or play |
 | `SDL_VIDEODRIVER` | default `wayland`, or the game's `video_driver` feature; `x11` with sdl12-compat hits a GLX error on WSLg (see below) |
 | `SDL_AUDIODRIVER` | default `pulseaudio` (WSLg's server), or the game's `audio_driver` feature |
 | `IGS_SHOT=<prefix>` | write the frame to `<prefix><n>.ppm` every `IGS_SHOT_EVERY` frames (default 600) |
@@ -115,10 +116,10 @@ The loader runs games by id, MAME style.  Three pieces:
   unique across lists.
 - **Rom sets**: a set is the cabinet's file tree as the running game sees
   it.  The root fs (p2) at `/`; the game data partition (p3) at its mount
-  point (`/Fish`, `/OceanParty`, `/Scratch`, `/Robots`, `/GoldCaptain`, `/pr/linux`, `/GoGoBall2`, `/sr/Game`); p4
-  where the game needs it (Hero of Robots' `rw_data`, Pirate Revenge's `/fec_data`, Go Go Ball 2's `/rf_data`, Speed Rider's `/rewrite`); the executable where
+  point (`/Fish`, `/OceanParty`, `/Scratch`, `/Robots`, `/GoldCaptain`, `/pr/linux`, `/GoGoBall2`, `/sr/Game`, `/PF`); p4
+  where the game needs it (Hero of Robots' `rw_data`, Pirate Revenge's `/fec_data`, Go Go Ball 2's `/rf_data`, Speed Rider's `/rewrite`, Panda Family's `/PF/pf_data`); the executable where
   the cabinet has it at run time (`/Fish.bin/fish`, `/Scratch.bin/swin`
-  decrypted, `/Game/GoldCaptain`, `/pr/exec/sship`, `/GoGoBall2/linux/pitch` and `/sr/exec/SR` reassembled).  A set is a folder `<id>/`,
+  decrypted, `/Game/GoldCaptain`, `/pr/exec/sship`, `/GoGoBall2/linux/pitch`, `/sr/exec/SR` and `/linux/PF` reassembled).  A set is a folder `<id>/`,
   or an archive `<id>.7z` / `<id>.zip` with the tree at its root or under one
   top folder `<id>/`.  Symlinks are stored as links; absolute ones are made
   relative to the set root.
@@ -192,7 +193,7 @@ $ run.sh --verify scratch_m101cn       # the <rom> hashes, like mame -verifyroms
 | `video_driver` / `audio_driver` | SDL drivers when the default (`wayland` / `pulseaudio`) does not apply |
 | `asset_mask` | the asset-cipher mask (exported to the machine as `IGS_ASSET_MASK`; also Scratch's executable mask) |
 | `rofs_profile` / `rofs_key` | E2100 root filesystem variant (`romtool/igs_rofs.py` profile) and its key literal |
-| `geca_sector` … `trim_step`, `head_part`, `geca_part`, `geca_file`, `piece_file`, `piece_mode`, `cut_kb`, `cut_step` | E2000 executable assembly (`romtool/igs_e2000_extract.py`) |
+| `geca_sector` … `trim_step`, `head_part`, `geca_part`, `geca_head`, `geca_file`, `piece_file`, `piece_mode`, `cut_kb`, `cut_step` | E2000 executable assembly (`romtool/igs_e2000_extract.py`) |
 | `build` | the builder's recipe (below) |
 
 The description is the window title (exported as `IGS_NAME`).  The `<info
@@ -257,6 +258,7 @@ Set sizes (`7z -mx9`, 7-Zip 23.01) and build times on this machine:
 | `piraterevenge_m101cn` | 1,272 MB | 2.0 GB | 9 min |
 | `gogoball2_dx` | 479 MB | 2.7 GB | 12 min |
 | `speedrider_m109cnc` | 287 MB | 1.2 GB | 9 min |
+| `pandafamily_cn` | 251 MB | 0.71 GB | 6 min |
 
 ### Reading archives (`romset/`)
 
@@ -304,6 +306,7 @@ tools/
     games/piraterevenge/       piraterevenge.c
     games/gogoball2/           gogoball2.c
     games/speedrider/          speedrider.c
+    games/pandafamily/         pandafamily.c
     build/                     igs_core.so  e2100.so  e2000.so  <game>.so  libcasmcard.so
                                libcasmcard-nocard.so  libcasmcard-hero.so  igs-romset
 ```
@@ -315,8 +318,8 @@ symbols.
 | Layer | Owns | Today |
 | --- | --- | --- |
 | **core** (`igs_core.so`, the `LD_PRELOAD` library) | libc/SDL interposition, routing device files to the machine, MMIO traps, libc fixes, frame pacing, audio, the overlay renderer | the only Linux/SDL/GL-specific code |
-| **machine** (`$IGS_MACHINE`) | the board: device files, registers, DMA, the protection transport | `e2100`: `/dev/pccard0`, BARs, DMA, the asset cipher (mask from the software list), the ASIC handshake, and three runtime transports: batch framing (Harpoon, Ocean Party), the register table (Scratch) and request/response (Hero of Robots), chosen by the game plugin's `transport`; serial ports with a peripheral the game plugin answers for.  `e2000`: the PLX PCI9030 card (`/dev/plx/*`), the IGS036 shared-RAM transport with RC4-wrapped keys, the IGS027A packet transport or the IGS036 message transport (the game plugin's `transport`), `/dev/roio`, `/dev/pccard0` |
-| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs), `piraterevenge` (the same commands plus coin counters), `gogoball2` (IGS027A packets: stores, settings, light curtain, tickets, ball stopper, game flow), `speedrider` (IGS036 messages: inputs, coins, NVRAM, zip prefixes, UI, game modes, AI riders) |
+| **machine** (`$IGS_MACHINE`) | the board: device files, registers, DMA, the protection transport | `e2100`: `/dev/pccard0`, BARs, DMA, the asset cipher (mask from the software list), the ASIC handshake, and three runtime transports: batch framing (Harpoon, Ocean Party), the register table (Scratch) and request/response (Hero of Robots), chosen by the game plugin's `transport`; serial ports with a peripheral the game plugin answers for.  `e2000`: the PLX PCI9030 card (`/dev/plx/*`), the IGS036 shared-RAM transport with RC4-wrapped keys, the IGS027A packet transport, the IGS036 message or packet transport (the game plugin's `transport`), `/dev/roio`, `/dev/pccard0` |
+| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs), `piraterevenge` (the same commands plus coin counters), `gogoball2` (IGS027A packets: stores, settings, light curtain, tickets, ball stopper, game flow), `speedrider` (IGS036 messages: inputs, coins, NVRAM, zip prefixes, UI, game modes, AI riders), `pandafamily` (IGS036 packets: inputs, coins, tickets, settings, action groups) |
 
 **Interfaces:**
 - **Core ↔ machine:** `core/igs.h`.
@@ -366,7 +369,7 @@ description to the plugins as `IGS_MACHINE`, `IGS_GAME`, `IGS_ASSET_MASK`,
 | `settimeofday`, `/dev/rtc` | core: no-op / fails harmlessly |
 | `gettimeofday` | core: never runs backwards (WSL steps the clock when it resyncs; Ogre 1.4's unsigned frame time then spins its animation controllers forever) |
 | `glGetString`, `cgCreateProgram` | core: with `IGS_CG_ARB=1`, NVIDIA Cg profiles as ARB programs (Usage) |
-| `readdir`, `__xstat`, `__lxstat`, `__fxstat` | core: backed by the 64-bit calls with the inode number truncated (see below) |
+| `readdir`, `__xstat`, `__lxstat`, `__fxstat`, `stat`, `lstat`, `fstat` | core: backed by the 64-bit calls with the inode number truncated (see below) |
 | `SDL_PollEvent` | core: key events go to the machine, then the game (SDL 1.2 `keysym.sym` is at event offset 8) |
 | `SDL_SetVideoMode` | core: drops the fullscreen flag unless `IGS_FULLSCREEN` |
 | `SDL_GL_SwapBuffers` | core: overlay (the game's `draw`), then the 60 fps cap, then the frame-rate log |
@@ -394,7 +397,8 @@ description to the plugins as `IGS_MACHINE`, `IGS_GAME`, `IGS_ASSET_MASK`,
   unsupported instruction aborts and logs its bytes.
 - **32-bit `readdir`/`stat`.** WSL's Windows-drive mounts report inode
   numbers around 2^50, so the games' 32-bit calls fail with `EOVERFLOW`.
-  That broke Ocean Party's file index.
+  That broke Ocean Party's file index, and SDL2's `SDL_RWFromFile` (its
+  `fstat` check) refused Panda Family's sounds.
 - **Overlay.** It is drawn with fixed-function GL with all state saved.  GL
   entry points come from `SDL_GL_GetProcAddress`, because the games export
   data symbols with GL names; from `glXGetProcAddressARB` when SDL has no
@@ -402,7 +406,8 @@ description to the plugins as `IGS_MACHINE`, `IGS_GAME`, `IGS_ASSET_MASK`,
 
 - **E2000: SDL inside the executable.**  The games link SDL 1.2 (X11/GLX
   video, OSS audio) and SDL_mixer statically, so no SDL symbol can be
-  interposed.  The core works one level lower:
+  interposed (Panda Family links them dynamically and uses the host's, as
+  the E2100 games do).  The core works one level lower:
   - **Xlib locks.**  libX11 ≥ 1.8 enables its display locks for every
     client, and the game's built-in 2008 Xlib extension code deadlocks in
     the first `XMatchVisualInfo`.  The core clears `lock` and `lock_fns` in
@@ -486,7 +491,7 @@ Windows program that loads the game's i386 ELF binary itself and runs it
 natively.  No WSL, VM or X server at run time; GL goes to the real Windows
 driver, so the games get the GPU.
 
-Status (2026-10-31, RTX 3060, Windows 11):
+Status (2026-11-01, RTX 3060, Windows 11):
 
 | Game | State |
 | --- | --- |
@@ -499,6 +504,7 @@ Status (2026-10-31, RTX 3060, Windows 11):
 | Go Go Ball 2 DX | attract, coins, three stages, score, tickets, game over, back to attract; sound through `/dev/dsp`; 60 fps |
 | Hero of Robots m100fa | copyright screen after about 80 s, attract, coins, start, card input, fights, card debit and dispense, game over; sound; 60 fps |
 | Speed Rider m109cnc | attract after about a minute, coins, story and time-attack races, continue, ranking, back to attract; sound through `/dev/dsp`; 30 fps (the game's own pace); its Cg shaders need an NVIDIA driver |
+| Panda Family CN | attract, coins, stages, ranking, tickets, back to attract; sound (the set's SDL_mixer on the loader's SDL); 60 fps |
 
 ### Usage
 
@@ -565,8 +571,8 @@ way the exe does and lists the symbols no loaded ELF module defines and
 
 - **What is ELF and what is native.** The game binary and its ordinary
   libraries are loaded as ELF, unchanged, from the game's `libs`, then
-  `DATA/lib`, `DATA/libs` and `DATA`, then the set's `/lib` and
-  `/usr/lib`.  That covers libstdc++ 6.0.10, libgcc_s 4.3.2,
+  `DATA/lib`, `DATA/libs` and `DATA`, then the set's `/lib`, `/usr/lib`
+  and `/usr/X11R6/lib` (the cabinets' `LD_LIBRARY_PATH`).  That covers libstdc++ 6.0.10, libgcc_s 4.3.2,
   SDL_mixer, GLU, zlib, libmad, libjpeg, GLEW, zziplib, and
   libvorbisfile/libogg (dlopened by SDL_mixer), Ogre, Cg, freetype.  The
   OS-boundary libraries are native (`win/*.c`):

@@ -9,7 +9,8 @@ Disk layout (all E2000 images seen so far):
 The game executable is not stored whole.  At boot the kernel runs a stage-1
 loader (Gold Captain /bin/csh, Pirate Revenge /bin/HWtest), which writes
   /mnt/head = 1 KiB from HEAD_PART sector HEAD_SECTOR (the executable's first KiB)
-  /mnt/GECA = 1 KiB from GECA_PART sector GECA_SECTOR + GECA_FILE  (an ELF)
+  /mnt/GECA = 1 KiB from GECA_PART sector GECA_SECTOR (or the first KiB of
+              the root-fs file GECA_HEAD) + GECA_FILE  (an ELF)
 and the kernel then runs /mnt/GECA, which builds the executable as
   head + piece(PIECES[0]) + piece(PIECES[1]) + ...
 where piece(d) is PIECE_FILE with %s = d.  PIECE_MODE says how much of each
@@ -25,7 +26,7 @@ Details: docs/IGS_ROFS_REVERSE_ENGINEERING.md.
 
 The software list (hash/e2000.xml) supplies the features geca_sector,
 head_sector, pieces, trim_kb, trim_step and, where they differ from Gold
-Captain's, head_part (default p2), geca_part (p1), geca_file
+Captain's, head_part (default p2), geca_part (p1) or geca_head, geca_file
 (/lib/libdb0.a), piece_file (/lib/libdb%s.a), piece_mode (trim), and for
 cut cut_kb, cut_step; see
 docs/IGS_KEYS.md.
@@ -107,9 +108,13 @@ def build_executable(image, parts, root, m):
 
 
 def build_geca(image, parts, root, m):
-    with open(image, 'rb') as f:
-        f.seek((parts[part_index(m, 'GECA_PART', 'p1')][0] + int(m['GECA_SECTOR'])) * 512)
-        stub = f.read(1024)
+    if 'GECA_HEAD' in m:
+        # Panda Family: the stub is the first KiB of a root-fs file
+        stub = root_file(root, m['GECA_HEAD'])[:1024]
+    else:
+        with open(image, 'rb') as f:
+            f.seek((parts[part_index(m, 'GECA_PART', 'p1')][0] + int(m['GECA_SECTOR'])) * 512)
+            stub = f.read(1024)
     return stub + root_file(root, m.get('GECA_FILE', '/lib/libdb0.a'))
 
 

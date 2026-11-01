@@ -22,6 +22,11 @@
  *     next message: key, length and three header words RC4 (one stream both
  *     ways), eight XOR the key, the sub-messages XOR the key; the status
  *     registers become the game's command + 1.
+ *     IGS036 packet transport: the game's packet (checksum word RC4, bytes
+ *     XOR its low byte) goes to the game plugin as sub-messages, whose answer
+ *     is written back the same way with the chip's stream; the status
+ *     registers become the game's sequence + 1 and the packet length.  A
+ *     board reset (PLX ioctl) restarts the chip.
  *   - /dev/roio: BIOS byte reads (ioctl 0xFC, address ^ 0x1FB8408E, data
  *     ^ 0xB8) served from the strings the game plugin lists.
  *   - /dev/pccard0: must open; only used when the BIOS check fails.
@@ -148,10 +153,11 @@ static uint32_t bar2_ld(uint32_t w) { uint32_t v; memcpy(&v, s.bar2 + 4 * w, 4);
 static void bar2_st(uint32_t w, uint32_t v) { memcpy(s.bar2 + 4 * w, &v, 4); }
 
 static void msg_send(const uint8_t *in, uint32_t nin, uint8_t status);
+static void pkt36_send(const uint8_t *in, uint32_t nin, uint8_t seq);
 
 static void igs036_reset(void)
 {
-    if (game->transport == E2000_IGS027A) {
+    if (game->transport == E2000_IGS027A || game->transport == E2000_IGS036_PKT) {
         rc4_init_len(&s.to_game, game->pkt_key_to_game, game->pkt_key_len);
         rc4_init_len(&s.from_game, game->pkt_key_from_game, game->pkt_key_len);
     } else if (game->transport == E2000_IGS036_MSG) {
@@ -169,6 +175,8 @@ static void igs036_reset(void)
     /* the chip's power-on message, there before the game reads the status */
     if (game->transport == E2000_IGS036_MSG)
         msg_send(NULL, 0, 0x80);
+    else if (game->transport == E2000_IGS036_PKT)
+        pkt36_send(NULL, 0, 1);            /* the game first looks for sequence 1 */
 }
 
 static void api_rekey(int to_game, const void *key, int len)
@@ -251,6 +259,77 @@ static void msg_doorbell(void)
     if (s.exchanges < 3)
         LOG("IGS036 message %u: cmd 0x%02x, %u bytes in", s.exchanges, cmd, n);
     msg_send(in, n, (uint8_t)((cmd + 1) | 0x80));
+    s.exchanges++;
+}
+
+/* ---- IGS036 packet transport (Panda Family) ----------------------------------------- */
+
+/*
+ * A packet in BAR2: a checksum word (the 32-bit sum of bytes 4..n-1 before
+ * masking), then sub-messages [type, length (16-bit), data]; bytes 4..n-1
+ * are XOR the checksum's low byte, and the checksum word goes through the
+ * sender's RC4 stream.  The status (BAR3 registers 0..3, low bytes) is the
+ * sequence byte | n << 8; the game rings with sequence + 1 and its own n,
+ * the chip answers with that + 1.
+ */
+static uint32_t pkt36_sum(const uint8_t *b, uint32_t n)
+{
+    uint32_t sum = 0, i;
+
+    for (i = 4; i < n; i++)
+        sum += b[i];
+    return sum;
+}
+
+static void pkt36_status(uint32_t v)
+{
+    int k;
+
+    for (k = 0; k < 8; k++)
+        s.bar3_in[k] = k < 4 ? (v >> (8 * k)) & 0xff : 0;
+}
+
+static void pkt36_send(const uint8_t *in, uint32_t nin, uint8_t seq)
+{
+    static uint8_t b[E2000_PKT36_MAX];
+    uint32_t n, sum, i;
+
+    memset(b, 0, sizeof(b));
+    n = game->message(in, nin, NULL, b + 4, sizeof(b) - 12);
+    if (n > sizeof(b) - 12)
+        n = sizeof(b) - 12;
+    /* an empty sub-message ends the list (the game stops one byte short), then pad to words */
+    n = (4 + n + 3 + 3) & ~3u;
+    sum = pkt36_sum(b, n);
+    for (i = 4; i < n; i++)
+        b[i] ^= sum & 0xff;
+    memcpy(b, &sum, 4);
+    rc4_crypt(&s.to_game, b, 4);
+    memcpy(s.bar2, b, n);
+    pkt36_status(seq | n << 8);
+}
+
+static void pkt36_doorbell(void)
+{
+    static uint8_t b[E2000_PKT36_MAX];
+    uint32_t st = (s.bar3_out[0] & 0xff) | (s.bar3_out[1] & 0xff) << 8 |
+                  (s.bar3_out[2] & 0xff) << 16 | (uint32_t)(s.bar3_out[3] & 0xff) << 24;
+    uint32_t n = st >> 8, sum, i;
+
+    if (n < 4 || n > sizeof(b)) {
+        LOG("IGS036 packet: bad length %u", n);
+        n = 4;
+    }
+    memcpy(b, s.bar2, n);
+    rc4_crypt(&s.from_game, b, 4);
+    memcpy(&sum, b, 4);
+    for (i = 4; i < n; i++)
+        b[i] ^= sum & 0xff;
+    if (pkt36_sum(b, n) != sum)
+        LOG("IGS036 packet %u: checksum 0x%08x, expected 0x%08x", s.exchanges, pkt36_sum(b, n), sum);
+    if (s.exchanges < 3)
+        LOG("IGS036 packet %u: seq 0x%02x, %u bytes in", s.exchanges, st & 0xff, n);
+    pkt36_send(b + 4, n - 4, (uint8_t)(st + 1));
     s.exchanges++;
 }
 
@@ -389,6 +468,8 @@ static void bar3_write(void *opaque, uint32_t off, int size, uint32_t v)
                 igs027_doorbell();
             else if (game->transport == E2000_IGS036_MSG)
                 msg_doorbell();
+            else if (game->transport == E2000_IGS036_PKT)
+                pkt36_doorbell();
             else
                 igs036_doorbell();
         }
@@ -454,8 +535,12 @@ static int plx_ioctl(unsigned long req, uint8_t *a)
         memcpy(a + 8, &v, 4);
         a[12] = 0;                         /* memory, not I/O */
         break;
-    case PLX_BAR_MAP:
     case PLX_RESET:
+        /* PlxPciBoardReset: Panda Family resets the IGS036, then starts its RC4 streams over */
+        if (game->transport == E2000_IGS036_PKT && s.bar2)
+            igs036_reset();
+        break;
+    case PLX_BAR_MAP:
         break;
     default:
         LOG("PLX ioctl 0x%lx", req);

@@ -1558,7 +1558,7 @@ const struct nsym sys_syms[] = {
     N(mremap),
     N(socket), NA(connect, l_net_fail), NA(bind, l_net_fail), NA(listen, l_net_fail),
     NA(accept, l_net_fail), NA(setsockopt, l_net_fail), NA(sendto, l_net_fail),
-    NA(recvfrom, l_net_fail), NA(send, l_net_fail), NA(recv, l_net_fail),
+    NA(recvfrom, l_net_fail), NA(send, l_net_fail), NA(recv, l_net_fail), NA(shutdown, l_net_fail),
     NA(gethostbyname, l_net_null), NA(if_nameindex, l_net_null), N(if_freenameindex), N(inet_ntoa),
     NA(getsockname, l_net_fail), NA(getsockopt, l_net_fail), N(inet_addr), N(inet_aton),
     NA(getaddrinfo, l_gai_fail), NA(getnameinfo, l_gai_fail), N(freeaddrinfo), N(gai_strerror),

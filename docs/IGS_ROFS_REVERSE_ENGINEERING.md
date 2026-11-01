@@ -414,7 +414,8 @@ their own step.  Empty or missing pieces are passed over without stepping.
 
 `igs_e2000_extract.py` checks the result: the ELF section-header table must
 end exactly at the end of the file.  Software-list features: `head_part`,
-`geca_part`, `geca_file`, `piece_file`, `piece_mode` (`trim` / `skip` /
+`geca_part`, `geca_head` (a root-fs file whose first KiB is the stub, Panda
+Family), `geca_file`, `piece_file`, `piece_mode` (`trim` / `skip` /
 `cut`), `trim_kb` / `trim_step` for `n` (`s` in `cut`), and `cut_kb` /
 `cut_step` for `t`.
 
@@ -431,7 +432,7 @@ end exactly at the end of the file.  Software-list features: `head_part`,
 Sectors are relative to the partition.  Each stage 1 runs as `<GECA
 file> __KERNEL__ "-no-print -<tag>"` (tags `GC`, `PR`, `GGB2`, `PF`, `SD2`,
 `SR`, `WeDo`).  The static ELFs at the executables' paths on p2/p3 (Go Go
-Ball 2's `pitch`, Panda Family's `PF`) are decoys that wipe the disks.
+Ball 2's `pitch`, Panda Family's `/linux/PF`) are decoys that wipe the disks.
 
 | Game | p3 (IGS_SHFS) at | p4 (ext3) at |
 | --- | --- | --- |

@@ -951,6 +951,32 @@ int __fxstat(int ver, int fd, struct stat *st)
     return fstat64(fd, &s64) ? -1 : stat_from64(&s64, st);
 }
 
+/*
+ * The same for host libraries built against glibc 2.33+, which call the
+ * plain symbols: SDL2's SDL_RWFromFile fstat()s the file it opened and
+ * refused every WAV of Panda Family's ("not a regular file").
+ */
+int stat(const char *path, struct stat *st)
+{
+    struct stat64 s64;
+
+    return stat64(path, &s64) ? -1 : stat_from64(&s64, st);
+}
+
+int lstat(const char *path, struct stat *st)
+{
+    struct stat64 s64;
+
+    return lstat64(path, &s64) ? -1 : stat_from64(&s64, st);
+}
+
+int fstat(int fd, struct stat *st)
+{
+    struct stat64 s64;
+
+    return fstat64(fd, &s64) ? -1 : stat_from64(&s64, st);
+}
+
 /* ---- SDL --------------------------------------------------------------------- */
 
 /*
@@ -1566,13 +1592,30 @@ int Mix_OpenAudio(int freq, uint16_t format, int channels, int chunksize)
     return r;
 }
 
+void *Mix_LoadWAV_RW(void *src, int freesrc)
+{
+    REAL(void *, Mix_LoadWAV_RW, (void *, int));
+    void *r = real_Mix_LoadWAV_RW(src, freesrc);
+
+    if (audio_log() && !r) {
+        char *(*err)(void) = dlsym(RTLD_DEFAULT, "SDL_GetError");
+
+        LOG("load wav -> NULL %s", err ? err() : "");
+    }
+    return r;
+}
+
 int Mix_PlayChannelTimed(int ch, void *chunk, int loops, int ticks)
 {
     REAL(int, Mix_PlayChannelTimed, (int, void *, int, int));
     int r = real_Mix_PlayChannelTimed(ch, chunk, loops, ticks);
 
-    if (audio_log())
-        LOG("%.2f play ch %d loops %d ticks %d -> %d", core_now(), ch, loops, ticks, r);
+    if (audio_log()) {
+        char *(*err)(void) = r < 0 ? dlsym(RTLD_DEFAULT, "SDL_GetError") : NULL;
+
+        LOG("%.2f play ch %d loops %d ticks %d -> %d%s%s", core_now(), ch, loops, ticks, r,
+            err ? " " : "", err ? err() : "");
+    }
     return r;
 }
 
