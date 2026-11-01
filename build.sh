@@ -15,6 +15,9 @@ for m in machines/*/; do
 done
 # E2000 executables need /lib/libcasmcard.so by absolute path (see the stub)
 gcc $CF -Wl,-soname,/lib/libcasmcard.so -o build/libcasmcard.so machines/e2000/libcasmcard.c
+# Speed Rider links it as plain libcasmcard.so
+gcc $CF -DCASMCARD_SONAME='"libcasmcard.so"' -Wl,-soname,libcasmcard.so -o build/libcasmcard-nocard.so \
+    machines/e2000/libcasmcard.c
 # Hero of Robots: its smart-card reader and card (preloaded, SONAME libcasmcard.so)
 gcc $CF -fvisibility=hidden -Wl,-soname,libcasmcard.so -o build/libcasmcard-hero.so \
     games/heroofrobots/libcasmcard.c -ldl

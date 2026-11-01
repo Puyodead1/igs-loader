@@ -157,6 +157,19 @@ static int l_pthread_getschedparam(void *t, int *pol, int *p) { (void)t; *pol = 
 static int l_pthread_sigmask(int how, const void *s, void *old) { (void)how; (void)s; if (old) memset(old, 0, 128); return 0; }
 static int l_sched_yield(void) { SwitchToThread(); return 0; }
 static int l_sched_prio(int p) { (void)p; return 0; }
+/* one CPU set per processor, as many as the mask holds */
+static int l_sched_getaffinity(int pid, size_t size, uint8_t *mask)
+{
+    SYSTEM_INFO si;
+    DWORD i;
+
+    (void)pid;
+    GetSystemInfo(&si);
+    memset(mask, 0, size);
+    for (i = 0; i < si.dwNumberOfProcessors && i / 8 < size; i++)
+        mask[i / 8] |= 1 << (i % 8);
+    return 0;
+}
 
 /* ---- mutexes ------------------------------------------------------------------------------ */
 
@@ -358,7 +371,7 @@ const struct nsym thread_syms[] = {
     N(pthread_getspecific), N(pthread_setspecific), N(pthread_once),
     NA(__pthread_once, l_pthread_once),
     N(sem_init), N(sem_destroy), N(sem_wait), N(sem_trywait), N(sem_post), N(sem_getvalue),
-    N(sched_yield), NA(sched_get_priority_max, l_sched_prio), NA(sched_get_priority_min, l_sched_prio),
+    N(sched_yield), N(sched_getaffinity), NA(sched_get_priority_max, l_sched_prio), NA(sched_get_priority_min, l_sched_prio),
     { NULL, NULL },
 };
 

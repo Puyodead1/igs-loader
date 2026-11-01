@@ -407,14 +407,16 @@ each piece:
 - Each piece is `dd ... bs=1K skip=n`: everything after its first `n` KiB,
   `n` starting at 9 and growing by 4.
 
-Speed Driver 2 and Speed Rider use a third mode, `cut`: each piece is
-`dd bs=1K skip=s count=size/1K-s-t` (the last one `bs=1` in bytes), `s`
-and `t` each with their own step; empty or missing pieces are passed over.
+Speed Driver 2 and Speed Rider use a third mode, `cut` (Speed Rider GECA
+`sub_8048958`): each piece is `dd bs=1K skip=s count=size/1K-s-t`, the
+last one `bs=1 skip=s*1024 count=size-(s+t)*1024`; `s` and `t` each have
+their own step.  Empty or missing pieces are passed over without stepping.
 
 `igs_e2000_extract.py` checks the result: the ELF section-header table must
 end exactly at the end of the file.  Software-list features: `head_part`,
-`geca_part`, `geca_file`, `piece_file`, `piece_mode` (`trim` / `skip`), and
-`trim_kb` / `trim_step` for `n`.  `cut` is not implemented.
+`geca_part`, `geca_file`, `piece_file`, `piece_mode` (`trim` / `skip` /
+`cut`), `trim_kb` / `trim_step` for `n` (`s` in `cut`), and `cut_kb` /
+`cut_step` for `t`.
 
 | Game | Stage 1 | GECA | Head | Pieces | Mode | n, step | Executable | Size |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |

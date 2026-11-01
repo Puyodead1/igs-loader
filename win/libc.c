@@ -609,7 +609,13 @@ static int l_rename(const char *a, const char *b)
 
     if (lx_path(a, wa, sizeof(wa)) || lx_path(b, wb, sizeof(wb)))
         return -1;
-    return MoveFileExA(wa, wb, MOVEFILE_REPLACE_EXISTING) ? 0 : -1;
+    if (MoveFileExA(wa, wb, MOVEFILE_REPLACE_EXISTING))
+        return 0;
+    /* a file the game still has open cannot move (no FILE_SHARE_DELETE): copy it */
+    if (!CopyFileA(wa, wb, FALSE))
+        return -1;
+    DeleteFileA(wa);
+    return 0;
 }
 
 static LFILE *l_tmpfile(void) { return lfile_wrap(tmpfile()); }
@@ -764,6 +770,18 @@ static size_t l___strftime_l(char *s, size_t n, const char *fmt, const struct l_
 static double l___strtod_l(const char *s, char **e, void *l) { (void)l; return strtod(s, e); }
 static float l___strtof_l(const char *s, char **e, void *l) { (void)l; return strtof(s, e); }
 static long double l___strtold_l(const char *s, char **e, void *l) { (void)l; return strtold(s, e); }
+static long l___strtol_l(const char *s, char **e, int b, void *l) { (void)l; return strtol(s, e, b); }
+static unsigned long l___strtoul_l(const char *s, char **e, int b, void *l) { (void)l; return strtoul(s, e, b); }
+static long long l___strtoll_l(const char *s, char **e, int b, void *l) { (void)l; return strtoll(s, e, b); }
+static unsigned long long l___strtoull_l(const char *s, char **e, int b, void *l) { (void)l; return strtoull(s, e, b); }
+static void *l___rawmemchr(const void *s, int c)
+{
+    const unsigned char *p = s;
+
+    while (*p != (unsigned char)c)
+        p++;
+    return (void *)p;
+}
 static size_t l___ctype_get_mb_cur_max(void) { return 1; }
 
 /* ---- wide characters: glibc's wchar_t is 32-bit -------------------------------------- */
@@ -976,6 +994,13 @@ static long l_lrint(double x) { return lrint(x); }
 static double l_round(double x) { return round(x); }
 static float l_roundf(float x) { return roundf(x); }
 static double l_trunc(double x) { return trunc(x); }
+static float l_truncf(float x) { return truncf(x); }
+static double l_rint(double x) { return rint(x); }
+static float l_rintf(float x) { return rintf(x); }
+static long long l_llrint(double x) { return llrint(x); }
+static float l_ldexpf(float x, int e) { return ldexpf(x, e); }
+static float l_frexpf(float x, int *e) { return frexpf(x, e); }
+static float l_cbrtf(float x) { return cbrtf(x); }
 static float l_fabsf(float x) { return fabsf(x); }
 static float l_sqrtf(float x) { return sqrtf(x); }
 static float l_sinf(float x) { return sinf(x); }
@@ -1627,7 +1652,8 @@ const struct nsym libc_syms[] = {
     NA(duplocale, l___duplocale), NA(freelocale, l___freelocale), NA(uselocale, l___uselocale),
     N(setlocale), N(nl_langinfo), N(__nl_langinfo_l), N(__strcoll_l), N(__strxfrm_l),
     N(strftime), N(__strftime_l), N(__strtod_l), N(__strtof_l), N(__strtold_l),
-    NA(strtold_l, l___strtold_l), N(__ctype_get_mb_cur_max),
+    NA(strtold_l, l___strtold_l), N(__ctype_get_mb_cur_max), N(__strtol_l), N(__strtoul_l),
+    N(__strtoll_l), N(__strtoull_l), N(__rawmemchr),
     N(__towlower_l), N(__towupper_l), N(towlower), N(towupper), N(__wctype_l), N(wctype),
     N(__iswctype_l), N(iswctype), N(wctob), N(btowc), N(mbrtowc), N(wcrtomb), N(mbsrtowcs),
     N(mbsnrtowcs), N(wcsrtombs), N(wcsnrtombs), N(wcslen), N(wcscmp), N(wmemchr), N(wmemcmp),
@@ -1642,7 +1668,7 @@ const struct nsym libc_syms[] = {
     N(floorf), N(fmodf), N(powf), N(expf), N(logf), N(log10f), N(fabsf),
     N(__isnan), N(__isnanf), N(__isinf), N(__finite), NA(isnan, l___isnan), NA(isinf, l___isinf),
     N(sincosf), N(sincos), N(frexpl), N(powl), N(ldexpl), N(modfl), N(lrintf), N(lrint), N(round),
-    N(roundf), N(trunc),
+    N(roundf), N(trunc), N(truncf), N(rint), N(rintf), N(llrint), N(ldexpf), N(frexpf), N(cbrtf),
     NF(__divdi3), NF(__moddi3), NF(__udivdi3), NF(__umoddi3),
     /* stdlib */
     N(__libc_start_main), N(__errno_location),

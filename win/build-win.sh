@@ -27,10 +27,11 @@ PF="$CF -shared -static -Iwin/compat -include win/compat/igs_plugin.h"
 for m in e2100 e2000; do
     $CC $PF -o "$OUT/$m.dll" "machines/$m/$m.c"
 done
-for g in harpoonlagoon oceanparty scratch heroofrobots goldcaptain piraterevenge gogoball2; do
+for g in harpoonlagoon oceanparty scratch heroofrobots goldcaptain piraterevenge gogoball2 speedrider; do
     $CC $PF -o "$OUT/$g.dll" "games/$g/$g.c" || echo "($g.dll not built)"
 done
 # the preloaded libraries (feature "preload"): build/<name>.so on Linux, <name>.dll here
 $CC $PF -o "$OUT/libcasmcard.dll" machines/e2000/libcasmcard.c
+$CC $PF -DCASMCARD_SONAME='"libcasmcard.so"' -o "$OUT/libcasmcard-nocard.dll" machines/e2000/libcasmcard.c
 $CC $PF -Wno-attributes -o "$OUT/libcasmcard-hero.dll" games/heroofrobots/libcasmcard.c
 ls -l "$OUT"

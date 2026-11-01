@@ -851,6 +851,38 @@ int settimeofday(const struct timeval *tv, const struct timezone *tz)
 }
 
 /*
+ * The wall clock never runs backwards for the game.  WSL steps it when it
+ * resyncs with the host; Ogre 1.4's frame time is an unsigned difference of
+ * gettimeofday() readings, so a step back becomes a frame of about 4.3
+ * million seconds, and its texture-animation controllers then spin forever
+ * subtracting 1.0 from a float that large (Speed Rider).
+ */
+int gettimeofday(struct timeval *tv, void *tz)
+{
+    REAL(int, gettimeofday, (struct timeval *, void *));
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+    static long long last;
+    static int logged;
+    long long us;
+    int r = real_gettimeofday(tv, tz);
+
+    if (r)
+        return r;
+    us = (long long)tv->tv_sec * 1000000 + tv->tv_usec;
+    pthread_mutex_lock(&lock);
+    if (us < last) {
+        if (!logged++)
+            LOG("clock stepped back %lld us; held (logged once)", last - us);
+        us = last;
+        tv->tv_sec = (time_t)(us / 1000000);
+        tv->tv_usec = (suseconds_t)(us % 1000000);
+    }
+    last = us;
+    pthread_mutex_unlock(&lock);
+    return r;
+}
+
+/*
  * 32-bit directory and stat calls.  The games use the old non-LFS readdir()
  * and __xstat(); on WSL's Windows-drive mounts inode numbers exceed 32 bits,
  * so those fail with EOVERFLOW (Ocean Party's file index came up empty).
@@ -1385,6 +1417,58 @@ void glXSwapBuffers(void *dpy, unsigned long drawable)
         *(void **)&real_glXSwapBuffers = real_dlsym(RTLD_NEXT, "glXSwapBuffers");
     }
     hook_glXSwapBuffers(dpy, drawable);
+}
+
+/*
+ * IGS_CG_ARB=1: NVIDIA-only Cg profiles on any GL.  Speed Rider's shaders
+ * ask Cg for vp40 / fp40 only (OPTION NV_vertex_program3 /
+ * NV_fragment_program2 ARB programs), which Mesa cannot load.  The GL then
+ * claims those two extensions, so Ogre selects the profiles, and Cg compiles
+ * them as plain arbvp1 / arbfp1.
+ */
+static void *real_next(const char *name)
+{
+    static void *(*real_dlsym)(void *, const char *);
+
+    if (!real_dlsym)
+        *(void **)&real_dlsym = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.34");
+    if (!real_dlsym)
+        *(void **)&real_dlsym = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.0");
+    return real_dlsym(RTLD_NEXT, name);
+}
+
+const unsigned char *glGetString(unsigned name)
+{
+    static const unsigned char *(*real)(unsigned);
+    static char *ext;
+    static int on = -1;
+    const unsigned char *s;
+
+    if (!real)
+        *(void **)&real = real_next("glGetString");
+    s = real ? real(name) : NULL;
+    if (on < 0)
+        on = getenv("IGS_CG_ARB") && atoi(getenv("IGS_CG_ARB"));
+    if (!on || name != 0x1F03 || !s)          /* GL_EXTENSIONS */
+        return s;
+    if (!ext && asprintf(&ext, "%s GL_NV_vertex_program3 GL_NV_fragment_program2", (const char *)s) < 0)
+        ext = NULL;
+    return ext ? (const unsigned char *)ext : s;
+}
+
+void *cgCreateProgram(void *ctx, int type, const char *src, int profile, const char *entry, const char **args)
+{
+    static void *(*real)(void *, int, const char *, int, const char *, const char **);
+
+    if (!real)
+        *(void **)&real = real_next("cgCreateProgram");
+    if (getenv("IGS_CG_ARB") && atoi(getenv("IGS_CG_ARB"))) {
+        if (profile == 7001)                   /* CG_PROFILE_VP40 -> ARBVP1 */
+            profile = 6150;
+        else if (profile == 6151)              /* CG_PROFILE_FP40 -> ARBFP1 */
+            profile = 7000;
+    }
+    return real ? real(ctx, type, src, profile, entry, args) : NULL;
 }
 
 /*

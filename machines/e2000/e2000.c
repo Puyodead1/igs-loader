@@ -17,6 +17,11 @@
  *     the next sequence number | 0x40.  Of the two rings per packet, the
  *     first carries the packet (RC4-decrypted, checksummed), whose reply the
  *     chip writes back encrypted with its own stream.
+ *     IGS036 message transport: the game's sub-messages (length RC4, bytes
+ *     XOR the chip's last key) go to the game plugin, whose answer is the
+ *     next message: key, length and three header words RC4 (one stream both
+ *     ways), eight XOR the key, the sub-messages XOR the key; the status
+ *     registers become the game's command + 1.
  *   - /dev/roio: BIOS byte reads (ioctl 0xFC, address ^ 0x1FB8408E, data
  *     ^ 0xB8) served from the strings the game plugin lists.
  *   - /dev/pccard0: must open; only used when the BIOS check fails.
@@ -122,6 +127,9 @@ static struct {
     struct rc4 to_game, from_game;
     uint32_t exchanges;
     int mbox_written, pkt_phase;         /* IGS027A: mailbox byte since the last ring; ring 1 or 2 */
+    uint32_t msg_key;                    /* IGS036 message: the key of the chip's last message */
+    uint8_t rekey[64];                   /* IGS036 message: a re-key waiting for the message's end */
+    int rekey_len;
 } s ={ .lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP };  /* the plugin's own fopen comes back */
 
 static int fd_kind(int fd)
@@ -139,11 +147,15 @@ static int fd_kind(int fd)
 static uint32_t bar2_ld(uint32_t w) { uint32_t v; memcpy(&v, s.bar2 + 4 * w, 4); return v; }
 static void bar2_st(uint32_t w, uint32_t v) { memcpy(s.bar2 + 4 * w, &v, 4); }
 
+static void msg_send(const uint8_t *in, uint32_t nin, uint8_t status);
+
 static void igs036_reset(void)
 {
     if (game->transport == E2000_IGS027A) {
         rc4_init_len(&s.to_game, game->pkt_key_to_game, game->pkt_key_len);
         rc4_init_len(&s.from_game, game->pkt_key_from_game, game->pkt_key_len);
+    } else if (game->transport == E2000_IGS036_MSG) {
+        rc4_init_len(&s.to_game, game->msg_key, game->msg_key_len);
     } else {
         rc4_init(&s.to_game, game->key_to_game);
         rc4_init(&s.from_game, game->key_from_game);
@@ -151,13 +163,95 @@ static void igs036_reset(void)
     memset(s.bar3_in, 0, sizeof(s.bar3_in));
     s.exchanges = 0;
     s.mbox_written = s.pkt_phase = 0;
+    s.rekey_len = 0;
     if (game->reset)
         game->reset();
+    /* the chip's power-on message, there before the game reads the status */
+    if (game->transport == E2000_IGS036_MSG)
+        msg_send(NULL, 0, 0x80);
 }
 
 static void api_rekey(int to_game, const void *key, int len)
 {
+    if (game->transport == E2000_IGS036_MSG) {
+        s.rekey_len = len < (int)sizeof(s.rekey) ? len : (int)sizeof(s.rekey);
+        memcpy(s.rekey, key, s.rekey_len);
+        return;
+    }
     rc4_init_len(to_game ? &s.to_game : &s.from_game, key, len);
+}
+
+/* ---- IGS036 message transport (Speed Rider) --------------------------------------- */
+
+#define MSG_KEY     8                      /* BAR2 byte offsets of the header */
+#define MSG_LEN     12
+#define MSG_NEXT    16                     /* the next message's offset (always 0 here) */
+#define MSG_HDR     20                     /* E2000_MSG_HDR words */
+#define MSG_SEQ     64                     /* the status this message answers */
+#define MSG_DATA    128
+
+static uint32_t bar2_ldb(uint32_t o) { uint32_t v; memcpy(&v, s.bar2 + o, 4); return v; }
+static void bar2_stb(uint32_t o, uint32_t v) { memcpy(s.bar2 + o, &v, 4); }
+
+/*
+ * Write the chip's next message.  The game decrypts key, next offset, the
+ * three RC4 header words and the length in that order, and its reply's
+ * length after that, all from one RC4 stream.
+ */
+static void msg_send(const uint8_t *in, uint32_t nin, uint8_t status)
+{
+    static uint8_t out[E2000_SUB_MAX + 4];
+    uint32_t hdr[E2000_MSG_HDR] = { 0 }, n, i, key;
+
+    memset(out, 0, sizeof(out));
+    n = game->message(in, nin, hdr, out, E2000_SUB_MAX);
+    if (n > E2000_SUB_MAX)
+        n = E2000_SUB_MAX;
+    n++;                                   /* the ending 0 */
+    key = (uint32_t)rand() % 100000 + 1;
+    bar2_stb(MSG_KEY, rc4_word(&s.to_game, key));
+    bar2_stb(MSG_NEXT, rc4_word(&s.to_game, 0));
+    for (i = 0; i < E2000_MSG_HDR_RC4; i++)
+        bar2_stb(MSG_HDR + 4 * i, rc4_word(&s.to_game, hdr[i]));
+    bar2_stb(MSG_LEN, rc4_word(&s.to_game, n));
+    for (; i < E2000_MSG_HDR; i++)
+        bar2_stb(MSG_HDR + 4 * i, hdr[i] ^ key);
+    bar2_stb(MSG_SEQ, status);
+    for (i = 0; i < n; i += 4) {
+        uint32_t w;
+
+        memcpy(&w, out + i, 4);
+        bar2_stb(MSG_DATA + i, w ^ key);
+    }
+    s.msg_key = key;
+    if (s.rekey_len) {
+        rc4_init_len(&s.to_game, s.rekey, s.rekey_len);
+        s.rekey_len = 0;
+    }
+    for (i = 0; i < 8; i++)
+        s.bar3_in[i] = status;
+}
+
+/* the game rang: read its reply (sub-messages XOR our last key), answer with the next message */
+static void msg_doorbell(void)
+{
+    static uint8_t in[E2000_SUB_MAX + 4];
+    uint8_t cmd = s.bar3_out[0] & 0xff;
+    uint32_t n = rc4_word(&s.to_game, bar2_ldb(MSG_LEN)), i;
+
+    if (n > E2000_SUB_MAX) {
+        LOG("IGS036 message: bad length %u", n);
+        n = 0;
+    }
+    for (i = 0; i < n; i += 4) {
+        uint32_t w = bar2_ldb(MSG_DATA + i) ^ s.msg_key;
+
+        memcpy(in + i, &w, 4);
+    }
+    if (s.exchanges < 3)
+        LOG("IGS036 message %u: cmd 0x%02x, %u bytes in", s.exchanges, cmd, n);
+    msg_send(in, n, (uint8_t)((cmd + 1) | 0x80));
+    s.exchanges++;
 }
 
 /* ---- IGS027A ------------------------------------------------------------------ */
@@ -293,6 +387,8 @@ static void bar3_write(void *opaque, uint32_t off, int size, uint32_t v)
         if (r * 2 == BAR3_DOORBELL && (s.bar3_out[r] & 1)) {
             if (game->transport == E2000_IGS027A)
                 igs027_doorbell();
+            else if (game->transport == E2000_IGS036_MSG)
+                msg_doorbell();
             else
                 igs036_doorbell();
         }

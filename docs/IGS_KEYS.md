@@ -225,19 +225,40 @@ in the assembled `pitch` (stripped).
 | Key bits (type 13) | 1 KEY2, 2 KEY1, 6 test, 7 service, 30 coin | `sub_8063A10` |
 | Region (type 18, u16 at 8) | 1 `0CN`, 2 `0HK`, 3 `0FA`, 4 `0US`, 5 `0KR`, 6 `0TL`, other `0TW` | `sub_8072270` |
 
+## E2000: Speed Rider m109cnc (`SR-E2000-v1-e64`, Linux 2.4.31)
+
+IGS_SHFS game type `0x3AEF3EEC`, version `0xF14C5AEA`, major `0x499E4D84`,
+minor `0x993F2B99`.  Game addresses are in the assembled `SR` (stripped).
+
+| Item | Value | Where |
+| --- | --- | --- |
+| Stage-1 loader | `/bin/csh`, argv `/etc/rc.d/rc0.d __KERNEL__ "-no-print -SR"` | GECA `main` |
+| Stage-2 stub (GECA) | p1 sector 7145, 1 KiB, + `/etc/rc.d/rc0.d` | csh |
+| Executable head | p2 sector 114921, 1 KiB | csh |
+| Pieces / cut | `/etc/rc.d/rc<d>.d`, order `147568329`; skip `s` = 17 KiB +3, drop `t` = 413 KiB −9 per piece; ramfs `/sr/exec`, file `SR` | GECA `0x804B5AC` (s, step, mode 1 = add, t, step, mode 2 = subtract), `sub_8048958` |
+| Product string | `SR-E2000-v1-e64` | GECA (`--james`) |
+| IGS036 message RC4 | 8 bytes `ILoveIGS` (no NUL), one continuous stream for both directions; sub-message 1 re-keys with entry n of the 9-byte key table | init `sub_82D9B20`; table `0x893D5C0`; RC4 `sub_82DB940` / `sub_82DBA40` |
+| Message key | header +8 (RC4); words +32..+60 and the sub-messages XOR it | `sub_82DA7A0`, `sub_82DAE40` |
+| Sequence | status = BAR3 register 3 low byte; the game writes `(s+1) \| 0x80` to registers 0..6, then `s = (that+1) \| 0x80` | `sub_82DA590`, `sub_82DA620`, `sub_82DA650` |
+| Sub-message | `[len, type, data…, (sum of the others) \| 0x80]`, a 0 length ends the list | `sub_82DA670`, `sub_82D99F0` |
+| Versions (sub-message 3) | words 1, 2, 3, 0 = `0, 1, 0x30001, 100`; 5, 6, 7, 4 = `0, 1, 0x30001, 109` | `sub_832C120` |
+| NVRAM blocks | 264, 660, 3604, 1444, 1444 bytes | `0x893D944` |
+| Controls calibrated | block 0 byte 135 (version word 3 at byte 0) | `sub_830E9B0`, `sub_83031C0` |
+| Zip prefixes | 2000 bytes per archive; index by name: 0 `OGRE.`, 1 `MENUUI.`, 2 `RACEUI.`, 3..6 `GREATDAM.` `SHANGHAI.` `TAIPEI.` `HEYLONG.`, 7..10 the `A` variants, 11 `FACTORY.`, 12 `CHAMPION.` | `sub_82D9D70`, `sub_82DA320` |
+| Button events (0x30/0x31) | chip button → index: 6, 2, 3, 0, 1, 7, 5, 4 | `0x893D480` |
+| Member-card bit order | 672 words (sub-message 0x42); code alphabet 128 bytes | `sub_846AA30`, `0x8948AE0` |
+| Model numbers | `M:M-109CNC`, `O:S-109CNC`, `I:S-100CNC` | static init `sub_80BBB40` |
+
 **Other E2000 images** (triage only; executables assembled, not run):
 
 | Game | Stage 1 / tag | GECA | Head | Pieces | Executable |
 | --- | --- | --- | --- | --- | --- |
 | Panda Family (CN) `PF-E2000-v1-e65` | `/bin/csh`, `-PF` | first KiB of `/bin/tcsh` + `/bin/ksh` | p1 6658 | `/lib/libfun<d>.so`, `413256`, skip 2 +12 | `/linux/PF` |
 | Speed Driver 2 `SD2-E2000-v05-e61` | `/bin/HWtest`, `-SD2` | p2 114921 + `rc4.d` | p1 7145 | `/lib/libc<d>.so`, `143287569`, cut s 3 +4, t 141 −9 | `/race/exec/sd2` |
-| Speed Rider m109cnc `SR-E2000-v1-e64` | `/bin/csh`, `-SR` | p1 7145 + `rc0.d` | p2 114921 | `/etc/rc.d/rc<d>.d`, `147568329`, cut s 17 +3, t 413 −9 | `/sr/exec/SR` |
 | We Dance Online 2 `WeDo-e2000-v1-e64` | `/bin/tcsh`, `-WeDo` | p1 6693 + `rc0.d` | p2 129918 | `/etc/rc.d/rc<d>.d`, `314256`, skip 299 −3 | `/WeDo/exec/poweron` |
 
-Constants: Panda GECA `0x804B5CC`, Speed Driver 2 `0x804B54C`, Speed Rider
-`0x804B5AC`, We Dance `0x804B5EC`.  Speed Rider's shared-RAM RC4 key list
-starts `ILoveIGS` (9-byte entries, the chip picks one, `sub_82D9B20`).
-IGS_SHFS game types: Panda `0x2AD566DC`, Speed Rider `0x3AEF3EEC`, We Dance
+Constants: Panda GECA `0x804B5CC`, Speed Driver 2 `0x804B54C`, We Dance
+`0x804B5EC`.  IGS_SHFS game types: Panda `0x2AD566DC`, We Dance
 `0x8E1673C2`; Speed Driver 2 has the plain layout.
 
 ## Asset cipher (sound/*.wav, action/*.rom)

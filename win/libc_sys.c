@@ -1433,6 +1433,45 @@ static char *l_inet_ntoa(uint32_t a)
     snprintf(buf, sizeof(buf), "%u.%u.%u.%u", a & 0xff, a >> 8 & 0xff, a >> 16 & 0xff, a >> 24);
     return buf;
 }
+static uint32_t l_inet_addr(const char *s)
+{
+    unsigned a, b, c, d;
+
+    if (sscanf(s, "%u.%u.%u.%u", &a, &b, &c, &d) != 4 || a > 255 || b > 255 || c > 255 || d > 255)
+        return 0xffffffff;
+    return a | b << 8 | c << 16 | (uint32_t)d << 24;
+}
+static int l_inet_aton(const char *s, uint32_t *a)
+{
+    uint32_t v = l_inet_addr(s);
+
+    if (v == 0xffffffff && strcmp(s, "255.255.255.255"))
+        return 0;
+    *a = v;
+    return 1;
+}
+/* getaddrinfo / getnameinfo: EAI_FAIL, there is no network */
+static int l_gai_fail(void) { return -4; }
+static void l_freeaddrinfo(void *p) { (void)p; }
+static const char *l_gai_strerror(int e) { (void)e; return "no network"; }
+/* mkstemp: the X's become a counter */
+static int l_mkstemp(char *t)
+{
+    static LONG n;
+    size_t len = strlen(t);
+    int i, fd;
+
+    if (len < 6 || strcmp(t + len - 6, "XXXXXX")) {
+        SET_ERRNO(EINVAL);
+        return -1;
+    }
+    for (i = 0; i < 1000; i++) {
+        snprintf(t + len - 6, 7, "%06ld", (long)(InterlockedIncrement(&n) % 1000000));
+        if ((fd = l_open(t, 2 | L_O_CREAT | L_O_EXCL, 0600)) >= 0)
+            return fd;
+    }
+    return -1;
+}
 /* modes are not kept (Go Go Ball 2 chmods its logs) */
 static int l_chmod(const char *p, unsigned m) { (void)p; (void)m; return 0; }
 
@@ -1521,6 +1560,9 @@ const struct nsym sys_syms[] = {
     NA(accept, l_net_fail), NA(setsockopt, l_net_fail), NA(sendto, l_net_fail),
     NA(recvfrom, l_net_fail), NA(send, l_net_fail), NA(recv, l_net_fail),
     NA(gethostbyname, l_net_null), NA(if_nameindex, l_net_null), N(if_freenameindex), N(inet_ntoa),
+    NA(getsockname, l_net_fail), NA(getsockopt, l_net_fail), N(inet_addr), N(inet_aton),
+    NA(getaddrinfo, l_gai_fail), NA(getnameinfo, l_gai_fail), N(freeaddrinfo), N(gai_strerror),
+    N(mkstemp), NA(mkstemp64, l_mkstemp),
     N(chmod), N(syscall),
     N(_setjmp), NA(setjmp, l__setjmp), NA(__sigsetjmp, l__setjmp), N(longjmp),
     NA(_longjmp, l_longjmp), NA(siglongjmp, l_longjmp), NA(__longjmp_chk, l_longjmp),

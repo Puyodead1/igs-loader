@@ -9,6 +9,10 @@
  * Gold Captain and Pirate Revenge call nothing in it.  Go Go Ball 2's member
  * card reader (app/c/creader.c) calls the PC/SC-style Cas* functions: here
  * the card service is absent, which the game takes as "no card reader".
+ *
+ * Speed Rider links it as plain "libcasmcard.so" (its own copy sits in
+ * bin_linux and talks to pcscd): built again with CASMCARD_SONAME
+ * "libcasmcard.so" as libcasmcard-nocard.
  */
 #ifdef _WIN32
 #define EXPORT __declspec(dllexport)
@@ -16,9 +20,13 @@
 #define EXPORT __attribute__((visibility("default")))
 #endif
 
+#ifndef CASMCARD_SONAME
+#define CASMCARD_SONAME "/lib/libcasmcard.so"
+#endif
+
 #define SCARD_E_NO_SERVICE 0x8010001DL
 
-EXPORT const char igs_soname[] = "/lib/libcasmcard.so";
+EXPORT const char igs_soname[] = CASMCARD_SONAME;
 
 EXPORT long CasEstablishContext(unsigned long scope, const void *r1, const void *r2, long *ctx)
 {
@@ -55,10 +63,22 @@ EXPORT long CasDisconnect(long card, unsigned long disposition)
     return 0;
 }
 
+EXPORT long CasStatus(long card, char *names, unsigned long *len, unsigned long *state,
+                      unsigned long *proto, unsigned char *atr, unsigned long *atr_len)
+{
+    (void)card; (void)names; (void)state; (void)proto; (void)atr;
+    if (len)
+        *len = 0;
+    if (atr_len)
+        *atr_len = 0;
+    return SCARD_E_NO_SERVICE;
+}
+
 /* SLE4442 memory-card calls (cdecl: the caller's arguments are ignored); only reached with a card */
 #define SLE_FAIL(name) EXPORT long name(void) { return SCARD_E_NO_SERVICE; }
 SLE_FAIL(SLE4442_Read_Main_Memory)
 SLE_FAIL(SLE4442_Update_Main_MemoryA)
+SLE_FAIL(SLE4442_Update_Main_Memory)
 SLE_FAIL(SLE4442_Read_Protection_Memory)
 SLE_FAIL(SLE4442_Write_Protection_Memory)
 SLE_FAIL(SLE4442_Update_Security_Memory)

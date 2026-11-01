@@ -4,11 +4,13 @@
  * The machine emulates what E2000 games share: the PLX SDK driver
  * (/dev/plx/Pci9030*) for the PCI9030 bridge in front of the protection CPU,
  * its transport, the /dev/roio BIOS fingerprint and the unused /dev/pccard0.
- * Two transports (docs/IGS_E2000.md):
+ * Three transports (docs/IGS_E2000.md):
  *   - E2000_IGS036: shared-RAM message words, BAR3 status registers,
  *     RC4-wrapped message keys (Gold Captain, Pirate Revenge);
  *   - E2000_IGS027A: RC4-encrypted packets in BAR2 behind a sequenced
- *     mailbox byte (Go Go Ball 2).
+ *     mailbox byte (Go Go Ball 2);
+ *   - E2000_IGS036_MSG: shared-RAM header words and a stream of short
+ *     sub-messages, one RC4 stream for both directions (Speed Rider).
  *
  * A game plugin supplies what the protection firmware does for its game:
  * the reply to each message or packet (inputs, coins, acks), input and its
@@ -22,7 +24,16 @@
 #define E2000_API_VERSION 1
 #define E2000_MSG_MAX     2048             /* words per message, header included */
 
-enum { E2000_IGS036, E2000_IGS027A };
+enum { E2000_IGS036, E2000_IGS027A, E2000_IGS036_MSG };
+
+/*
+ * IGS036 message transport: the chip's header words.  The first
+ * E2000_MSG_HDR_RC4 go through the RC4 stream (BAR2 +20, +24, +28), the
+ * rest are XOR the message key (+32 .. +60).
+ */
+#define E2000_MSG_HDR      11
+#define E2000_MSG_HDR_RC4  3
+#define E2000_SUB_MAX      12288           /* sub-message bytes per message, either way (the game's buffers) */
 
 /*
  * IGS027A packet (32-bit words).  The machine decrypts words PKT_PR..
@@ -41,7 +52,11 @@ enum { E2000_IGS036, E2000_IGS027A };
 struct e2000_api {
     int version;
     const struct igs_core *core;
-    /* IGS027A: restart a packet RC4 stream with a new key (from the next packet on) */
+    /*
+     * IGS027A: restart a packet RC4 stream with a new key (from the next
+     * packet on).  IGS036 message transport: restart the one stream once the
+     * message being built is written (to_game ignored).
+     */
     void (*rekey)(int to_game, const void *key, int len);
 };
 
@@ -79,6 +94,17 @@ struct e2000_game {
      * bytes (from E2000_PKT_DATA).
      */
     uint32_t (*packet)(int port, uint32_t *msg);
+
+    /* IGS036 message transport: the stream's RC4 key, msg_key_len bytes */
+    const char *msg_key;
+    int msg_key_len;
+    /*
+     * IGS036 message transport: one exchange.  in: the game's sub-message
+     * bytes (nin of them; NULL at power-on).  Fill hdr[E2000_MSG_HDR] and up
+     * to max bytes of sub-messages into out; return their length (the
+     * machine adds the ending 0).
+     */
+    uint32_t (*message)(const uint8_t *in, uint32_t nin, uint32_t *hdr, uint8_t *out, uint32_t max);
 };
 
 /* exported by a game plugin .so */

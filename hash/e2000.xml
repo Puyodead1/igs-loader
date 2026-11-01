@@ -111,4 +111,45 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		</part>
 	</software>
 
+	<software name="speedrider_m109cnc">
+		<description>Speed Rider (M109CNC)</description>
+		<year>2009</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="SR-E2000-v1-e64"/>
+		<info name="usage" value="docs/SpeedRider.md; tunables SR_LEAN, SR_TRACE, SR_PREFIX_DIR"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="speedrider"/>
+			<!-- /etc/X11/IGS: cd /sr/Game/bin_linux; ./SR  (-> ../../exec/SR, the ramfs GECA fills) -->
+			<feature name="data" value="/sr/Game/bin_linux"/>
+			<feature name="binary" value="SR"/>
+			<!-- Ogre 1.4.9, OIS, Cg, FreeImage and the zipsep archive plugin come from bin_linux
+			     (the executable's RPATH ./); libstdc++ 5, FreeType and GLU from the root fs -->
+			<feature name="libs" value="/usr/lib/libstdc++.so.5 /usr/X11R6/lib/libfreetype.so.6 /usr/X11R6/lib/libGLU.so.1"/>
+			<!-- the member-card library, linked as plain libcasmcard.so: no card service -->
+			<feature name="preload" value="libcasmcard-nocard.so"/>
+			<!-- Ogre uses Xlib from several threads; its Cg shaders want NVIDIA's vp40/fp40 (Mesa: ARB) -->
+			<feature name="env" value="IGS_X11_LOCKS=1 IGS_CG_ARB=1"/>
+			<!-- executable assembly: /bin/csh, then /mnt/GECA (cut mode: s 17 +3, t 413 -9) -->
+			<feature name="geca_part" value="p1"/>
+			<feature name="geca_sector" value="7145"/>
+			<feature name="geca_file" value="/etc/rc.d/rc0.d"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="114921"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="pieces" value="147568329"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="17"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="413"/>
+			<feature name="cut_step" value="-9"/>
+			<feature name="build" value="root p2; mount p3 /sr/Game; assemble /sr/exec/SR; mount p4 /rewrite"/>
+			<diskarea name="harddriv">
+				<disk name="e2000_speedrider_m109cnc" sha1="96ebf3b05b31e90fd723b455de5d625d72b2bac8"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/sr/exec/SR" size="11010392" sha1="6c26a12706432a4014e66d11e04595c748d6ecbc"/>
+			</dataarea>
+		</part>
+	</software>
+
 </softwarelist>

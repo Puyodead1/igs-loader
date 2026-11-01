@@ -17,12 +17,17 @@ piece is kept; n starts at TRIM_KB and changes by TRIM_STEP after each piece:
   trim (Gold Captain)     the first size/1K - n KiB; the last piece keeps
                           size - n*1K bytes
   skip (Pirate Revenge)   everything after the first n KiB
+  cut (Speed Rider)       skip the first n KiB and drop the last t KiB of the
+                          whole KiB (last piece: of the bytes); t starts at
+                          CUT_KB, changes by CUT_STEP; empty or missing
+                          pieces are passed over and do not step
 Details: docs/IGS_ROFS_REVERSE_ENGINEERING.md.
 
 The software list (hash/e2000.xml) supplies the features geca_sector,
 head_sector, pieces, trim_kb, trim_step and, where they differ from Gold
 Captain's, head_part (default p2), geca_part (p1), geca_file
-(/lib/libdb0.a), piece_file (/lib/libdb%s.a), piece_mode (trim); see
+(/lib/libdb0.a), piece_file (/lib/libdb%s.a), piece_mode (trim), and for
+cut cut_kb, cut_step; see
 docs/IGS_KEYS.md.
 
 This is the development workspace layout (root/, game/, <BINARY>.bin,
@@ -68,9 +73,23 @@ def build_executable(image, parts, root, m):
         sys.exit('HEAD_SECTOR does not point at an ELF header')
     n, step = int(m['TRIM_KB']), int(m['TRIM_STEP'])
     pieces, mode = m['PIECES'], m.get('PIECE_MODE', 'trim')
-    if mode not in ('trim', 'skip'):
+    if mode not in ('trim', 'skip', 'cut'):
         sys.exit('bad piece_mode %r' % mode)
+    if mode == 'cut':
+        t, tstep = int(m['CUT_KB']), int(m['CUT_STEP'])
     for i, d in enumerate(pieces):
+        path = os.path.join(root, (m.get('PIECE_FILE', '/lib/libdb%s.a') % d).lstrip('/'))
+        if mode == 'cut':
+            # missing or empty pieces are passed over without stepping
+            piece = open(path, 'rb').read() if os.path.isfile(path) else b''
+            if not piece:
+                continue
+            if i == len(pieces) - 1:
+                out += piece[n * 1024:len(piece) - t * 1024]
+            else:
+                out += piece[n * 1024:(len(piece) // 1024 - t) * 1024]
+            n, t = n + step, t + tstep
+            continue
         piece = root_file(root, m.get('PIECE_FILE', '/lib/libdb%s.a') % d)
         if mode == 'skip':
             out += piece[n * 1024:]
