@@ -128,6 +128,152 @@ void *gl_proc(const char *name)
     return st;
 }
 
+/*
+ * ---- EXT_paletted_texture / EXT_shared_texture_palette -----------------------------------
+ *
+ * Gold Captain needs glColorTableEXT (it exits without it) and draws its water
+ * as GL_COLOR_INDEX8_EXT textures under a shared palette set after binding.
+ * Current drivers have neither, so the loader keeps each paletted texture's
+ * indices and uploads it as RGBA, again whenever the palette changes.
+ */
+#define GL_TEXTURE_2D 0x0DE1
+#define GL_UNPACK_ALIGNMENT 0x0CF5
+#define GL_COLOR_INDEX 0x1900
+#define GL_COLOR_INDEX8_EXT 0x80E5
+#define GL_RGBA 0x1908
+#define GL_UNSIGNED_BYTE 0x1401
+#define MAXPAL 64
+
+static struct paltex {
+    unsigned id;
+    int w, h, level, border;
+    uint8_t *idx;
+    uint8_t used[1024];                /* the palette it was last expanded with */
+} paltex[MAXPAL];
+static uint8_t palette[1024];
+static unsigned bound2d;
+
+/* the real entry, through its thunk (looked up once) */
+#define GLCALL(type, name, args) \
+    (*({ static type (*f) args; if (!f) *(void **)&f = gl_proc(#name); f; }))
+
+static struct paltex *paltex_find(unsigned id, int add)
+{
+    int i, free_slot = -1;
+
+    for (i = 0; i < MAXPAL; i++) {
+        if (paltex[i].id == id && paltex[i].idx)
+            return &paltex[i];
+        if (!paltex[i].idx && free_slot < 0)
+            free_slot = i;
+    }
+    if (!add || free_slot < 0)
+        return NULL;
+    paltex[free_slot].id = id;
+    return &paltex[free_slot];
+}
+
+static void paltex_drop(unsigned id)
+{
+    struct paltex *t = paltex_find(id, 0);
+
+    if (t) {
+        free(t->idx);
+        t->idx = NULL;
+    }
+}
+
+/* the bound paletted texture as RGBA with the current palette */
+static void paltex_upload(struct paltex *t)
+{
+    uint8_t *rgba = malloc((size_t)t->w * t->h * 4);
+    int i, align = 4;
+
+    if (!rgba)
+        return;
+    for (i = 0; i < t->w * t->h; i++)
+        memcpy(rgba + 4 * i, palette + 4 * t->idx[i], 4);
+    memcpy(t->used, palette, sizeof(palette));
+    GLCALL(void, glGetIntegerv, (unsigned, int *))(GL_UNPACK_ALIGNMENT, &align);
+    GLCALL(void, glPixelStorei, (unsigned, int))(GL_UNPACK_ALIGNMENT, 4);
+    GLCALL(void, glTexImage2D, (unsigned, int, int, int, int, int, unsigned, unsigned, const void *))
+        (GL_TEXTURE_2D, t->level, GL_RGBA, t->w, t->h, t->border, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    GLCALL(void, glPixelStorei, (unsigned, int))(GL_UNPACK_ALIGNMENT, align);
+    free(rgba);
+}
+
+static void l_glBindTexture(unsigned target, unsigned id)
+{
+    if (target == GL_TEXTURE_2D)
+        bound2d = id;
+    GLCALL(void, glBindTexture, (unsigned, unsigned))(target, id);
+}
+
+static void l_glDeleteTextures(int n, const unsigned *ids)
+{
+    int i;
+
+    for (i = 0; i < n; i++)
+        paltex_drop(ids[i]);
+    GLCALL(void, glDeleteTextures, (int, const unsigned *))(n, ids);
+}
+
+static void l_glTexImage2D(unsigned target, int level, int ifmt, int w, int h, int border,
+                           unsigned fmt, unsigned type, const void *pixels)
+{
+    struct paltex *t;
+
+    if (target != GL_TEXTURE_2D || fmt != GL_COLOR_INDEX || type != GL_UNSIGNED_BYTE) {
+        if (target == GL_TEXTURE_2D && level == 0)
+            paltex_drop(bound2d);
+        GLCALL(void, glTexImage2D, (unsigned, int, int, int, int, int, unsigned, unsigned, const void *))
+            (target, level, ifmt, w, h, border, fmt, type, pixels);
+        return;
+    }
+    if (!(t = paltex_find(bound2d, 1))) {
+        LOG("GL: too many paletted textures");
+        return;
+    }
+    if (!t->idx || t->w != w || t->h != h) {
+        free(t->idx);
+        t->idx = malloc((size_t)w * h);
+        if (!t->idx)
+            return;
+    }
+    t->w = w;
+    t->h = h;
+    t->level = level;
+    t->border = border;
+    if (pixels) {
+        int align = 4, stride, y;
+
+        GLCALL(void, glGetIntegerv, (unsigned, int *))(GL_UNPACK_ALIGNMENT, &align);
+        stride = (w + align - 1) / align * align;
+        for (y = 0; y < h; y++)
+            memcpy(t->idx + (size_t)y * w, (const uint8_t *)pixels + (size_t)y * stride, w);
+    } else {
+        memset(t->idx, 0, (size_t)w * h);
+    }
+    paltex_upload(t);
+}
+
+/* target GL_SHARED_TEXTURE_PALETTE_EXT (or a texture's own), 256 RGBA bytes */
+static void l_glColorTableEXT(unsigned target, unsigned ifmt, int n, unsigned fmt, unsigned type,
+                              const void *table)
+{
+    struct paltex *t;
+
+    (void)target;
+    (void)ifmt;
+    if (fmt != GL_RGBA || type != GL_UNSIGNED_BYTE || n < 1 || !table)
+        return;
+    if (n > 256)
+        n = 256;
+    memcpy(palette, table, (size_t)n * 4);
+    if ((t = paltex_find(bound2d, 0)) && memcmp(t->used, palette, sizeof(palette)))
+        paltex_upload(t);
+}
+
 /* ---- GLX (only what the games and GLEW ask) ------------------------------------------------ */
 
 static int noop_swap_interval(int i) { (void)i; return 0; }
@@ -140,6 +286,8 @@ static void *l_glXGetProcAddressARB(const char *name)
         return NULL;
     if (!strcmp(name, "glXSwapIntervalSGI") || !strcmp(name, "glXSwapIntervalMESA"))
         return (void *)noop_swap_interval;
+    if (!strcmp(name, "glColorTableEXT"))
+        return (void *)l_glColorTableEXT;
     if (!strncmp(name, "glX", 3)) {
         p = native_lookup(name);
         if (lx_verbose && !p)
@@ -194,5 +342,6 @@ const struct nsym gl_syms[] = {
     N(glXGetProcAddressARB), NA(glXGetProcAddress, l_glXGetProcAddressARB),
     N(glXQueryVersion), N(glXGetClientString), N(glXQueryExtensionsString),
     NA(glXQueryServerString, l_glXGetClientString), N(glXQueryExtension),
+    N(glBindTexture), N(glDeleteTextures), N(glTexImage2D), N(glColorTableEXT),
     { NULL, NULL },
 };
