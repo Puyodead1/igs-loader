@@ -19,13 +19,21 @@
  *   - The state machine runs on the pointer we echo: table[current], with
  *     current = 26 (copyright) at boot and every state's End reporting the
  *     next one (message 3).
+ *   - QR cards: the game forwards the reader's text in message 14 and the
+ *     ASIC answers with the card's number (message 14, a dword; the game
+ *     prints it as 9 digits).  With HERO_NFC (nfc.h), a loader tag's card
+ *     code is "scanned" as that text, and a dispensed card is written to a
+ *     blank tag.
  */
+#define _GNU_SOURCE
+#include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "../../machines/e2100/e2100.h"
 #include "card.h"
+#include "nfc.h"
 
 static const struct e2100_api *api;
 #define LOG(...) api->core->log("hero: " __VA_ARGS__)
@@ -52,6 +60,9 @@ static struct {
     int help;
     uint8_t region;
     double t0;                        /* ASIC reset, for the log */
+    char qr_code[13];                 /* the NFC card code the QR port last sent */
+    unsigned qr_serial;               /* ...from this tag (once per placing) */
+    uint32_t qr_value;                /* message 14's answer */
 } g;
 
 /* ---- channel cipher (Encrypt::RC4_CypherKey / RC4_CypherData) ---------------- */
@@ -176,6 +187,15 @@ static void message(uint32_t type, const uint8_t *d, uint32_t n)
     case 6:                              /* RSA key part w0 */
         g.want_rsa |= 1u << (w0 & 3);
         break;
+    case 14:                             /* the QR reader's text: decode it */
+        /* only the NFC codes we sent; others (the reader's "**TIMEOUT**") go unanswered */
+        if (g.qr_code[0] && n > strlen(g.qr_code) && !memcmp(d, g.qr_code, strlen(g.qr_code) + 1)) {
+            g.qr_value = strtoul(g.qr_code, NULL, 10);
+            g.qr_code[0] = 0;
+            g.want |= 1u << 14;
+            LOG("card %09u scanned", g.qr_value);
+        }
+        break;
     case 16:                             /* version */
         g.want |= 1u << 16;
         break;
@@ -270,6 +290,8 @@ static uint32_t build(uint8_t *r, uint32_t max)
 
         pos = put(r, pos, max, 16, v, sizeof(v));
     }
+    if (g.want & 1u << 14)
+        pos = put(r, pos, max, 14, &g.qr_value, 4);
     for (i = 0; i < sizeof(blocks) / sizeof(blocks[0]); i++)
         if (g.want & 1u << blocks[i].type)
             pos = put(r, pos, max, blocks[i].type, blocks[i].data, blocks[i].len);
@@ -345,13 +367,106 @@ static uint32_t exchange(const uint8_t *req, uint32_t len, uint8_t *reply, uint3
 
 /* ---- serial peripherals --------------------------------------------------------- */
 
-/* COM1 QR code reader: acknowledges every command (trigger off...) with 06 */
+/* ---- NFC tags (HERO_NFC, the reader in the card library) ------------------------- */
+
+static const struct hero_nfc *nfc(void)
+{
+    static const struct hero_nfc *n;
+    static int tried;
+    hero_nfc_api_fn fn;
+
+    if (!tried) {                       /* racing threads both look it up: harmless */
+#ifdef _WIN32
+        *(void **)&fn = GetProcAddress(GetModuleHandleA("libcasmcard-hero.dll"), HERO_NFC_SYMBOL);
+#else
+        *(void **)&fn = dlsym(RTLD_DEFAULT, HERO_NFC_SYMBOL);
+#endif
+        n = fn ? fn() : NULL;
+        if (n && n->version != HERO_NFC_VERSION)
+            n = NULL;
+        tried = 1;
+    }
+    return n;
+}
+
+/*
+ * A dispensed card: the cabinet's dispenser holds printed cards and the game
+ * never learns which one came out, so the loader picks one, HERO_NFC_CARD
+ * or a random code from the game's card list (ROBOT, POWER and SKILL rows
+ * with a 9-digit QR code).
+ */
+static int pick_card(char *code)
+{
+    static char (*codes)[10];
+    static int ncodes, loaded;
+    static uint32_t x;
+    const char *v = getenv("HERO_NFC_CARD");
+
+    if (v && *v) {
+        snprintf(code, 13, "%s", v);
+        return 1;
+    }
+    if (!loaded) {
+        FILE *f = fopen("../media/localization/Card/QRCardRes.csv", "r");
+        char line[512];
+
+        loaded = 1;
+        while (f && fgets(line, sizeof(line), f)) {
+            char *c1 = strchr(line, ','), *c2 = c1 ? strchr(c1 + 1, ',') : NULL;
+            int i;
+
+            if (!c2 || (strncmp(line, "ROBOT,", 6) && strncmp(line, "POWER,", 6) &&
+                        strncmp(line, "SKILL,", 6)))
+                continue;
+            for (i = 1; i <= 9 && c2[i] >= '0' && c2[i] <= '9'; i++)
+                ;
+            if (i != 10 || c2[10] != ',')
+                continue;
+            if (!(ncodes & 255))
+                codes = realloc(codes, (ncodes + 256) * sizeof(*codes));
+            memcpy(codes[ncodes], c2 + 1, 9);
+            codes[ncodes++][9] = 0;
+        }
+        if (f)
+            fclose(f);
+        LOG("%d card codes in QRCardRes.csv", ncodes);
+        x = (uint32_t)(api->core->now() * 1000) | 1;    /* not rand(): the card's challenge uses it */
+    }
+    if (!ncodes)
+        return 0;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    memcpy(code, codes[x % ncodes], 10);
+    return 1;
+}
+
+/*
+ * COM1 QR code reader: acknowledges every command with 06.  Trigger on
+ * (1B 31): with an NFC loader tag just placed, the acknowledgement carries
+ * its card code as the reader's text, 06 <code> CR LF.
+ */
 static uint32_t qr_write(const uint8_t *p, uint32_t n, uint8_t *reply, uint32_t max)
 {
-    (void)p;
+    const struct hero_nfc *nf = nfc();
+    struct hero_nfc_tag t;
+    uint32_t len;
+
     if (!n || !max)
         return 0;
     reply[0] = 0x06;
+    if (n == 2 && p[0] == 0x1B && p[1] == 0x31 && nf && nf->features & NFC_SCAN) {
+        nf->get(&t);
+        if (t.state == TAG_LOADER && t.code[0] && t.serial != g.qr_serial &&
+            (len = strlen(t.code)) + 3 <= max) {
+            g.qr_serial = t.serial;
+            memcpy(g.qr_code, t.code, sizeof(g.qr_code));
+            memcpy(reply + 1, t.code, len);
+            memcpy(reply + 1 + len, "\r\n", 2);
+            LOG("QR reader: card %s from the NFC tag", t.code);
+            return len + 3;
+        }
+    }
     return 1;
 }
 
@@ -376,11 +491,17 @@ static uint32_t dispenser_write(const uint8_t *p, uint32_t n, uint8_t *reply, ui
             taken--;
         break;
     case 0x38: reply[1] = 0x30; break;
-    case 0x42:
+    case 0x42: {
+        const struct hero_nfc *nf = nfc();
+        char code[13];
+
         reply[1] = 0x50;
         taken = 2;
         LOG("card dispensed");
+        if (nf && nf->features & NFC_DISPENSE && pick_card(code))
+            nf->dispense(code);
         break;
+    }
     default:
         VLOG("dispenser command %02x %02x", p[0], p[1]);
         reply[1] = 0x50;
@@ -444,15 +565,31 @@ static void draw(int w, int h)
         "F1 hide this",
     };
     const struct igs_core *c = api->core;
-    int i, y;
+    const struct hero_nfc *nf = nfc();
+    struct hero_nfc_tag t;
+    char tag[40];
+    int i, y, n = 4;
 
     (void)w;
     if (!g.help)
         return;
-    y = h - 4 - 4 * c->font_h;
-    c->fill(0, y - 4, 22 * c->font_w, 4 * c->font_h + 8, 0, 0, 0, 0.6f);
+    if (nf) {                                 /* a fifth line: the NFC tag */
+        nf->get(&t);
+        if (t.state == TAG_LOADER && t.points >= 0)
+            snprintf(tag, sizeof(tag), "NFC %s %d pts", t.code[0] ? t.code : "-", t.points);
+        else if (t.state == TAG_LOADER)
+            snprintf(tag, sizeof(tag), "NFC %s", t.code[0] ? t.code : "-");
+        else
+            snprintf(tag, sizeof(tag), "NFC %s", t.state == TAG_BLANK ? "blank tag" :
+                     t.state == TAG_FOREIGN ? "other tag" : "no tag");
+        n = 5;
+    }
+    y = h - 4 - n * c->font_h;
+    c->fill(0, y - 4, 22 * c->font_w, n * c->font_h + 8, 0, 0, 0, 0.6f);
     for (i = 0; i < 4; i++)
-        c->text(6, y + (3 - i) * c->font_h + 6, lines[i], 1, 1, 0.6f);
+        c->text(6, y + (n - 1 - i) * c->font_h + 6, lines[i], 1, 1, 0.6f);
+    if (n == 5)
+        c->text(6, y + 6, tag, 1, 1, 0.6f);
 }
 
 /* the state the game is in; names only for the ids seen in the logs */

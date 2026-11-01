@@ -67,7 +67,7 @@ game's page (`HarpoonLagoon.md`, `OceanParty.md`).
 | `IGS_NULL_DEVS="/dev/ttyS0 ..."` | device paths that open as a null port: writes are dropped, reads fail with `EAGAIN` (for optional peripherals such as lamp boards; usually set by the game's `env` feature).  Peripherals that must answer are the game plugin's (E2100 `serial`) |
 | `IGS_X11_GRAB=1` | keep the game's X keyboard/pointer grabs, pointer warps and `XAutoRepeatOff` (default: no-ops) |
 | `IGS_TITLE` | window title text in place of the game's description; `0` keeps the game's own title.  The title reads `name \| status \| fps`, refreshed every second; the status comes from the game plugin (credits, phase or state) |
-| game plugins | their own, e.g. `OCEAN_BET_SECONDS`, `GC_SCRIPT`, `HERO_CARD_CREDIT` (see the game's page) |
+| game plugins | their own, e.g. `OCEAN_BET_SECONDS`, `GC_SCRIPT`, `HERO_CARD_CREDIT`, `HERO_NFC` (see the game's page) |
 | `IGS_ROMPATH`, `IGS_CACHE`, `IGS_HASHPATH` | override `rompath=`, `cachepath=`, `hashpath=` of `igs-loader.ini` (see Rom sets) |
 
 ## Setup (once)
@@ -301,7 +301,8 @@ tools/
     games/harpoonlagoon/       harpoonlagoon.c
     games/oceanparty/          oceanparty.c
     games/scratch/             scratch.c
-    games/heroofrobots/        heroofrobots.c, libcasmcard.c (reader + card), card.h
+    games/heroofrobots/        heroofrobots.c, libcasmcard.c (reader + card), card.h,
+                               nfc.c nfc.h (NFC tag reader, in the card library)
     games/goldcaptain/         goldcaptain.c
     games/piraterevenge/       piraterevenge.c
     games/gogoball2/           gogoball2.c

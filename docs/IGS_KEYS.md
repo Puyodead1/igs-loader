@@ -369,6 +369,13 @@ encrypted first, then the ASIC's reply.  The game re-keys it:
   loader's own key** (generated for it, e = 65537, n starting
   `9E07A450503238E5…`, ending `…B5C2886B`) is in `card.h` (`CARD_KEY_*`).
 
+**Hero of Robots QR cards** (`HeroOfRobots.md`, QR cards): the printed
+code is decoded by the ASIC (algorithm unknown, firmware not dumped); the
+game only sees the card number (message 14).  The loader's NFC tags
+(`HeroOfRobots.md`, NFC) hold the 9-digit code in the clear: NDEF external
+record `igs-loader:hero`, magic `HERO`, CRC-32 (IEEE, reflected
+`0xEDB88320`); no key.
+
 ## Board fingerprint (Harpoon Lagoon kernel)
 
 The kernel checks these BIOS strings at boot (table `0xC16EFAA0`).  The

@@ -21,7 +21,8 @@
  * memory is read).  The reply is then genuinely encrypted with card.h's N.
  *
  * Environment: HERO_CARD_CREDIT (points on the card, default 100),
- * HERO_REGION (area byte, as the ASIC plugin's).
+ * HERO_REGION (area byte, as the ASIC plugin's).  With HERO_NFC including
+ * points, an NFC tag on the reader holds the points instead (nfc.c).
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -44,6 +45,9 @@
 
 /* the Windows loader's preload: the library this one stands in for (its SONAME) */
 EXPORT const char igs_soname[] = "libcasmcard.so";
+
+/* the NFC reader, exported for the ASIC plugin as well (one source file per library) */
+#include "nfc.c"
 
 /* ---- 2048-bit arithmetic (little-endian 32-bit limbs) ------------------------- */
 
@@ -201,6 +205,7 @@ static void card_init(void)
     v = getenv("HERO_REGION");
     card.area = v && *v ? (int)strtol(v, NULL, 0) : HERO_REGION_DEFAULT;
     LOG("Java card in reader 0, %d points", card.credit);
+    hero_nfc_api();                     /* HERO_NFC: start polling the tag reader */
 }
 
 /* Authentication's timestamp: sec, min << 6, hour << 12, mday << 17, mon << 22, year << 26 */
@@ -249,11 +254,41 @@ static int rebuild(uint8_t *m, int k, uint32_t t)
     return 1;
 }
 
+/*
+ * The points after a query or debit: on the NFC tag when HERO_NFC has
+ * points and the tag is blank (it starts with HERO_CARD_CREDIT) or the
+ * loader's; else on the emulated card.
+ */
+static int card_credit(int debit)
+{
+    const struct hero_nfc *nfc = hero_nfc_api();
+    struct hero_nfc_tag t;
+    int credit;
+
+    if (nfc && nfc->features & NFC_POINTS) {
+        nfc->get(&t);
+        if (t.state == TAG_BLANK || t.state == TAG_LOADER) {
+            const char *v = getenv("HERO_CARD_CREDIT");
+            int fresh = t.state == TAG_BLANK || t.points < 0;
+
+            credit = fresh ? (v && *v ? atoi(v) : 100) : t.points;
+            if (debit && credit > 0)
+                credit--;
+            if ((fresh || debit) && !nfc->set_points(t.serial, credit))
+                LOG("the tag left: points not saved");
+            return credit;
+        }
+    }
+    if (debit && card.credit > 0)
+        card.credit--;
+    return card.credit;
+}
+
 /* the whole challenge is in: recover it, then answer (debit or query) */
 static void card_answer(int debit)
 {
     uint8_t m[256], c[256], blk[256], msg[13] = { 0 };
-    int k, dt, found = 0, i;
+    int k, dt, found = 0, i, credit;
     uint32_t t = 0;
     time_t now = time(NULL);
 
@@ -271,10 +306,9 @@ static void card_answer(int debit)
         m[251] = rand_n > 1 ? (uint8_t)rand_log[1] : 0;
         t = 0;
     }
-    if (debit && card.credit > 0)
-        card.credit--;
-    msg[0] = card.credit >> 8;
-    msg[1] = card.credit;
+    credit = card_credit(debit);
+    msg[0] = credit >> 8;
+    msg[1] = credit;
     if (debit) {
         msg[2] = m[250];
         msg[3] = m[251];
@@ -286,7 +320,7 @@ static void card_answer(int debit)
         msg[7] = m[251];
         msg[8] = card.area;
     }
-    LOG("%s: %d points left%s", debit ? "debit" : "query", card.credit,
+    LOG("%s: %d points left%s", debit ? "debit" : "query", credit,
         found ? "" : " (unverified challenge)");
     /* 00 02 PS 00 M, encrypted to the key the ASIC gave the game */
     blk[0] = 0;

@@ -13,7 +13,7 @@ start, mode/difficulty select, card input, loading, rounds of fighting, and
 the end of a game: the smart card is debited, a card is "dispensed", game
 over, back to the coin page (a whole game loop seen in a scripted run).  The
 ASIC's side and the smart card are emulated; the dispenser and the QR reader
-are minimal (always ready, no cards are ever scanned).  Start-up is slow:
+are minimal (always ready; cards scan only from NFC tags, NFC cards).  Start-up is slow:
 about 90 s to the copyright screen and 2 minutes for a stage load when the
 set is on a Windows drive under WSL (Ogre stats thousands of files over
 WSL's 9p mount).
@@ -126,6 +126,7 @@ then decrypt the reply.  Re-keying by the game's first message:
 | 6 | dw | RSA key part request `i` = 0..3 (start-up) |
 | 7, 8, 9, 10, 18 | `[0]` / `[1, data]` | read / save: game settings (16 B), sound (12 B), contest (8 B), password (8 B), game lock (28 B); the data XOR-obfuscated with a random key word saved alongside |
 | 11, 12, 13, 17 | `[0]` / `[1, data]` | read / save: bookkeeping (1612 B), key-use counts, cards bought, QR rank string |
+| 14 | 256 B | the QR reader's text, NUL-terminated, to decode (`CardInput::UpdateScen` `0x86A4FC0`); `**TIMEOUT**` / `**OVERFLOW**` on a reader error |
 | 16 | `[0]` | read version |
 
 ### ASIC → game (`Game::iIgs036_RecvCmdPrcess` `0x8824AE0`)
@@ -141,7 +142,7 @@ then decrypt the reply.  Re-keying by the game's first message:
 | 9 | 16 B | contest settings: 8 + 8 |
 | 10 | 24 B | password: 8 stored + 16 |
 | 11 / 12 / 13 | 1612 / 24 / 4 B | bookkeeping, key-use, cards bought |
-| 14 | dw | a scanned QR code (not used by the loader) |
+| 14 | dw | the decoded QR card: its number, printed `%d` with a leading `0` below 10⁸ = the 9-digit code of `QRCardRes.csv` (`QRCard::_vQRCodeDecrypt` `0x881CD50`) |
 | 16 | 13 dw | version: low byte of word 2 = region (`0x24` USA → English; 0 China, 2 Indonesia, 4 Japan, 6 Korea, `0x0C` Thailand, `0x0F` Hong Kong, `0x50` other, else Taiwan) |
 | 17 | 32 B | QR rank string (`InternetRank::recvQRStr`; an invalid one is reset and saved) |
 | 18 | 28 B | game lock (all zero passes its checksum) |
@@ -200,12 +201,28 @@ After a dispense, `CDispenserCardOutProc::CardOut` (`0x86ECB70`) polls the
 status every 500 ms and leaves the "cards obtained" screen 2 s after a 7
 (`16`) or 8 s after a 6; with `23` it waits forever.  The loader answers
 `16` to the two status polls after a dispense (guess: "card taken").  `media/Firmware/C541_HL2_A_140116.Bin` is its firmware
-(operator update).
+(operator update).  The dispenser holds printed cards: the game never
+learns which card came out.
 
 **QR code reader**, `/dev/ttyS0` (`QRCodeReader`, 9600, then 115200): every
 command is acknowledged with `06`; a missing reader is state 3 (error),
-which blocks starting a game.  Scanned codes arrive as text on the same
-port (`QRCodeReader::ReceiveCode`).
+which blocks starting a game.  Trigger on `1B 31`, off `1B 30`.
+`QRCodeReader::ReceiveCode` (`0x8917CD0`) takes `06 <text> 0D 0A` (at most
+96 bytes; more than 200 ms between the `06` and the end is a timeout); the
+game re-triggers every 3.3 s while it waits for a card.
+
+**QR cards** (`CardInput`, card input state 6): the game does not
+understand the printed code.  It sends the reader's text to the ASIC
+(message 14), the ASIC answers with the card's number (message 14), and
+`CardInput::CheckCard` (`0x86A4E60`) prints it as 9 digits and looks it up
+in `media/localization/Card/QRCardRes.csv` (`CardInfo::CheckQRCodeErr`,
+`GameInfo::SetPlayerInfo`): kind (`ROBOT`, `POWER`, `SKILL`), QR code,
+software id, printed id, name.  The 1002 codes are `0102 SS K NN`: series
+`SS` 01–12, kind `K` 1 robot / 2 power / 3 skill, number `NN`.  Boss rows
+(`NA…`, `SP…`) cannot come from a number and are refused.  `012900908` is
+special (the game's built-in card 7 when a game-info flag is clear).  How
+the ASIC decodes the printed text is unknown (its firmware is not dumped),
+so real printed cards cannot be scanned.
 
 `/dev/ttyS2..4` are unused; `/dev/input/event*` is only scanned for an OIS
 joystick.
@@ -221,7 +238,9 @@ joystick.
     `0x24`), the stored blocks (saves are kept in memory, so every start is
     a first boot: settings come back to the defaults);
   - the serial ports: the QR reader acknowledges everything, the dispenser
-    is always ready, stocked and dispenses, and reports the card taken.
+    is always ready, stocked and dispenses, and reports the card taken;
+  - NFC (below): a tag's card code as the QR reader's text, message 14's
+    answer, a dispensed card's code to the tag reader.
 - **`libcasmcard.c`** (`build/libcasmcard-hero.so`, SONAME
   `libcasmcard.so`, preloaded): one reader, one Java card with
   `HERO_CARD_CREDIT` points (100), a debit takes one.
@@ -234,6 +253,71 @@ joystick.
   - The answer is encrypted for real with the loader's own 2048-bit key
     (`card.h`), whose private parts the ASIC plugin hands the game in
     message 6.
+- **`nfc.c`**, `nfc.h`: the NFC tag reader, built into the card library
+  (which exports `hero_nfc_api`; the ASIC plugin looks it up at run time).
+
+## NFC cards (experimental)
+
+Optional, off by default: NFC tags stand in for the printed QR cards and
+for the points card.  Without `HERO_NFC` nothing changes.  Experimental:
+tested only with the simulated reader (`IGS_NFC_FAKE`), not yet with an
+ACR122U and real NTAG215 tags.
+
+| Variable | Effect |
+| --- | --- |
+| `HERO_NFC` | `1` or `all`, or a list of `scan`, `dispense`, `points` |
+| `HERO_NFC_READER` | PC/SC reader to use: part of its name (default `ACR122`); other readers are never touched |
+| `HERO_NFC_WAIT` | seconds a dispensed card waits for a tag (default 30) |
+| `HERO_NFC_CARD` | dispense this code instead of a random one |
+| `IGS_NFC_FAKE` | a folder: `tag.bin` in it is the tag on the reader (a 540-byte NTAG215 image); no file, no tag |
+
+- **scan:** when the game triggers the QR reader (card input) and a
+  loader tag with a card was placed since the last scan, the reader answers
+  `06 <code> 0D 0A`; the game forwards the text (message 14) and the ASIC
+  answers with the number.  Each placing scans once: lift the tag and put
+  it back to scan it again.
+- **dispense:** each card the dispenser ejects gets a code
+  (`HERO_NFC_CARD`, or random among the 1002 of `QRCardRes.csv`), written to
+  the next tag that is blank or the loader's without a card, within
+  `HERO_NFC_WAIT` s.  The game's flow is unchanged.
+- **points:** the smart card's points live on the tag: each query reads
+  them, each debit writes one less.  A blank tag, or a loader tag without
+  points, starts with `HERO_CARD_CREDIT`.  With no tag, or another kind of tag, the emulated
+  card answers as before.
+
+**Readers:** PC/SC (`winscard.dll`; on Linux `libpcsclite.so.1`, loaded at
+run time, so the loader builds and runs without it).  A thread polls every
+250 ms; the game never waits for the reader.  Tested with the fake reader
+only: a whole game on Windows scanned a robot and a power card, debited
+the tag's points and wrote the dispensed card to a blank tag.  Under WSL the ACR122U needs USB passthrough (`usbipd bind`,
+`usbipd attach --wsl`, from an admin prompt on Windows), `pcscd` with
+`libccid`, and the i386 `libpcsclite1`.
+
+**Tags:** NTAG215 (504 user bytes) or any NFC Forum Type 2 tag whose
+capability container (page 3) reads `E1 xx size 00`.  The loader writes
+pages 4–17 only, never the UID, lock, capability or configuration pages.
+A tag is:
+- **blank:** user memory empty (no TLV, an empty NDEF message `03 00`,
+  or a terminator `FE`; NULL, lock-control and memory-control TLVs are
+  skipped);
+- **the loader's:** an NDEF message whose first record is the external type
+  `igs-loader:hero`; damaged contents read as no card, no points;
+- **other:** anything else, never written.
+
+Page 4 on: `03 32`, record `D4 0F 20 "igs-loader:hero"`, 32-byte payload,
+`FE`:
+
+| Offset | Bytes | Payload |
+| ---: | ---: | --- |
+| 0 | 4 | `HERO` |
+| 4 | 1 | version 1 |
+| 5 | 1 | flags: 1 card, 2 points |
+| 8 | 12 | card code, ASCII, NUL-padded (9 digits) |
+| 20 | 2 | points, big-endian |
+| 24 | 4 | write count, little-endian |
+| 28 | 4 | CRC-32 of bytes 0–27, little-endian |
+
+Every write rewrites the whole record and reads it back.
 
 **Deviation from the cabinet:** the loader's ASIC repeats message 0 (flag 1,
 same key) in every reply, not only at start-up.  On a desktop the game can
@@ -265,11 +349,15 @@ the first `Game::Process`.
 
 ## Open
 
-- QR cards: the plugin never sends a scanned code, so a player always fights
-  with the default robot (the card input screen times out).  Codes are
-  printed on the cards (`media/localization/Card/QRCardRes.csv`).
+- QR cards: printed codes cannot be decoded (the ASIC's algorithm is
+  unknown); without NFC a player always fights with the default robot (the
+  card input screen times out).
+- NFC on a real ACR122U: untested (fake reader only).
 - Settings and bookkeeping are not persisted between runs.
 - Player 2 keys and the lever's exact meaning are guesses; the dispenser's
   status byte `16` as "card taken" is a guess that works; the "buy card"
   sub-flow (`CDispenserBuyCardProc`) was not exercised.
 - Start-up speed from a Windows drive under WSL (see Status).
+- Level-up scene: part of the backdrop turns gray while the animation plays
+  (Windows, Intel Iris Xe; not yet tried on NVIDIA).  Suspect: a `vp40`/`fp40`-only
+  effect.  Needs a screenshot.

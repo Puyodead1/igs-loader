@@ -156,7 +156,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2016</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M100FA"/>
-		<info name="usage" value="docs/HeroOfRobots.md; tunables HERO_REGION (area byte, 0x24 USA), HERO_CARD_CREDIT (points on the emulated card, 100)"/>
+		<info name="usage" value="docs/HeroOfRobots.md; tunables HERO_REGION (area byte, 0x24 USA), HERO_CARD_CREDIT (points on the emulated card, 100), HERO_NFC (experimental NFC tags: scan, dispense, points; off)"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="heroofrobots"/>
 			<!-- cd /Robots/exe; ./child_linux  (-> ../../Robots.bin/child_linux) -->
