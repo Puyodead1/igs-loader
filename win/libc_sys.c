@@ -1454,6 +1454,26 @@ static int l_inet_aton(const char *s, uint32_t *a)
 static int l_gai_fail(void) { return -4; }
 static void l_freeaddrinfo(void *p) { (void)p; }
 static const char *l_gai_strerror(int e) { (void)e; return "no network"; }
+/* inet_pton: not a valid address (the games only parse their own settings) */
+static int l_inet_pton(int af, const char *s, void *d) { (void)af; (void)s; (void)d; return 0; }
+static uint16_t l_htons(uint16_t v) { return (uint16_t)(v << 8 | v >> 8); }
+static uint32_t l_htonl(uint32_t v)
+{
+    return v << 24 | (v & 0xff00) << 8 | (v >> 8 & 0xff00) | v >> 24;
+}
+/* statvfs (32-bit struct, 72 bytes): plenty of room */
+static int l_statvfs(const char *p, uint32_t *s)
+{
+    (void)p;
+    memset(s, 0, 72);
+    s[0] = s[1] = 4096;                        /* f_bsize, f_frsize */
+    s[2] = s[3] = s[4] = 1u << 20;             /* f_blocks, f_bfree, f_bavail */
+    s[5] = s[6] = s[7] = 1u << 16;             /* f_files, f_ffree, f_favail */
+    s[10] = 255;                               /* f_namemax */
+    return 0;
+}
+static double l_drand48(void) { return (double)(rand() & 0x7fff) / 32768.0 + (double)(rand() & 0x7fff) / (32768.0 * 32768.0); }
+static char *l_gcvt(double v, int n, char *buf) { sprintf(buf, "%.*g", n, v); return buf; }
 /* mkstemp: the X's become a counter */
 static int l_mkstemp(char *t)
 {
@@ -1562,6 +1582,10 @@ const struct nsym sys_syms[] = {
     NA(gethostbyname, l_net_null), NA(if_nameindex, l_net_null), N(if_freenameindex), N(inet_ntoa),
     NA(getsockname, l_net_fail), NA(getsockopt, l_net_fail), N(inet_addr), N(inet_aton),
     NA(getaddrinfo, l_gai_fail), NA(getnameinfo, l_gai_fail), N(freeaddrinfo), N(gai_strerror),
+    NA(socketpair, l_net_fail), NA(sendmsg, l_net_fail), NA(recvmsg, l_net_fail),
+    NA(getpeername, l_net_fail), NA(sockatmark, l_net_fail), NA(isfdtype, l_net_fail),
+    NA(if_indextoname, l_net_null), NA(inet_ntop, l_net_null), N(inet_pton), N(htons),
+    NA(ntohs, l_htons), N(htonl), NA(ntohl, l_htonl), N(statvfs), N(drand48), N(gcvt),
     N(mkstemp), NA(mkstemp64, l_mkstemp),
     N(chmod), N(syscall),
     N(_setjmp), NA(setjmp, l__setjmp), NA(__sigsetjmp, l__setjmp), N(longjmp),

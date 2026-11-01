@@ -21,7 +21,8 @@
  *     XOR the chip's last key) go to the game plugin, whose answer is the
  *     next message: key, length and three header words RC4 (one stream both
  *     ways), eight XOR the key, the sub-messages XOR the key; the status
- *     registers become the game's command + 1.
+ *     registers become the game's command + 1.  Speed Driver 2's layout
+ *     moves the header and RC4s only the chip's words.
  *     IGS036 packet transport: the game's packet (checksum word RC4, bytes
  *     XOR its low byte) goes to the game plugin as sub-messages, whose answer
  *     is written back the same way with the chip's stream; the status
@@ -153,6 +154,7 @@ static uint32_t bar2_ld(uint32_t w) { uint32_t v; memcpy(&v, s.bar2 + 4 * w, 4);
 static void bar2_st(uint32_t w, uint32_t v) { memcpy(s.bar2 + 4 * w, &v, 4); }
 
 static void msg_send(const uint8_t *in, uint32_t nin, uint8_t status);
+static void sd2_send(const uint8_t *in, uint32_t nin, uint8_t status, uint32_t word, uint32_t req);
 static void pkt36_send(const uint8_t *in, uint32_t nin, uint8_t seq);
 
 static void igs036_reset(void)
@@ -173,7 +175,9 @@ static void igs036_reset(void)
     if (game->reset)
         game->reset();
     /* the chip's power-on message, there before the game reads the status */
-    if (game->transport == E2000_IGS036_MSG)
+    if (game->transport == E2000_IGS036_MSG && game->msg_layout == E2000_MSG_SD2)
+        sd2_send(NULL, 0, 0x80, 0, 0);
+    else if (game->transport == E2000_IGS036_MSG)
         msg_send(NULL, 0, 0x80);
     else if (game->transport == E2000_IGS036_PKT)
         pkt36_send(NULL, 0, 1);            /* the game first looks for sequence 1 */
@@ -259,6 +263,80 @@ static void msg_doorbell(void)
     if (s.exchanges < 3)
         LOG("IGS036 message %u: cmd 0x%02x, %u bytes in", s.exchanges, cmd, n);
     msg_send(in, n, (uint8_t)((cmd + 1) | 0x80));
+    s.exchanges++;
+}
+
+/*
+ * Speed Driver 2's layout (pci/c/pci.cpp): the chip's key at +20, the
+ * sub-message length at +24, steer/gas/brake floats at +48/+52/+56, the
+ * main state at +60 and a word at +72, all through the RC4 stream (the game
+ * decrypts +20, +48, +52, +56, +60, +72, +24 in that order); plain words at
+ * +28 and +68; the status this message answers at +0x3000.  The game's
+ * answer is not RC4'd: length at +24, a word at +60, both XOR the chip's
+ * key, a request word at +64 in clear.
+ */
+#define SD2_KEY     20
+#define SD2_LEN     24
+#define SD2_W28     28
+#define SD2_FLOATS  48
+#define SD2_STATE   60
+#define SD2_REQ     64
+#define SD2_W68     68
+#define SD2_W72     72
+#define SD2_SEQ     0x3000
+
+static void sd2_send(const uint8_t *in, uint32_t nin, uint8_t status, uint32_t word, uint32_t req)
+{
+    static uint8_t out[E2000_SUB_MAX + 4];
+    uint32_t hdr[E2000_MSG_HDR] = { 0 }, n, i, key;
+
+    memset(out, 0, sizeof(out));
+    hdr[E2000_SD2_IN_WORD] = word;
+    hdr[E2000_SD2_IN_REQ] = req;
+    n = game->message(in, nin, hdr, out, E2000_SUB_MAX);
+    if (n > E2000_SUB_MAX)
+        n = E2000_SUB_MAX;
+    n++;                                   /* the ending 0 */
+    key = (uint32_t)rand() % 100000 + 1;
+    bar2_stb(SD2_KEY, rc4_word(&s.to_game, key));
+    for (i = 0; i < 3; i++)
+        bar2_stb(SD2_FLOATS + 4 * i, rc4_word(&s.to_game, hdr[E2000_SD2_STEER + i]));
+    bar2_stb(SD2_STATE, rc4_word(&s.to_game, hdr[E2000_SD2_STATE]));
+    bar2_stb(SD2_W72, rc4_word(&s.to_game, hdr[E2000_SD2_W72]));
+    bar2_stb(SD2_LEN, rc4_word(&s.to_game, n));
+    bar2_stb(SD2_W28, hdr[E2000_SD2_W28]);
+    bar2_stb(SD2_W68, hdr[E2000_SD2_W68]);
+    bar2_stb(SD2_REQ, 0);
+    bar2_stb(SD2_SEQ, status);
+    for (i = 0; i < n; i += 4) {
+        uint32_t w;
+
+        memcpy(&w, out + i, 4);
+        bar2_stb(MSG_DATA + i, w ^ key);
+    }
+    s.msg_key = key;
+    for (i = 0; i < 8; i++)
+        s.bar3_in[i] = status;
+}
+
+static void sd2_doorbell(void)
+{
+    static uint8_t in[E2000_SUB_MAX + 4];
+    uint8_t cmd = s.bar3_out[0] & 0xff;
+    uint32_t n = bar2_ldb(SD2_LEN) ^ s.msg_key, i;
+
+    if (n > E2000_SUB_MAX) {
+        LOG("IGS036 message: bad length %u", n);
+        n = 0;
+    }
+    for (i = 0; i < n; i += 4) {
+        uint32_t w = bar2_ldb(MSG_DATA + i) ^ s.msg_key;
+
+        memcpy(in + i, &w, 4);
+    }
+    if (s.exchanges < 3)
+        LOG("IGS036 message %u: cmd 0x%02x, %u bytes in", s.exchanges, cmd, n);
+    sd2_send(in, n, (uint8_t)((cmd + 1) | 0x80), bar2_ldb(SD2_STATE) ^ s.msg_key, bar2_ldb(SD2_REQ));
     s.exchanges++;
 }
 
@@ -466,6 +544,8 @@ static void bar3_write(void *opaque, uint32_t off, int size, uint32_t v)
         if (r * 2 == BAR3_DOORBELL && (s.bar3_out[r] & 1)) {
             if (game->transport == E2000_IGS027A)
                 igs027_doorbell();
+            else if (game->transport == E2000_IGS036_MSG && game->msg_layout == E2000_MSG_SD2)
+                sd2_doorbell();
             else if (game->transport == E2000_IGS036_MSG)
                 msg_doorbell();
             else if (game->transport == E2000_IGS036_PKT)

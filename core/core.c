@@ -541,7 +541,8 @@ static void *dsp_thread(void *arg)
     *(void **)&pa_write = lib ? dlsym(lib, "pa_simple_write") : NULL;
     *(void **)&pa_free = lib ? dlsym(lib, "pa_simple_free") : NULL;
     while ((n = read(rd, buf, sizeof(buf))) > 0) {
-        if (!pa && !bps && pa_new) {
+        /* IGS_NO_AUDIO=1 (test runs): no stream */
+        if (!pa && !bps && pa_new && !getenv("IGS_NO_AUDIO")) {
             /* the ioctls are done by the first write: open the stream now */
             struct pa_spec spec = { dsp.fmt == 16 ? 3 : 0, dsp.rate, dsp.channels };
             struct pa_attr attr = { (uint32_t)-1, 0, (uint32_t)-1, (uint32_t)-1, (uint32_t)-1 };
@@ -650,6 +651,30 @@ static int null_dev(const char *path)
     return 0;
 }
 
+/*
+ * IGS_SET_DIRS: space-separated cabinet directories outside DATA that the
+ * game opens by absolute path (e.g. Speed Driver 2's /data); they resolve
+ * inside the set ($IGS_SET), as on Windows.
+ */
+static const char *set_path(const char *path, char *buf, size_t size)
+{
+    const char *list = getenv("IGS_SET_DIRS"), *set = getenv("IGS_SET");
+
+    if (!path || path[0] != '/' || !set)
+        return path;
+    while (list && *list) {
+        const char *end = strchr(list, ' ');
+        size_t len = end ? (size_t)(end - list) : strlen(list);
+
+        if (len && !strncmp(path, list, len) && (path[len] == '/' || !path[len])) {
+            snprintf(buf, size, "%s%s", set, path);
+            return buf;
+        }
+        list = end ? end + 1 : NULL;
+    }
+    return path;
+}
+
 static int route_open(const char *path, int *fd)
 {
     if (!path)
@@ -691,9 +716,11 @@ int open(const char *path, int flags, ...)
     REAL(int, open, (const char *, int, ...));
     va_list ap;
     int mode, fd;
+    char buf[512];
 
     if (route_open(path, &fd))
         return fd;
+    path = set_path(path, buf, sizeof(buf));
     va_start(ap, flags);
     mode = va_arg(ap, int);
     va_end(ap);
@@ -705,9 +732,11 @@ int open64(const char *path, int flags, ...)
     REAL(int, open64, (const char *, int, ...));
     va_list ap;
     int mode, fd;
+    char buf[512];
 
     if (route_open(path, &fd))
         return fd;
+    path = set_path(path, buf, sizeof(buf));
     va_start(ap, flags);
     mode = va_arg(ap, int);
     va_end(ap);
@@ -827,7 +856,8 @@ static void note_fopen(const char *path, void *f)
 FILE *fopen(const char *path, const char *mode)
 {
     REAL(FILE *, fopen, (const char *, const char *));
-    FILE *f = real_fopen(path, mode);
+    char buf[512];
+    FILE *f = real_fopen(set_path(path, buf, sizeof(buf)), mode);
 
     note_fopen(path, f);
     return f;
@@ -836,10 +866,65 @@ FILE *fopen(const char *path, const char *mode)
 FILE *fopen64(const char *path, const char *mode)
 {
     REAL(FILE *, fopen64, (const char *, const char *));
-    FILE *f = real_fopen64(path, mode);
+    char buf[512];
+    FILE *f = real_fopen64(set_path(path, buf, sizeof(buf)), mode);
 
     note_fopen(path, f);
     return f;
+}
+
+DIR *opendir(const char *path)
+{
+    REAL(DIR *, opendir, (const char *));
+    char buf[512];
+
+    return real_opendir(set_path(path, buf, sizeof(buf)));
+}
+
+int remove(const char *path)
+{
+    REAL(int, remove, (const char *));
+    char buf[512];
+
+    return real_remove(set_path(path, buf, sizeof(buf)));
+}
+
+int chmod(const char *path, mode_t mode)
+{
+    REAL(int, chmod, (const char *, mode_t));
+    char buf[512];
+
+    return real_chmod(set_path(path, buf, sizeof(buf)), mode);
+}
+
+/*
+ * IGS_NO_SYSTEM=1: the game's shell commands configure the cabinet (Speed
+ * Driver 2: ifconfig, route, pppoe, hwclock): not run, as on Windows.
+ * popen fails, which such games take as "no network".
+ */
+int system(const char *cmd)
+{
+    REAL(int, system, (const char *));
+    static int logged;
+
+    if (getenv("IGS_NO_SYSTEM") && cmd) {
+        if (logged++ < 8)
+            LOG("system(\"%s\"): not run%s", cmd, logged == 8 ? " (no more logged)" : "");
+        return 0;
+    }
+    return real_system(cmd);
+}
+
+FILE *popen(const char *cmd, const char *mode)
+{
+    REAL(FILE *, popen, (const char *, const char *));
+
+    if (getenv("IGS_NO_SYSTEM")) {
+        LOG("popen(\"%s\"): not run", cmd);
+        errno = ENOENT;
+        return NULL;
+    }
+    return real_popen(cmd, mode);
 }
 
 /* the games set the system clock from the operator menu: not on a desktop */
@@ -930,17 +1015,19 @@ static int stat_from64(const struct stat64 *s64, struct stat *st)
 int __xstat(int ver, const char *path, struct stat *st)
 {
     struct stat64 s64;
+    char buf[512];
 
     (void)ver;
-    return stat64(path, &s64) ? -1 : stat_from64(&s64, st);
+    return stat64(set_path(path, buf, sizeof(buf)), &s64) ? -1 : stat_from64(&s64, st);
 }
 
 int __lxstat(int ver, const char *path, struct stat *st)
 {
     struct stat64 s64;
+    char buf[512];
 
     (void)ver;
-    return lstat64(path, &s64) ? -1 : stat_from64(&s64, st);
+    return lstat64(set_path(path, buf, sizeof(buf)), &s64) ? -1 : stat_from64(&s64, st);
 }
 
 int __fxstat(int ver, int fd, struct stat *st)

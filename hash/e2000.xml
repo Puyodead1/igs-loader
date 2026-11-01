@@ -186,4 +186,43 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		</part>
 	</software>
 
+	<software name="speeddriver2">
+		<description>Speed Driver 2</description>
+		<year>2008</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="SD2-E2000-v05-e61"/>
+		<info name="usage" value="docs/SpeedDriver2.md; tunables SD2_STEER, SD2_SCRIPT, SD2_AUTO, SD2_TEST_RANKIN"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="speeddriver2"/>
+			<feature name="data" value="/race/linux"/>
+			<feature name="binary" value="sd2"/>
+			<!-- SDL 1.2 linked dynamically (the host's / the loader's); OSS audio of its own -->
+			<feature name="libs" value="/usr/lib/libstdc++.so.5"/>
+			<feature name="preload" value="libcasmcard.so"/>
+			<!-- settings, bookkeeping and ranking by absolute path on p4; no shell commands
+			     (ifconfig, route, pppoe: no network, a single cabinet) -->
+			<feature name="env" value="IGS_SET_DIRS=/data IGS_NO_SYSTEM=1"/>
+			<!-- executable assembly: /bin/HWtest, then /mnt/GECA (cut mode: s 3 +4, t 141 -9) -->
+			<feature name="geca_part" value="p2"/>
+			<feature name="geca_sector" value="114921"/>
+			<feature name="geca_file" value="/etc/rc.d/rc4.d"/>
+			<feature name="head_part" value="p1"/>
+			<feature name="head_sector" value="7145"/>
+			<feature name="piece_file" value="/lib/libc%s.so"/>
+			<feature name="pieces" value="143287569"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="3"/>
+			<feature name="trim_step" value="4"/>
+			<feature name="cut_kb" value="141"/>
+			<feature name="cut_step" value="-9"/>
+			<feature name="build" value="root p2; mount p3 /race/linux; assemble /race/exec/sd2; mount p4 /data"/>
+			<diskarea name="harddriv">
+				<disk name="e2000_speeddriver2" sha1="529833ee2635500090343b076b27a177519396fc"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/race/exec/sd2" size="4134548" sha1="b6e7a2ba7a749459b55ea2418b47351d6205d4e7"/>
+			</dataarea>
+		</part>
+	</software>
+
 </softwarelist>

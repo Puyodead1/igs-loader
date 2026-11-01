@@ -22,10 +22,12 @@ data is included.
 | `gogoball2_dx` | Go Go Ball 2 DX | E2000 | ✓ | ✓ |
 | `speedrider_m109cnc` | Speed Rider (M109CNC) | E2000 | ✓ | ✓ |
 | `pandafamily_cn` | Panda Family (CN) | E2000 | ✓ | ✓ |
+| `speeddriver2` | Speed Driver 2 | E2000 | ✓ | ✓ |
 
 Where the protection chip runs game logic whose code has not been dumped
 (Ocean Party's odds, Scratch's prizes, the E2000 games' weapon tables and
-game flow, Speed Rider's AI riders and lost archive bytes), the
+game flow, Speed Rider's AI riders and lost archive bytes, Speed Driver 2's
+screens and AI throttle), the
 plugin reconstructs or invents it, so gameplay may not be completely
 identical to the real cabinet.
 
@@ -193,7 +195,7 @@ Controls and per-game settings are on the [wiki](https://github.com/Puyodead1/ig
 | [IGS_SOUND_CRYPTO.md](docs/IGS_SOUND_CRYPTO.md) | the FPGA asset cipher used on sounds and sprite banks |
 | [IGS_ROFS_REVERSE_ENGINEERING.md](docs/IGS_ROFS_REVERSE_ENGINEERING.md) | the disk formats: E2100 `igs_rofs`, E2000 ROFS and IGS_SHFS, boot chains |
 | [IGS_KEYS.md](docs/IGS_KEYS.md) | every key, mask and constant per game |
-| [HarpoonLagoon.md](docs/HarpoonLagoon.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md), [PirateRevenge.md](docs/PirateRevenge.md), [GoGoBall2.md](docs/GoGoBall2.md), [SpeedRider.md](docs/SpeedRider.md), [PandaFamily.md](docs/PandaFamily.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
+| [HarpoonLagoon.md](docs/HarpoonLagoon.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md), [PirateRevenge.md](docs/PirateRevenge.md), [GoGoBall2.md](docs/GoGoBall2.md), [SpeedRider.md](docs/SpeedRider.md), [PandaFamily.md](docs/PandaFamily.md), [SpeedDriver2.md](docs/SpeedDriver2.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
 
 ## Repository layout
 

@@ -249,6 +249,24 @@ minor `0x993F2B99`.  Game addresses are in the assembled `SR` (stripped).
 | Member-card bit order | 672 words (sub-message 0x42); code alphabet 128 bytes | `sub_846AA30`, `0x8948AE0` |
 | Model numbers | `M:M-109CNC`, `O:S-109CNC`, `I:S-100CNC` | static init `sub_80BBB40` |
 
+## E2000: Speed Driver 2 (`SD2-E2000-v05-e61`, Linux 2.4.31)
+
+IGS_SHFS plain layout (major 2, minor 1).  Game addresses are in the
+assembled `sd2` (stripped).
+
+| Item | Value | Where |
+| --- | --- | --- |
+| Stage-1 loader | `/bin/HWtest`, tag `-SD2` | |
+| Stage-2 stub (GECA) | p2 sector 114921, 1 KiB, + `/etc/rc.d/rc4.d` | GECA constants `0x804B54C` |
+| Executable head | p1 sector 7145, 1 KiB | HWtest |
+| Pieces / cut | `/lib/libc<d>.so`, order `143287569`; skip `s` = 3 KiB +4, drop `t` = 141 KiB −9 per piece; ramfs `/race/exec`, file `sd2` | GECA `0x804B54C` |
+| IGS036 message RC4 | 8 bytes `ILoveIGS`, chip → game only, never re-keyed | init `sub_810FE68`; RC4 `sub_808D438` / `sub_808DD42` |
+| Message key | header +20 (RC4); the sub-messages, the game's length (+24) and state (+60) XOR it | read `sub_81102C2`, write `sub_8112496` |
+| Sequence | as Speed Rider; status also at BAR2 +0x3000 | `sub_811013C`, `sub_81101D2`, `sub_8110208` |
+| Sub-message | `[len, type, data…, (sum of the others) \| 0x80]`, a 0 length ends the list | `sub_810FB26`, `sub_811021A` |
+| `data.hdr` prefix (0xB2) | 128 bytes: u32 143 (directories), records `{u32 first file, name}` `data`, `data\2d` (0), `data\2d\ui` (0), `\mark` (39), `data\2d\operator` (68), `data\2d\effect` (72), `data\2d\effect\lensflare` (72, no NUL); the file's first byte is the XOR of the prefix (`0xDD`) | `IGS_PK::LoadHead` `sub_808CBF0` |
+| `data.ZPK` | `zlPack 0002`; entries: u32 size, zlib | |
+| Store settings (0x39) | free play, start coins 1P/2P, continue coins 1P/2P | `sub_8114B88` |
 ## E2000: Panda Family (CN) (`PF-E2000-v1-e65`, Linux 2.4.31)
 
 IGS_SHFS game type `0x2AD566DC`, version `0xEDEB1E16`, major `0x59A415B4`,
@@ -269,15 +287,13 @@ minor `0x85986F65`.  Game addresses are in the assembled `PF` (stripped).
 | Models | `M:M%03d%s` (`M100CN`), `I:S%01d%02d%s` / `O:S…` from types 5 / 6 | `sub_8077D60` |
 | Camera | `/proc/video/dev/video0..4`: `TP6800`, `TP6810`, `OV511`, `IP293 USB Camera` → types 1..4; photo when found and the setting is on | `libIGS_API` `CameraInfo_Read`; `sub_8068470`, `sub_808C2D0` |
 
-**Other E2000 images** (triage only; executables assembled, not run):
+**Other E2000 images** (triage only; executable assembled, not run):
 
 | Game | Stage 1 / tag | GECA | Head | Pieces | Executable |
 | --- | --- | --- | --- | --- | --- |
-| Speed Driver 2 `SD2-E2000-v05-e61` | `/bin/HWtest`, `-SD2` | p2 114921 + `rc4.d` | p1 7145 | `/lib/libc<d>.so`, `143287569`, cut s 3 +4, t 141 −9 | `/race/exec/sd2` |
 | We Dance Online 2 `WeDo-e2000-v1-e64` | `/bin/tcsh`, `-WeDo` | p1 6693 + `rc0.d` | p2 129918 | `/etc/rc.d/rc<d>.d`, `314256`, skip 299 −3 | `/WeDo/exec/poweron` |
 
-Constants: Speed Driver 2 `0x804B54C`, We Dance `0x804B5EC`.  IGS_SHFS
-game types: We Dance `0x8E1673C2`; Speed Driver 2 has the plain layout.
+Constants: We Dance `0x804B5EC`.  IGS_SHFS game type `0x8E1673C2`.
 
 ## Asset cipher (sound/*.wav, action/*.rom)
 

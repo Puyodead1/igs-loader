@@ -738,7 +738,8 @@ static long dsp_write(const uint8_t *buf, size_t n)
     size_t done = 0;
     long target;
 
-    if (!dsp.wo && !dsp.bps && dsp_start()) {
+    /* IGS_NO_AUDIO=1 (test runs): no device */
+    if (!dsp.wo && !dsp.bps && (lx_env("IGS_NO_AUDIO", NULL) || dsp_start())) {
         /* no device: drain at the real rate so the game keeps time */
         dsp.bps = dsp.rate * dsp.channels * (dsp.fmt == 16 ? 2 : 1);
     }

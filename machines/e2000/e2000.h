@@ -10,7 +10,8 @@
  *   - E2000_IGS027A: RC4-encrypted packets in BAR2 behind a sequenced
  *     mailbox byte (Go Go Ball 2);
  *   - E2000_IGS036_MSG: shared-RAM header words and a stream of short
- *     sub-messages, one RC4 stream for both directions (Speed Rider);
+ *     sub-messages, one RC4 stream for both directions (Speed Rider), or
+ *     chip -> game only (Speed Driver 2's layout);
  *   - E2000_IGS036_PKT: a byte packet of sub-messages behind a checksum
  *     word, RC4 on the checksum only, a stream per direction (Panda Family).
  *
@@ -111,6 +112,21 @@ struct e2000_game {
      * (16-bit), data] and hdr NULL; the machine pads the packet.
      */
     uint32_t (*message)(const uint8_t *in, uint32_t nin, uint32_t *hdr, uint8_t *out, uint32_t max);
+
+    /* IGS036 message transport: the header layout (E2000_MSG_SR, the default, or E2000_MSG_SD2) */
+    int msg_layout;
+};
+
+/*
+ * IGS036 message transport, Speed Driver 2 layout: hdr[] out are the RC4
+ * words steer, gas, brake (floats), main state, credits (+72), then the plain words
+ * +28, +68 (E2000_SD2_*); in, hdr[E2000_SD2_IN_WORD] is the game's +60 word
+ * and hdr[E2000_SD2_IN_REQ] its +64 word (0 = none; the chip clears it).
+ */
+enum { E2000_MSG_SR, E2000_MSG_SD2 };
+enum {
+    E2000_SD2_STEER, E2000_SD2_GAS, E2000_SD2_BRAKE, E2000_SD2_STATE, E2000_SD2_W72,
+    E2000_SD2_W28, E2000_SD2_W68, E2000_SD2_IN_WORD, E2000_SD2_IN_REQ,
 };
 
 /* exported by a game plugin .so */

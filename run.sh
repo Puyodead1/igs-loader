@@ -33,6 +33,8 @@ export IGS_ASSET_MASK="$ASSET_MASK"
 export IGS_VARIANT="$VARIANT"
 # NAME: the window title (IGS_TITLE overrides it, IGS_TITLE=0 keeps the game's)
 export IGS_NAME="$NAME"
+# SET: the cabinet's root, for the absolute paths in IGS_SET_DIRS (the list's env)
+export IGS_SET="$SET"
 # DATA: the game's working directory on the cabinet, inside the set
 cd "$SET$DATA" || exit 1
 # SDL 1.2 (sdl12-compat) on Wayland/EGL: its GLX path breaks on WSLg's
