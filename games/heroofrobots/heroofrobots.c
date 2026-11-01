@@ -476,30 +476,46 @@ static uint32_t qr_write(const uint8_t *p, uint32_t n, uint8_t *reply, uint32_t 
  * After a dispense the game polls the status every 500 ms and leaves the
  * "cards obtained" screen only once it reads 16 (CheckStatus 7, taken as
  * "card taken", guess) or the 6 group: the next two polls answer 16.
+ * Its 2 s / 8 s exit timers start only at 16 (or the 6 group); other
+ * statuses, 23 included, keep it polling with no time limit.  NFC dispense:
+ * the polls answer 23 (card still coming out) until the card is on a tag
+ * or HERO_NFC_WAIT runs out, so the player has time to place one.
  */
 static uint32_t dispenser_write(const uint8_t *p, uint32_t n, uint8_t *reply, uint32_t max)
 {
-    static int taken;
+    static int taken, hold;
+    const struct hero_nfc *nf = nfc();
 
     if (n < 2 || max < 2)
         return 0;
     reply[0] = p[0];
     switch (p[1]) {
     case 0x37:
+        if (hold && nf->pending()) {
+            reply[1] = 0x23;
+            break;
+        }
+        if (hold) {
+            hold = 0;
+            taken = 2;
+            LOG("dispenser: card taken (NFC write done or timed out)");
+        }
         reply[1] = taken ? 0x16 : 0x23;
         if (taken)
             taken--;
         break;
     case 0x38: reply[1] = 0x30; break;
     case 0x42: {
-        const struct hero_nfc *nf = nfc();
         char code[13];
 
         reply[1] = 0x50;
         taken = 2;
         LOG("card dispensed");
-        if (nf && nf->features & NFC_DISPENSE && pick_card(code))
+        if (nf && nf->features & NFC_DISPENSE && pick_card(code)) {
             nf->dispense(code);
+            taken = 0;
+            hold = 1;                   /* "card taken" once it is on a tag */
+        }
         break;
     }
     default:

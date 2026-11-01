@@ -199,8 +199,10 @@ done, `4B` failed.  Other status bytes (`CardDispenser::CheckStatus`):
 `16` → 7, `22` → 2, `24` → 3, `25` → −4, `26`/`29` → 6, `27` → 4, `28` → 5.
 After a dispense, `CDispenserCardOutProc::CardOut` (`0x86ECB70`) polls the
 status every 500 ms and leaves the "cards obtained" screen 2 s after a 7
-(`16`) or 8 s after a 6; with `23` it waits forever.  The loader answers
-`16` to the two status polls after a dispense (guess: "card taken").  `media/Firmware/C541_HL2_A_140116.Bin` is its firmware
+(`16`) or 8 s after a 6; with `23` it waits forever (those timers start
+only at 6 or 7).  The loader answers `16` to the two status polls after a
+dispense (guess: "card taken"); with NFC dispense, only once the card is
+on a tag (NFC cards).  `media/Firmware/C541_HL2_A_140116.Bin` is its firmware
 (operator update).  The dispenser holds printed cards: the game never
 learns which card came out.
 
@@ -238,7 +240,7 @@ joystick.
     `0x24`), the stored blocks (saves are kept in memory, so every start is
     a first boot: settings come back to the defaults);
   - the serial ports: the QR reader acknowledges everything, the dispenser
-    is always ready, stocked and dispenses, and reports the card taken;
+    is always ready, stocked and dispenses, and reports the card taken (with NFC dispense: once it is on a tag);
   - NFC (below): a tag's card code as the QR reader's text, message 14's
     answer, a dispensed card's code to the tag reader.
 - **`libcasmcard.c`** (`build/libcasmcard-hero.so`, SONAME
@@ -255,6 +257,8 @@ joystick.
     message 6.
 - **`nfc.c`**, `nfc.h`: the NFC tag reader, built into the card library
   (which exports `hero_nfc_api`; the ASIC plugin looks it up at run time).
+  `nfc_tag.c` (readers, tag format) is shared with the card tool,
+  **`hero-nfc.c`**.
 
 ## NFC cards (experimental)
 
@@ -269,7 +273,7 @@ ACR122U and real NTAG215 tags.
 | `HERO_NFC_READER` | PC/SC reader to use: part of its name (default `ACR122`); other readers are never touched |
 | `HERO_NFC_WAIT` | seconds a dispensed card waits for a tag (default 30) |
 | `HERO_NFC_CARD` | dispense this code instead of a random one |
-| `IGS_NFC_FAKE` | a folder: `tag.bin` in it is the tag on the reader (a 540-byte NTAG215 image); no file, no tag |
+| `IGS_NFC_FAKE` | a folder: `tag.bin` in it is the tag on the reader (a 540-byte NTAG215 image, `hero-nfc fake-new`); no file, no tag |
 
 - **scan:** when the game triggers the QR reader (card input) and a
   loader tag with a card was placed since the last scan, the reader answers
@@ -279,7 +283,10 @@ ACR122U and real NTAG215 tags.
 - **dispense:** each card the dispenser ejects gets a code
   (`HERO_NFC_CARD`, or random among the 1002 of `QRCardRes.csv`), written to
   the next tag that is blank or the loader's without a card, within
-  `HERO_NFC_WAIT` s.  The game's flow is unchanged.
+  `HERO_NFC_WAIT` s.  Until then the dispenser answers `23` (still
+  dispensing), so the game stays on "cards obtained" with no time limit;
+  once the tag is written, or the wait runs out, it reports the card taken
+  and the game goes on.
 - **points:** the smart card's points live on the tag: each query reads
   them, each debit writes one less.  A blank tag, or a loader tag without
   points, starts with `HERO_CARD_CREDIT`.  With no tag, or another kind of tag, the emulated
@@ -319,6 +326,50 @@ Page 4 on: `03 32`, record `D4 0F 20 "igs-loader:hero"`, 32-byte payload,
 
 Every write rewrites the whole record and reads it back.
 
+### Card tool (experimental)
+
+`hero-nfc` (`build/hero-nfc`, `build\win\hero-nfc.exe`) makes and edits
+tags in this format with the game's own reader code.  Same readers:
+`--reader` / `HERO_NFC_READER` (default `ACR122`), `--fake <dir>` /
+`IGS_NFC_FAKE`.  Tested with the fake reader only.
+
+| Command | Does |
+| --- | --- |
+| `list [filter]` | the cards of `QRCardRes.csv`: code, kind, printed id, name (`boss`: the boss rows) |
+| `info` | UID, type, locks; blank / loader / other; card, points, write count |
+| `write <card>` | a card on a blank or loader tag, keeping its points; code, printed id (`M01-01`) or unique name |
+| `points <n\|+n\|-n>` | set or change the points (0–65535) |
+| `erase` | a loader tag back to blank (empty NDEF); `--force`: any tag, user pages 4–129 |
+| `format` | capability container (one-time programmable) and empty NDEF for a tag without one |
+| `dump [file]` / `restore <file>` | the tag's pages to a file (default `tag-<UID>.bin`; an NTAG215 dump is a fake `tag.bin`) / its user pages back |
+| `readers` | the PC/SC readers, none opened |
+| `fake-new` | a blank NTAG215 `tag.bin` in the fake folder (`--unformatted`: no CC) |
+
+- **Writes:** each asks first (`--yes` skips) and is read back; user pages
+  4–129 only, plus page 3 for `format`.  Boss rows, codes not in the list,
+  other tags and another tag's dump need `--force`.
+- **Card list:** `--csv <file>`, `--set <dir>`, else the set `--game`
+  (default `heroofrobots_m100fa`) on `igs-loader.ini`'s rompath: a folder
+  set, or an archive's extracted copy (run the game once).  Without it
+  only `0102SSKNN` codes are accepted.
+- **Other:** `--wait` waits for the reader and a tag.  Exit codes: 0 ok, 1
+  failed or declined, 2 usage, 3 no reader or no tag.  The game keeps its
+  copy of a tag until it is placed again: edit tags off the game's reader,
+  or lift and replace them.
+- **Linux:** native 64-bit; for a real reader it needs `pcscd` and the
+  amd64 `libpcsclite1`.
+
+```powershell
+hero-nfc write M01-01; hero-nfc points 100; hero-nfc info
+```
+
+**Window** (Windows, `hero-nfc-gui.exe`): the card list with search and
+each card's artwork, the tag on the reader live (artwork, card, points,
+blank / loader / other), and write, set points, erase, format, dump and
+restore, each confirmed in a dialog.  Options as `hero-nfc`'s.  Artwork:
+`media/localization/ui/common/card/<printed id>_I1.dds` (256×360, DXT5,
+not encrypted; `_I2` is a blank frame), decoded by the tool itself.
+
 **Deviation from the cabinet:** the loader's ASIC repeats message 0 (flag 1,
 same key) in every reply, not only at start-up.  On a desktop the game can
 occasionally take more than 3 s for one exchange (seen once, at the IGS
@@ -352,7 +403,7 @@ the first `Game::Process`.
 - QR cards: printed codes cannot be decoded (the ASIC's algorithm is
   unknown); without NFC a player always fights with the default robot (the
   card input screen times out).
-- NFC on a real ACR122U: untested (fake reader only).
+- NFC on a real ACR122U: untested (fake reader only), the game and `hero-nfc`.
 - Settings and bookkeeping are not persisted between runs.
 - Player 2 keys and the lever's exact meaning are guesses; the dispenser's
   status byte `16` as "card taken" is a guess that works; the "buy card"

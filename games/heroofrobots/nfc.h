@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 
-#define HERO_NFC_VERSION 1
+#define HERO_NFC_VERSION 2
 #define HERO_NFC_SYMBOL "hero_nfc_api"
 
 /* HERO_NFC: features */
@@ -46,6 +46,8 @@ struct hero_nfc {
     /* the points of tag `serial` (queued; the copy changes at once);
        0 if that tag is gone or not writable */
     int (*set_points)(unsigned serial, int points);
+    /* dispensed cards not yet written (dropped after HERO_NFC_WAIT s) */
+    int (*pending)(void);
 };
 
 typedef const struct hero_nfc *(*hero_nfc_api_fn)(void);

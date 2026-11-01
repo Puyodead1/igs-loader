@@ -132,6 +132,8 @@ From Windows, `play.ps1 <id>` runs `run.sh` in WSL.
 .\igs-loader.exe --list
 .\igs-loader.exe oceanparty_md105cn
 .\igs-loader.exe --check scratch_m101cn    # load and link only, list unresolved symbols
+.\hero-nfc.exe write M01-01                # Hero of Robots NFC card (experimental; also build/hero-nfc on Linux)
+.\hero-nfc-gui.exe                         # the same, in a window with the card artwork
 ```
 
 From a source checkout, `play-win.ps1 <id>` runs `build\win\igs-loader.exe`.
@@ -200,6 +202,7 @@ Controls and per-game settings are on the [wiki](https://github.com/Puyodead1/ig
 | `core/` | the Linux `LD_PRELOAD` core: hooks for files, devices, SDL, X11/GLX, OSS audio, overlay, frame cap |
 | `machines/e2100`, `machines/e2000` | the boards: ASIC transports, devices, protection handshakes |
 | `games/<game>/` | per-game plugins: inputs, coins, the protection chip's game logic |
+| `games/heroofrobots/hero-nfc*.c` | `hero-nfc` and `hero-nfc-gui.exe` (Windows), the Hero of Robots NFC card tool (experimental; [HeroOfRobots.md](docs/HeroOfRobots.md#card-tool-experimental)) |
 | `win/` | the native Windows loader: ELF loader, glibc shims on Win32, SDL 1.2 and GL layers |
 | `romset/` | rom-set lookup, software-list parser, `.7z` / `.zip` reading |
 | `romtool/` | the set builder and the disk-image filesystem tools |
