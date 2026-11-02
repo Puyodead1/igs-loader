@@ -58,8 +58,27 @@ static const int pad_bit[12] = {   /* phone keys 1..9, *, 0, # */
 
 static const struct e2000_api *api;
 
+/*
+ * Key presses as the game sees them: one key-bit report per frame.
+ * - A press is a rising edge between two reports (igs036_bKeyPulse), so a
+ *   tap that starts and ends between two frames would be lost, and a second
+ *   press of a key with no clear report in between would merge with the
+ *   first (keypad digits typed fast).
+ * - The stuck-button test (Igs036_iKeyTestRealTime) counts a press only when
+ *   a bit is set in 3 reports in a row and then clear in 3.  Each credit
+ *   (Igs036_iKeyTestGameStart) adds one to OK's and each arrow's count, a
+ *   counted press clears it, and after 4 credits without one the coin page
+ *   shows "button malfunction" (counts kept in info/keyerror.dat).
+ * So every key-down is queued, shown for PRESS_MIN reports at least, and
+ * presses of the same key are separated by a clear report.
+ */
+#define PRESS_MIN 4
+
 static struct {
-    uint32_t buttons;
+    uint32_t buttons;             /* keys held now */
+    uint8_t latch[32];            /* reports the current press still shows for */
+    uint8_t gap[32];              /* clear reports owed before the next queued press */
+    uint8_t pending[32];          /* presses not reported yet */
     int coins;                    /* inserted since the last frame */
     int status;                   /* system status */
     int region;
@@ -108,6 +127,37 @@ static void wd_reset(void)
     nv_load();
 }
 
+/* one key bit of this frame's report (see PRESS_MIN) */
+static int key_report(int i)
+{
+    if (g.latch[i]) {
+        if (!--g.latch[i])
+            g.gap[i] = 1;
+        return 1;
+    }
+    if (g.pending[i]) {
+        if (g.gap[i]) {
+            g.gap[i]--;
+            return 0;
+        }
+        g.pending[i]--;
+        g.latch[i] = PRESS_MIN - 1;
+        return 1;
+    }
+    g.gap[i] = 0;
+    return g.buttons >> i & 1;
+}
+
+static void key_press(int bit, int down)
+{
+    if (down && !(g.buttons & 1u << bit) && g.pending[bit] < 8)
+        g.pending[bit]++;
+    if (down)
+        g.buttons |= 1u << bit;
+    else
+        g.buttons &= ~(1u << bit);
+}
+
 /* the next system status (main(): 0 -> 1 attract -> 2 game -> 1, 3 test -> 1) */
 static int next_status(int s)
 {
@@ -134,14 +184,20 @@ static uint32_t wd_packet(int port, uint32_t *m)
     if (port != 0x30)                            /* 0x20: output test */
         return 0;
     switch (type) {
-    case 1:                                      /* every frame */
+    case 1: {                                    /* every frame */
+        uint32_t b;
+
         wd_script();
         g.frames++;
-        m[E2000_PKT_RET] = g.buttons;
+        b = 0;
+        for (i = 0; i < 32; i++)
+            b |= (uint32_t)key_report(i) << i;
+        m[E2000_PKT_RET] = b;
         m[E2000_PKT_PR + 5] = g.coins;
         m[E2000_PKT_PR + 7] = g.status;
         g.coins = 0;
         return 0;
+    }
     case 8:                                      /* coin settings */
         if (fn == 0) {
             if (!g.nv.coin_valid) {
@@ -225,9 +281,9 @@ static const struct e2000_bios bios[] = {        /* bios_serial_number (0x852B9A
 };
 
 /*
- * Keys: the phone keypad on 1 2 3 / Q W E / A S D / Z X C, or the numeric
- * keypad (7 8 9 top row = 1 2 3, 0, / = *, * = #); A on Enter or Space,
- * the arrows, 5 coin, 9 service, F2 test.  The game's own SDL keyboard
+ * Keys: the phone keypad on 1 2 3 / Q W E / A S D / Z X C, the digit keys
+ * (but 5 coin, 9 service) or the numeric keypad by label (/ = *, * = #);
+ * A on Enter or Space, the arrows, F2 test.  The game's own SDL keyboard
  * only uses / (the warm-up clock).
  */
 static int key_bit(int sym)
@@ -240,17 +296,17 @@ static int key_bit(int sym)
     case K_LEFT: return B_LEFT;
     case K_9: return B_SERVICE;
     case K_F2: return B_TEST;
-    case K_1: case K_KP7: return pad_bit[0];
-    case K_2: case K_KP8: return pad_bit[1];
-    case K_3: case K_KP9: return pad_bit[2];
-    case K_q: case K_KP4: return pad_bit[3];
+    case K_1: case K_KP1: return pad_bit[0];
+    case K_2: case K_KP2: return pad_bit[1];
+    case K_3: case K_KP3: return pad_bit[2];
+    case K_q: case K_4: case K_KP4: return pad_bit[3];
     case K_w: case K_KP5: return pad_bit[4];
-    case K_e: case K_KP6: return pad_bit[5];
-    case K_a: case K_KP1: return pad_bit[6];
-    case K_s: case K_KP2: return pad_bit[7];
-    case K_d: case K_KP3: return pad_bit[8];
+    case K_e: case K_6: case K_KP6: return pad_bit[5];
+    case K_a: case K_7: case K_KP7: return pad_bit[6];
+    case K_s: case K_8: case K_KP8: return pad_bit[7];
+    case K_d: case K_KP9: return pad_bit[8];
     case K_z: case K_KP_DIVIDE: return pad_bit[9];
-    case K_x: case K_KP0: return pad_bit[10];
+    case K_x: case K_0: case K_KP0: return pad_bit[10];
     case K_c: case K_KP_MULTIPLY: return pad_bit[11];
     default: return -1;
     }
@@ -271,17 +327,15 @@ static void wd_key(int sym, int down)
         return;
     }
     if (sym == K_ARROWS) {
-        uint32_t b = 1u << B_UP | 1u << B_DOWN | 1u << B_LEFT | 1u << B_RIGHT;
-
-        g.buttons = down ? g.buttons | b : g.buttons & ~b;
+        key_press(B_UP, down);
+        key_press(B_DOWN, down);
+        key_press(B_LEFT, down);
+        key_press(B_RIGHT, down);
         return;
     }
     if ((bit = key_bit(sym)) < 0)
         return;
-    if (down)
-        g.buttons |= 1u << bit;
-    else
-        g.buttons &= ~(1u << bit);
+    key_press(bit, down);
 }
 
 static void wd_draw(int w, int h)
@@ -308,7 +362,8 @@ static void wd_draw(int w, int h)
  * coin, a, up, down, left, right, arrows (all four), service, test, 1..9,
  * star, 0, hash).  A
  * press lasts 0.2 s, or with a trailing + until the next entry.  Runs from
- * the frame packet.
+ * the frame packet.  WEDO_SCRIPT_CLOCK=frames counts game frames (60 a
+ * second) instead of wall time: steady timing when the host is loaded.
  */
 static void wd_script(void)
 {
@@ -321,7 +376,7 @@ static void wd_script(void)
     };
     static const char *p;
     static double t0, release_at;
-    static int held;
+    static int held, frames;
     const struct igs_core *c = api->core;
     double now, at;
     char name[16];
@@ -329,9 +384,10 @@ static void wd_script(void)
 
     if (!p) {
         p = c->env("WEDO_SCRIPT", "");
+        frames = !strcmp(c->env("WEDO_SCRIPT_CLOCK", ""), "frames");
         t0 = c->now();
     }
-    now = c->now() - t0;
+    now = frames ? g.frames / 60.0 : c->now() - t0;
     if (held && release_at && now >= release_at) {
         wd_key(held, 0);
         held = 0;

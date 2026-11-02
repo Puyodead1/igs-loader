@@ -207,6 +207,46 @@ static int exists(const char *win)
     return GetFileAttributesA(win) != INVALID_FILE_ATTRIBUTES;
 }
 
+static void tmp_rm(const char *win);
+
+/*
+ * The game's /tmp: %TEMP%\igs-tmp\<pid>, one per running loader (We Dance
+ * copies each song's music there and empties it; two instances sharing one
+ * folder deleted each other's).  Folders of loaders no longer running go.
+ */
+static const char *tmp_dir(void)
+{
+    static char dir[MAX_PATH];
+    char tmp[MAX_PATH], pat[MAX_PATH], old[MAX_PATH];
+    WIN32_FIND_DATAA fd;
+    HANDLE h, p;
+
+    if (*dir)
+        return dir;
+    GetTempPathA(sizeof(tmp), tmp);
+    snprintf(pat, sizeof(pat), "%sigs-tmp\\*", tmp);
+    if ((h = FindFirstFileA(pat, &fd)) != INVALID_HANDLE_VALUE) {
+        do {
+            DWORD pid = strtoul(fd.cFileName, NULL, 10);
+
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || !pid || pid == GetCurrentProcessId())
+                continue;
+            if ((p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid))) {
+                CloseHandle(p);
+                continue;
+            }
+            snprintf(old, sizeof(old), "%sigs-tmp\\%s", tmp, fd.cFileName);
+            tmp_rm(old);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+    snprintf(dir, sizeof(dir), "%sigs-tmp", tmp);
+    CreateDirectoryA(dir, NULL);
+    snprintf(dir, sizeof(dir), "%sigs-tmp\\%lu", tmp, (unsigned long)GetCurrentProcessId());
+    CreateDirectoryA(dir, NULL);
+    return dir;
+}
+
 int lx_path(const char *in, char *out, size_t n)
 {
     char a[MAX_PATH], b[MAX_PATH];
@@ -220,11 +260,7 @@ int lx_path(const char *in, char *out, size_t n)
     } else if (!strncmp(in, "/mnt/", 5) && in[5] && (in[6] == '/' || !in[6])) {
         snprintf(out, n, "%c:%s", in[5] & ~32, in[6] ? in + 6 : "/");
     } else if (!strncmp(in, "/tmp", 4) && (in[4] == '/' || !in[4])) {
-        char tmp[MAX_PATH];
-
-        GetTempPathA(sizeof(tmp), tmp);
-        snprintf(out, n, "%sigs-tmp", tmp);
-        CreateDirectoryA(out, NULL);
+        snprintf(out, n, "%s", tmp_dir());
         strncat(out, in + 4, n - strlen(out) - 1);
     } else if (!strncmp(in, "/dev/", 5) || !strncmp(in, "/proc/", 6) || !strncmp(in, "/sys/", 5)) {
         return -1;
@@ -265,7 +301,7 @@ static void linux_form(const char *win, char *out, size_t n)
 
 /* ---- the fd table ------------------------------------------------------------------------ */
 
-enum { FD_FREE, FD_CRT, FD_NULL, FD_DIR };
+enum { FD_FREE, FD_CRT, FD_NULL, FD_DIR, FD_SOCK };
 #define NFD 1024
 static struct { int type, crt; } fds[NFD] = {
     { FD_CRT, 0 }, { FD_CRT, 1 }, { FD_CRT, 2 },
@@ -290,6 +326,8 @@ static int fd_alloc(int type, int crt)
 }
 
 int lx_fd_new_null(void) { return fd_alloc(FD_NULL, -1); }
+int lx_fd_new_sock(void) { return fd_alloc(FD_SOCK, -1); }
+int lx_fd_is_sock(int fd) { return fd >= 0 && fd < NFD && fds[fd].type == FD_SOCK; }
 
 int lx_fd_from_crt(int crtfd)
 {
@@ -394,6 +432,8 @@ static ssize_t l_read(int fd, void *buf, size_t n)
         return c;
     case FD_NULL:
         return 0;
+    case FD_SOCK:
+        return lx_net_read(fd, buf, n);
     default:
         SET_ERRNO(EISDIR);
         return -1;
@@ -420,6 +460,8 @@ static ssize_t l_write(int fd, const void *buf, size_t n)
         return c;
     case FD_NULL:
         return n;
+    case FD_SOCK:
+        return lx_net_write(fd, buf, n);
     default:
         SET_ERRNO(EISDIR);
         return -1;
@@ -434,6 +476,8 @@ static int l_close(int fd)
         return -1;
     if (fds[fd].type == FD_CRT && fd > 2)
         _close(fds[fd].crt);
+    if (fds[fd].type == FD_SOCK)
+        lx_net_close(fd);
     if (fd > 2)
         fds[fd].type = FD_FREE;
     return 0;
@@ -551,6 +595,13 @@ static int l_fcntl(int fd, int cmd, ...)
     va_end(ap);
     if (bad_fd(fd))
         return -1;
+    if (fds[fd].type == FD_SOCK) {    /* F_GETFL / F_SETFL: O_NONBLOCK */
+        if (cmd == 3)
+            return 2 | (lx_net_nonblocking(fd) ? L_O_NONBLOCK : 0);
+        if (cmd == 4)
+            lx_net_nonblock(fd, (arg & L_O_NONBLOCK) != 0);
+        return cmd == 0 ? (SET_ERRNO(EINVAL), -1) : 0;
+    }
     switch (cmd) {
     case 0: {                         /* F_DUPFD */
         int n = l_dup(fd);
@@ -564,7 +615,17 @@ static int l_fcntl(int fd, int cmd, ...)
 }
 
 static int l_isatty(int fd) { return fd >= 0 && fd <= 2 ? _isatty(fd) != 0 : 0; }
-static int l_poll(void *fds_, unsigned n, int timeout) { (void)fds_; (void)n; (void)timeout; return 0; }
+/* poll: sockets only (net.c); nothing else is ever ready */
+static int l_poll(void *fds_, unsigned n, int timeout)
+{
+    const int *p = fds_;
+    unsigned i;
+
+    for (i = 0; i < n; i++)
+        if (lx_fd_is_sock(p[2 * i]))
+            return lx_net_poll(fds_, n, timeout);
+    return 0;
+}
 
 static int l_ioctl(int fd, unsigned long req, ...)
 {
@@ -577,6 +638,8 @@ static int l_ioctl(int fd, unsigned long req, ...)
     va_end(ap);
     if (core_ioctl(fd, req, arg, &r))
         return r;
+    if (lx_fd_is_sock(fd))
+        return lx_net_ioctl(fd, req, arg);
     if (req == 0x541B && arg) {          /* FIONREAD */
         *(int *)arg = 0;
         return 0;
@@ -1398,7 +1461,7 @@ static int tmp_copy(const char *from, const char *to)
     return ret;
 }
 
-/* cp / rm into /tmp (%TEMP%\igs-tmp), core/tmpcmd.h; wildcards in the last component */
+/* cp / rm into /tmp (tmp_dir()), core/tmpcmd.h; wildcards in the last component */
 static int tmp_cmd(char **argv, int argc)
 {
     char src[MAX_PATH], dst[MAX_PATH], dir[MAX_PATH], from[MAX_PATH], to[MAX_PATH], *e;
@@ -1586,15 +1649,6 @@ static int l_getrlimit(int r, uint32_t *rl) { (void)r; rl[0] = rl[1] = 0xfffffff
 static int l_setrlimit(int r, const uint32_t *rl) { (void)r; (void)rl; return 0; }
 static int l_getrusage(int who, void *ru) { (void)who; memset(ru, 0, 72); return 0; }
 
-static int l_socket(int d, int t, int p)
-{
-    static int once;
-
-    if (!once++)
-        LOG("socket(%d, %d, %d): no network (logged once)", d, t, p);
-    SET_ERRNO(L_EAFNOSUPPORT);
-    return -1;
-}
 static int l_net_fail(void) { SET_ERRNO(L_ENOSYS); return -1; }
 static void *l_net_null(void) { SET_ERRNO(L_ENOSYS); return NULL; }
 static void l_if_freenameindex(void *p) { (void)p; }
@@ -1749,14 +1803,13 @@ const struct nsym sys_syms[] = {
     N(getifaddrs), N(freeifaddrs), N(ftruncate), N(ftruncate64), N(utimes), N(__xpg_basename),
     NA(shmget, l_shm_fail), N(shmat), NA(shmdt, l_shm_fail), NA(shmctl, l_shm_fail), N(tmpnam),
     N(mremap),
-    N(socket), NA(connect, l_net_fail), NA(bind, l_net_fail), NA(listen, l_net_fail),
-    NA(accept, l_net_fail), NA(setsockopt, l_net_fail), NA(sendto, l_net_fail),
-    NA(recvfrom, l_net_fail), NA(send, l_net_fail), NA(recv, l_net_fail), NA(shutdown, l_net_fail),
+    /* socket, connect, send, recv...: net.c */
+    NA(bind, l_net_fail), NA(listen, l_net_fail), NA(accept, l_net_fail),
     NA(gethostbyname, l_net_null), NA(if_nameindex, l_net_null), N(if_freenameindex), N(inet_ntoa),
-    NA(getsockname, l_net_fail), NA(getsockopt, l_net_fail), N(inet_addr), N(inet_aton),
+    N(inet_addr), N(inet_aton),
     NA(getaddrinfo, l_gai_fail), NA(getnameinfo, l_gai_fail), N(freeaddrinfo), N(gai_strerror),
     NA(socketpair, l_net_fail), NA(sendmsg, l_net_fail), NA(recvmsg, l_net_fail),
-    NA(getpeername, l_net_fail), NA(sockatmark, l_net_fail), NA(isfdtype, l_net_fail),
+    NA(sockatmark, l_net_fail), NA(isfdtype, l_net_fail),
     NA(if_indextoname, l_net_null), NA(inet_ntop, l_net_null), N(inet_pton), N(htons),
     NA(ntohs, l_htons), N(htonl), NA(ntohl, l_htonl), N(statvfs), N(drand48), N(gcvt),
     N(mkstemp), NA(mkstemp64, l_mkstemp),

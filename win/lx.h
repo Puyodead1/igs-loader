@@ -126,6 +126,21 @@ const char *lx_data_dir(void);
 /* fds: the Linux fd table (libc_sys.c) */
 int lx_fd_new_null(void);      /* a /dev/null-like fd (core placeholder) */
 int lx_fd_from_crt(int crtfd);
+int lx_fd_new_sock(void);      /* an fd for net.c */
+int lx_fd_is_sock(int fd);
+
+/* IP sockets with IGS_NET (net.c), by Linux fd */
+struct l_pollfd;
+int lx_net_on(void);
+int lx_net_read(int fd, void *buf, size_t n);
+int lx_net_write(int fd, const void *buf, size_t n);
+void lx_net_close(int fd);
+int lx_net_nonblocking(int fd);
+void lx_net_nonblock(int fd, int on);
+int lx_net_ioctl(int fd, unsigned long req, void *arg);
+int lx_net_select(int n, const uint32_t *rd, const uint32_t *wr, uint32_t *ord, uint32_t *owr);
+int lx_net_poll(struct l_pollfd *p, unsigned n, int timeout);
+extern const struct nsym net_syms[];
 
 /* stdio FILE stand-in */
 typedef struct LFILE {

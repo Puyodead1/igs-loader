@@ -312,7 +312,9 @@ kept); launcher addresses in `poweron` (stripped).
 | KoNet static AES-256 (ECB) | `KONETv0.1IGS2008` + `B0 DF BB 52 BF 57 B4 4C` + `ARCADE10`: `4B4F4E455476302E3149475332303038B0DFBB52BF57B44C4152434144453130`; login 0x11 and registration 0x21–0x23 | `net_iConnect` `0x817F820`, `net_iReg` `0x8181260` |
 | KoNet session AES-128 (ECB) | the cabinet's keycpu (registration +4, 16 bytes; default `4a0f0000000802069d640000fffbebbf`) | `net_vRecv` `0x817FBB0` |
 | KoNet HMAC-MD5 | key keymac (registration +20, 6 bytes; default `00145e7ea824`) ‖ keycpu, over the 8-byte challenge reordered `c0 c2 c4 c6 c1 c3 c5 c7` | `net_vRecv`, `net_iReg` |
+| KoNet keycpu, keymac at registration | CPUID leaf 1 (`eax ebx ecx edx`) with bytes 0, 3, 4, 8, 12, 15 set to MAC bytes 5, 4, 3, 2, 1, 0; keymac the `eth0` MAC (`SIOCGIFHWADDR`); before the IGS027A read: store 10000000 with the defaults above | `net_iInit` `0x817F3E0` |
 | KoNet blob check | CRC-16/ARC of the data XOR `lo16(n)` XOR `hi16(n)` | `_netAP_enAES`, `_netAP_enZ` |
+| Keypad numbers (accounts, passwords) | `u64` = decimal value \| digit count << 56; Up = `0x4000000000000000` (cancel) | `PDTLogin::InputAccount` `0x81CFA80` |
 | QR login text | `"%llu-%d"`: `(32 · (store − 10000000)) ^ 0x85B8060F9D12F`, `time ^ 0x1EDBAA25` | `QRcodeMng::Init` `0x82C5060` |
 | Downloaded files | 32 hex MD5 + 1 byte, then the data | `NetWeb::GetWebFile` `0x82E6400` |
 

@@ -8,6 +8,8 @@
  *     SIGSEGV handler (the games' register accessors are plain movs);
  *   - libc fixes: 32-bit readdir/stat on large inode numbers, an empty OSS
  *     mixer, no system clock changes;
+ *   - IP networking: none (IGS_NO_NET), or only to a local stand-in for the
+ *     game's server (IGS_NET);
  *   - SDL: key events to the machine, windowed mode, frame pacing, the
  *     overlay (drawn with fixed-function GL before each swap);
  *   - games with SDL linked in statically (E2000): the same through X11
@@ -27,7 +29,9 @@
 #include <ftw.h>
 #include <glob.h>
 #include <limits.h>
+#include <arpa/inet.h>
 #include <netdb.h>
+#include <netinet/in.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -404,6 +408,7 @@ static struct {
     void (*UseProgram)(unsigned);
     void (*ActiveTexture)(unsigned);
     void (*ReadPixels)(int, int, int, int, unsigned, unsigned, void *);
+    void (*Viewport)(int, int, int, int);
 } gl;
 
 static int gl_load_from(void *(*gpa)(const char *))
@@ -413,7 +418,7 @@ static int gl_load_from(void *(*gpa)(const char *))
     L(GetIntegerv); L(MatrixMode); L(PushMatrix); L(PopMatrix); L(LoadIdentity);
     L(Ortho); L(Enable); L(Disable); L(BlendFunc); L(Color4f);
     L(Begin); L(End); L(Vertex2f); L(WindowPos2i); L(Bitmap); L(PixelStorei);
-    L(UseProgram); L(ActiveTexture); L(ReadPixels);
+    L(UseProgram); L(ActiveTexture); L(ReadPixels); L(Viewport);
 #undef L
     return 0;
 }
@@ -494,9 +499,14 @@ static void screenshot(void)
     free(px);
 }
 
-/* origin bottom-left, in viewport pixels; all GL state saved and restored */
+/*
+ * Origin bottom-left, in viewport pixels; all GL state saved and restored.
+ * The viewport is the largest seen: some screens end their frame on a small
+ * one (We Dance's login: 480x32).
+ */
 static void overlay(void)
 {
+    static int full[4];
     int vp[4], prog = 0, active = 0, i;
 
     if (!machine || !machine->draw)
@@ -506,9 +516,14 @@ static void overlay(void)
     if (gl.ok < 0)
         return;
     gl.GetIntegerv(GL_VIEWPORT, vp);
+    if (vp[2] * vp[3] >= full[2] * full[3])
+        memcpy(full, vp, sizeof(full));
+    else
+        memcpy(vp, full, sizeof(vp));
     gl.GetIntegerv(GL_CURRENT_PROGRAM, &prog);
     gl.GetIntegerv(GL_ACTIVE_TEXTURE, &active);
     gl.PushAttrib(GL_ALL_ATTRIB_BITS);
+    gl.Viewport(vp[0], vp[1], vp[2], vp[3]);
     gl.PushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
     gl.UseProgram(0);
     for (i = 3; i >= 0; i--) {
@@ -1019,6 +1034,124 @@ int chmod(const char *path, mode_t mode)
 }
 
 /*
+ * IGS_NET=host[:port] (port 10000): the game's own server, e.g. igs-online.
+ * Outgoing TCP to the ports in IGS_NET_PORTS (default 10000, the game
+ * server's port in We Dance's info/ip) goes to host:port whatever address
+ * the game asked for; every other IP connection, name lookup and datagram
+ * is refused, so nothing reaches a real IGS server.  Datagram sockets may
+ * be made (the games ioctl their interfaces on one), raw ones not.  Takes
+ * precedence over IGS_NO_NET.
+ */
+static struct {
+    int on;
+    struct sockaddr_in to;
+    int ports[8], nports;
+} net;
+
+static void net_init(void)
+{
+    static int done;
+    const char *v = getenv("IGS_NET"), *p;
+    char host[256];
+    struct addrinfo hints = { .ai_family = AF_INET, .ai_socktype = SOCK_STREAM }, *ai;
+    REAL(int, getaddrinfo, (const char *, const char *, const struct addrinfo *, struct addrinfo **));
+    int port = 10000;
+    size_t n;
+
+    if (done++ || !v || !*v)
+        return;
+    p = strrchr(v, ':');
+    n = p ? (size_t)(p - v) : strlen(v);
+    if (n >= sizeof(host))
+        n = sizeof(host) - 1;
+    memcpy(host, v, n);
+    host[n] = 0;
+    if (p)
+        port = atoi(p + 1);
+    if (real_getaddrinfo(host, NULL, &hints, &ai)) {
+        LOG("IGS_NET=%s: cannot resolve %s; no network", v, host);
+        net.on = -1;
+        return;
+    }
+    net.to = *(struct sockaddr_in *)ai->ai_addr;
+    net.to.sin_port = htons((uint16_t)port);
+    freeaddrinfo(ai);
+    for (p = core_env("IGS_NET_PORTS", "10000"); *p && net.nports < 8; ) {
+        net.ports[net.nports++] = atoi(p);
+        p += strcspn(p, ",");
+        p += *p == ',';
+    }
+    net.on = 1;
+    LOG("IGS_NET: game server %s:%d (ports %s)", inet_ntoa(net.to.sin_addr), port,
+        core_env("IGS_NET_PORTS", "10000"));
+}
+
+/* 1: connect to the server instead, 0: AF_UNIX (as is), -1: refused */
+static int net_route(const struct sockaddr *a)
+{
+    int i, port;
+
+    if (!a || a->sa_family == AF_UNIX)
+        return 0;
+    if (a->sa_family != AF_INET || net.on != 1)
+        return -1;
+    port = ntohs(((const struct sockaddr_in *)a)->sin_port);
+    for (i = 0; i < net.nports; i++)
+        if (port == net.ports[i])
+            return 1;
+    return -1;
+}
+
+int connect(int fd, const struct sockaddr *a, socklen_t len)
+{
+    REAL(int, connect, (int, const struct sockaddr *, socklen_t));
+    char to[32];
+
+    net_init();
+    if (!net.on)
+        return real_connect(fd, a, len);
+    switch (net_route(a)) {
+    case 0:
+        return real_connect(fd, a, len);
+    case 1:
+        snprintf(to, sizeof(to), "%s:%d", inet_ntoa(((const struct sockaddr_in *)a)->sin_addr),
+                 ntohs(((const struct sockaddr_in *)a)->sin_port));
+        LOG("connect %s -> IGS_NET", to);
+        return real_connect(fd, (const struct sockaddr *)&net.to, sizeof(net.to));
+    default:
+        if (a && a->sa_family == AF_INET)
+            LOG("connect %s:%d refused (IGS_NET)", inet_ntoa(((const struct sockaddr_in *)a)->sin_addr),
+                ntohs(((const struct sockaddr_in *)a)->sin_port));
+        errno = ECONNREFUSED;
+        return -1;
+    }
+}
+
+ssize_t sendto(int fd, const void *buf, size_t n, int flags, const struct sockaddr *a, socklen_t len)
+{
+    REAL(ssize_t, sendto, (int, const void *, size_t, int, const struct sockaddr *, socklen_t));
+
+    net_init();
+    if (net.on && a && a->sa_family != AF_UNIX) {
+        errno = EACCES;
+        return -1;
+    }
+    return real_sendto(fd, buf, n, flags, a, len);
+}
+
+ssize_t sendmsg(int fd, const struct msghdr *m, int flags)
+{
+    REAL(ssize_t, sendmsg, (int, const struct msghdr *, int));
+
+    net_init();
+    if (net.on && m && m->msg_name && ((const struct sockaddr *)m->msg_name)->sa_family != AF_UNIX) {
+        errno = EACCES;
+        return -1;
+    }
+    return real_sendmsg(fd, m, flags);
+}
+
+/*
  * IGS_NO_NET=1: no IP networking for the game, as on Windows (We Dance
  * Online 2 logs in to its servers, fetches web files and pings).  Unix
  * sockets stay: X11, Wayland and PulseAudio use them.
@@ -1027,6 +1160,13 @@ int socket(int domain, int type, int proto)
 {
     REAL(int, socket, (int, int, int));
 
+    net_init();
+    if (net.on && domain != AF_UNIX) {
+        if (net.on == 1 && domain == AF_INET && ((type & 0xf) == SOCK_STREAM || (type & 0xf) == SOCK_DGRAM))
+            return real_socket(domain, type, proto);
+        errno = EACCES;
+        return -1;
+    }
     if (getenv("IGS_NO_NET") && domain != AF_UNIX) {
         static int logged;
 
@@ -1042,7 +1182,8 @@ struct hostent *gethostbyname(const char *name)
 {
     REAL(struct hostent *, gethostbyname, (const char *));
 
-    if (getenv("IGS_NO_NET")) {
+    net_init();
+    if (net.on || getenv("IGS_NO_NET")) {
         h_errno = HOST_NOT_FOUND;
         return NULL;
     }
@@ -1053,7 +1194,8 @@ int getaddrinfo(const char *node, const char *svc, const struct addrinfo *hints,
 {
     REAL(int, getaddrinfo, (const char *, const char *, const struct addrinfo *, struct addrinfo **));
 
-    if (getenv("IGS_NO_NET"))
+    net_init();
+    if (net.on || getenv("IGS_NO_NET"))
         return EAI_FAIL;
     return real_getaddrinfo(node, svc, hints, res);
 }
@@ -1186,11 +1328,20 @@ int pclose(FILE *f)
     return real_pclose(f);
 }
 
-/* the games set the system clock from the operator menu: not on a desktop */
+/*
+ * The games set the system clock from the operator menu or a server's login
+ * reply (We Dance: settimeofday, then system("hwclock -w")): not on a desktop.
+ */
 int settimeofday(const struct timeval *tv, const struct timezone *tz)
 {
     (void)tv;
     (void)tz;
+    return 0;
+}
+
+int stime(const time_t *t)
+{
+    (void)t;
     return 0;
 }
 
@@ -1920,19 +2071,33 @@ void XmbSetWMProperties(void *dpy, unsigned long w, const char *name, const char
     real_XmbSetWMProperties(dpy, w, name, icon, argv, argc, hints, wm, cls);
 }
 
-/* XEvent: int type first; KeyPress = 2, KeyRelease = 3 */
+/*
+ * XEvent: int type first; KeyPress = 2, KeyRelease = 3, FocusOut = 10.  Keys
+ * held when the window loses the focus come up elsewhere: released here, as
+ * the Windows loader does, so none stays pressed for the game.
+ */
 int XNextEvent(void *dpy, void *ev)
 {
     REAL(int, XNextEvent, (void *, void *));
     REAL(unsigned long, XLookupKeysym, (void *, int));
+    static uint8_t held[1024];
     int r = real_XNextEvent(dpy, ev);
-    int type = *(int *)ev;
+    int type = *(int *)ev, s;
 
     if ((type == 2 || type == 3) && machine && machine->key) {
         int sym = sdl_key(real_XLookupKeysym(ev, 0));
 
-        if (sym)
+        if (sym) {
+            if (sym > 0 && sym < 1024)
+                held[sym] = type == 2;
             machine->key(sym, type == 2);
+        }
+    } else if (type == 10 && machine && machine->key) {
+        for (s = 1; s < 1024; s++)
+            if (held[s]) {
+                held[s] = 0;
+                machine->key(s, 0);
+            }
     }
     return r;
 }

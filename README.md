@@ -23,7 +23,7 @@ data is included.
 | `speedrider_m109cnc` | Speed Rider (M109CNC) | E2000 | ✓ | ✓ |
 | `pandafamily_cn` | Panda Family (CN) | E2000 | ✓ | ✓ |
 | `speeddriver2` | Speed Driver 2 | E2000 | ✓ | ✓ |
-| `wedanceonline2` | We Dance Online 2 (offline) | E2000 | ✓ | ✓ |
+| `wedanceonline2` | We Dance Online 2 (offline; online with `IGS_NET`) | E2000 | ✓ | ✓ |
 | `percussionkids_m105cn` | Percussion Kids (M105CN) | E1000 | ✓ | ✓ |
 | `percussionmaster3_m107fa` | Percussion Master 3 (M107FA) | E2200 | ✓ | ✓ |
 
@@ -160,6 +160,7 @@ rate. Useful environment variables:
 | `IGS_VERBOSE=1` | log every message between the game and the emulated hardware |
 | `IGS_SHOT=<prefix>` | save the frame to `<prefix><n>.ppm` every `IGS_SHOT_EVERY` frames (default 600) |
 | `IGS_SCRIPT="sec:key[+],..."` | press keys on a timetable, for testing |
+| `IGS_NET=host[:port]` | online games: connect to a local stand-in server (igs-online; We Dance) instead of staying offline; nothing else reaches the network |
 | `IGS_WRAP="cmd"` | Linux: run the game under a command, e.g. `gdb -q --args` |
 | `IGS_VSYNC=1` | Windows: also wait for vblank |
 
@@ -189,9 +190,6 @@ preloaded libraries, all statically linked.
 
 ## Roadmap
 
-- We Dance Online 2: a local game server in the plugin (accounts, QR
-  login, saved profiles, rankings, versus between instances); protocol in
-  `docs/WeDanceOnline2.md`.
 - Percussion Master 3: a local game server in the plugin (registration,
   member accounts, saved profiles, rankings, event boards); protocol in
   `docs/PercussionMaster3_Online.md`.

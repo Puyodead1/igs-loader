@@ -2844,31 +2844,39 @@ static void l_glXWaitGL(void) { glFinish(); }
 
 /* ---- select(): the X connection is readable while events are queued -------------------------------- */
 
+/* sockets (IGS_NET, net.c) are ready when Winsock says so */
 static int l_select(int n, uint32_t *rd, uint32_t *wr, uint32_t *ex, struct l_timeval *tv)
 {
     double end = tv ? lx_now() + tv->tv_sec + tv->tv_usec / 1e6 : 1e300;
-    uint32_t in[32], ready[32];
-    int fd, count, xfds = 0, others = 0;
+    uint32_t in[32], inw[32], ready[32], wready[32];
+    int fd, count, xfds = 0, others = 0, socks = 0;
 
     if (n > 1024)
         n = 1024;
     memset(in, 0, sizeof(in));
+    memset(inw, 0, sizeof(inw));
     if (rd)
         memcpy(in, rd, (n + 31) / 32 * 4);
-    for (fd = 0; fd < n; fd++)
-        if (in[fd / 32] >> (fd % 32) & 1) {
+    if (wr)
+        memcpy(inw, wr, (n + 31) / 32 * 4);
+    for (fd = 0; fd < n; fd++) {
+        if (lx_fd_is_sock(fd))
+            socks += (in[fd / 32] | inw[fd / 32]) >> (fd % 32) & 1;
+        else if (in[fd / 32] >> (fd % 32) & 1) {
             if (dpy_from_fd(fd))
                 xfds++;
             else
                 others++;
         }
+    }
     for (;;) {
         memset(ready, 0, sizeof(ready));
-        count = 0;
+        memset(wready, 0, sizeof(wready));
+        count = socks ? lx_net_select(n, in, inw, ready, wready) : 0;
         for (fd = 0; fd < n; fd++) {
             struct xdpy *d;
 
-            if (!(in[fd / 32] >> (fd % 32) & 1))
+            if (!(in[fd / 32] >> (fd % 32) & 1) || lx_fd_is_sock(fd))
                 continue;
             d = dpy_from_fd(fd);
             if (!d || d->qn) {                     /* other fds: always readable */
@@ -2876,18 +2884,21 @@ static int l_select(int n, uint32_t *rd, uint32_t *wr, uint32_t *ex, struct l_ti
                 count++;
             }
         }
-        if (wr)
-            for (fd = 0; fd < n; fd++)
-                if (wr[fd / 32] >> (fd % 32) & 1)
-                    count++;
-        if (count || lx_now() >= end || (!xfds && !others && !tv))
+        for (fd = 0; fd < n; fd++)
+            if (inw[fd / 32] >> (fd % 32) & 1 && !lx_fd_is_sock(fd)) {
+                wready[fd / 32] |= 1u << (fd % 32);
+                count++;
+            }
+        if (count || lx_now() >= end || (!xfds && !others && !socks && !tv))
             break;
-        lx_usleep(xfds ? 1000 : (int64_t)((end - lx_now()) * 1e6));
-        if (!xfds)
+        lx_usleep(xfds || socks ? 1000 : (int64_t)((end - lx_now()) * 1e6));
+        if (!xfds && !socks)
             break;
     }
     if (rd)
         memcpy(rd, ready, (n + 31) / 32 * 4);
+    if (wr)
+        memcpy(wr, wready, (n + 31) / 32 * 4);
     if (ex)
         memset(ex, 0, (n + 31) / 32 * 4);
     return count;

@@ -18,9 +18,12 @@ rankings, a market, contests, a patch server.
 - The IGS027A is the I/O board and settings store, with Go Go Ball 2's
   packet transport; the game logic is in the executable (`IGS_E2000.md`,
   We Dance).
-- **Offline:** no IP network (list `env` `IGS_NO_NET`), so the game finds no
-  server and runs its own offline mode: guest play, "OFFLINE" on the song
-  select.  Nothing of the server is emulated.
+- **Offline** by default: no IP network (list `env` `IGS_NO_NET`), so the
+  game finds no server and runs its own offline mode: guest play,
+  "OFFLINE" on the song select.
+- **Online** with `IGS_NET` and the igs-online server (below): members,
+  saved progress, rankings, QR login, versus between two instances
+  (2026-11-02).
 
 ## Playing
 
@@ -38,7 +41,8 @@ Windows drive).  A coin and OK start a game; a credit plays several songs.
 | Enter, Space | OK |
 | Arrows | arrow buttons |
 | 1 2 3 / Q W E / A S D / Z X C | keypad 1 2 3 / 4 5 6 / 7 8 9 / * 0 # |
-| Numeric keypad | the same: 7 8 9 → 1 2 3, 4 5 6, 1 2 3 → 7 8 9, / 0 * → * 0 # |
+| Numeric keypad | the digits as labelled; / `*`, * `#` |
+| 0 1 2 3 4 6 7 8 | the same digits (5 and 9 are coin and service) |
 | 9 | service (a credit) |
 | F2 | test (operator menu) |
 | F1 | show / hide the key help |
@@ -57,7 +61,55 @@ Windows drive).  A coin and OK start a game; a credit plays several songs.
 - `WEDO_SCRIPT="sec:key[+],..."` presses keys on a timetable for testing,
   from the first frame.  Keys `coin a up down left right arrows service
   test 1..9 star 0 hash` (`arrows`: all four at once); a press lasts 0.2 s,
-  or with `+` until the next entry.
+  or with `+` until the next entry.  `WEDO_SCRIPT_CLOCK=frames` times it in
+  game frames (60 a second) instead of wall time.
+- **Key presses:** every press is reported to the game for 4 frames at
+  least, and repeats of a key get a released frame in between, so short
+  taps and fast repeats (keypad digits) all count.
+- **"Button malfunction" (按钮故障) on the coin page:** the game's own
+  stuck-button test.  Each credit adds one to OK's and each arrow's count
+  in `info/keyerror.dat`; a press seen in 3 frames in a row clears it; 4
+  credits without one cross the button out.  Press each crossed-out button
+  once to go on.  Before the 4-frame reporting above, keyboard taps shorter
+  than 3 frames were not counted.
+
+## Online play (experimental)
+
+The igs-online server (a separate project, Python 3) stands in for IGS's
+servers.
+
+```powershell
+python -m igs_online wedance                       # in the igs-online folder
+$env:IGS_NET = "127.0.0.1:10000"; .\play-win.ps1 wedanceonline2
+```
+
+In WSL: `IGS_NET=127.0.0.1:10000 ./run.sh wedanceonline2` (a server run in
+WSL; for one on Windows use its address).  `IGS_NET` routes only the game
+server's connection (port 10000, `IGS_NET_PORTS`); the web lookups, banners,
+pings and patch server are refused, so `info/ip` is never rewritten.
+
+- **First connection:** the cabinet registers (0x21..0x24) and keeps the
+  store id the server gives it in `info/igs027a.nv`.  A fresh server
+  database does not know it: delete `info/igs027a.nv` (coin settings and
+  operator password too) to register again.
+- **Login screen** (after a coin and OK; "ONLINE" top left):
+  - left, 游客: guest, nothing saved;
+  - middle, 创造角色: new account.  Agree (OK), account number **6..11
+    digits**, OK; password **6..11 digits**, OK; the same again, OK; then
+    sex, skin, face and name;
+  - right, 角色登录: account number (6..11 digits), OK, password (**4..11**),
+    OK.  The QR code shown there logs in with
+    `python -m igs_online wedance qr <account>`.
+
+  Up cancels an entry, left deletes the last digit; too few digits shows
+  输入数字不足 (not enough digits).  A password equal to the account number,
+  or shorter than 6 digits, makes the game ask for a new one after login.  `python -m igs_online wedance add
+  <account> <password>` makes an account on the server instead.
+- **Saved:** level, experience, counters, wardrobe and worn items, pets,
+  WeTickets, songs bought; per-song scores feed the rankings.
+- **Clock:** the server sends the real time, which the game ignores (it
+  only sets clocks in 2008..2023); `settimeofday` and `stime` are no-ops and
+  `hwclock` is not run (`IGS_NO_SYSTEM`).
 
 ## Extracting
 
@@ -132,6 +184,11 @@ Done:
       (`igs_machine.vfile`).
 - [x] `games/wedanceonline2`: keys, coins, system status, coin settings,
       password, network registration, versions, `/proc/meminfo`, `jlist`.
+- [x] Online through igs-online: `IGS_NET` in both cores (Linux: `connect`,
+      `sendto`, lookups; Windows: Winsock sockets, `win/net.c`); registration,
+      login, members, results, rankings, QR login, and a three-song versus
+      between two Windows instances seen working.
+- [x] Key reporting: every press shown 4 frames, repeats separated.
 - [x] Core: `IGS_NO_NET`; `cp` / `rm` into `/tmp` under `IGS_NO_SYSTEM`;
       `/tmp` overlay.  Windows: `getifaddrs`, `ftruncate64`, `utimes`,
       `getpwuid`, `__xpg_basename`; binary file modes (no CRT text mode).
@@ -141,12 +198,11 @@ Invented:
       password 0000, fuses good; an empty network registration (store 0).
 
 Open:
-- [ ] Not seen: member cards, QR login, accounts, the market and other
-      online modes, multi-player, the camera, the patcher.
+- [ ] Not seen: member cards, the market and other online modes, the
+      camera, the patcher.
 - [ ] Linux (Mesa): two of the game's GLSL shaders fail to compile
       (`operands of '==' must have the same type`); not seen on Windows.
 - [ ] Lamps (packet 2) and meters (3) are ignored.
-- [ ] A local game server (below).
 
 ## Online (KoNet)
 
@@ -185,13 +241,14 @@ AES-128 with keycpu.  Store id 0 first registers (`net_iReg`
 | 0x131..0x149 → 0x132..0x14A | rankings (replies zlib) |
 | 0x165..0x16B → 0x166..0x16C | ticker, news, conditions, csvlist (0x16C replaces `csvlist.csv`) |
 | 0x16F | writes a file |
-| 0x225, 0x231..0x237, 0x241..0x243 | versus search, contests, song choice (not decoded) |
+| 0x222..0x226, 0x231..0x237, 0x241..0x243 | versus search, contests, song choice |
 | 0x250 | versus relay (op byte: score, judgement, combo, pet, abort) |
 | 0x251..0x253, 0x255 | fight ready, start, end; avatar |
-| 0x261..0x26D, 0x269 | results, clothes, play log (`PLAYER_LOG`, 0x6F4 bytes, mode 3); not decoded |
+| 0x261..0x26D | results, clothes, play log (`PLAYER_LOG`, 0x6F4 bytes, mode 3) |
 | 0x273, 0x275 | market, WeTicket |
 
 The member-card reader (`reader_iInit`, ttyS1) is never called.  The QR
 code names only the store and the time; the phone app completes it.
-Plan: hook `KoTCP_*` in the plugin and answer in-process; a non-zero
-store id in the registration skips 0x21..0x24.
+Every message layout found so far, with the profile, results, rankings
+and versus, is in igs-online's `docs/WeDance.md`.  An empty message is
+never delivered (`KoNetAP_Recv` returns 0): send at least one byte.

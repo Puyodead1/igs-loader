@@ -19,9 +19,9 @@ RS="romset/romset.c romset/softlist.c romset/zip.c romset/sevenzip.c romset/hash
 # committed (ELF code has no stack probes: see libc_thread.c)
 $CC $CF -Wno-format-truncation -o "$OUT/igs-loader.exe" \
     win/main.c win/elf.c win/libc.c win/libc_sys.c win/libc_thread.c win/sdl.c win/gl.c win/x11.c \
-    win/core_win.c $RS \
+    win/net.c win/core_win.c $RS \
     -static -Wl,--large-address-aware -Wl,--disable-dynamicbase -Xlinker --stack -Xlinker 16777216,16777216 \
-    -lopengl32 -lgdi32 -lwinmm
+    -lopengl32 -lgdi32 -lwinmm -lws2_32
 # plugins: the Linux sources unchanged, with dlfcn.h / sys/mman.h from win/compat
 PF="$CF -shared -static -Iwin/compat -include win/compat/igs_plugin.h"
 for m in e2100 e2000 e1000 e2200; do

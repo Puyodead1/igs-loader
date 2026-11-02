@@ -157,7 +157,8 @@ int main(int argc, char **argv)
     tables[4] = sdl_syms;
     tables[5] = gl_syms;
     tables[6] = x11_syms;
-    tables[7] = NULL;
+    tables[7] = net_syms;
+    tables[8] = NULL;
     elf_set_native(tables);
 
     /*

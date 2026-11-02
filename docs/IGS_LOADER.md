@@ -72,8 +72,9 @@ game's page (`HarpoonLagoon.md`, `OceanParty.md`).
 | `IGS_SCRIPT="sec:key[+],..."` | press keys on a timetable from the first frame, through the game plugin's key handler: an SDL 1.2 key number, a character, or `up down left right space enter ctrl alt shift esc f1..f12`; 0.2 s, or with `+` until the next entry.  For testing |
 | `IGS_NULL_DEVS="/dev/ttyS0 ..."` | device paths that open as a null port: writes are dropped, reads fail with `EAGAIN` (for optional peripherals such as lamp boards; usually set by the game's `env` feature).  Peripherals that must answer are the game plugin's (E2100 `serial`) |
 | `IGS_SET_DIRS="/data ..."` | cabinet directories outside `data` that the game opens by absolute path; they resolve inside the set (`IGS_SET`, exported by `run.sh`), as on Windows (Speed Driver 2's `env`).  `/tmp` is an overlay: a path resolves inside the set when it exists there or is being created, else on the host (We Dance's `env`) |
-| `IGS_NO_SYSTEM=1` | `system()` is logged, not run, and `popen()` fails, as on Windows: for games that configure the cabinet with shell commands (Speed Driver 2's `env`).  `cp` and `rm` into `/tmp` run in-process: here only with `/tmp` in `IGS_SET_DIRS`, copies as symlinks; on Windows as file copies in `%TEMP%\igs-tmp`.  `popen` returns output the machine provides (`vfile`) |
+| `IGS_NO_SYSTEM=1` | `system()` is logged, not run, and `popen()` fails, as on Windows: for games that configure the cabinet with shell commands (Speed Driver 2's `env`).  `cp` and `rm` into `/tmp` run in-process: here only with `/tmp` in `IGS_SET_DIRS`, copies as symlinks; on Windows as file copies in `%TEMP%\igs-tmp\<pid>`.  `popen` returns output the machine provides (`vfile`) |
 | `IGS_NO_NET=1` | IP sockets fail and name lookups find nothing, as on Windows; Unix sockets (X11, Wayland, PulseAudio) stay (We Dance's `env`) |
+| `IGS_NET=host[:port]` | the game's server is a local stand-in (igs-online; port default 10000): TCP connects to the ports in `IGS_NET_PORTS` (default `10000`) go to `host:port` whatever address the game asked for; other connects, datagrams, raw sockets and name lookups are refused.  Overrides `IGS_NO_NET`; both loaders |
 | `IGS_NO_AUDIO=1` | `/dev/dsp` opens no PulseAudio stream (Windows: no waveOut device) and drains at the real rate; for test runs |
 | `IGS_X11_GRAB=1` | keep the game's X keyboard/pointer grabs, pointer warps and `XAutoRepeatOff` (default: no-ops) |
 | `IGS_TITLE` | window title text in place of the game's description; `0` keeps the game's own title.  The title reads `name \| status \| fps`, refreshed every second; the status comes from the game plugin (credits, phase or state) |
@@ -401,7 +402,7 @@ description to the plugins as `IGS_MACHINE`, `IGS_GAME`, `IGS_ASSET_MASK`,
 | ioctl `0xC0106610` / `0xC0106611` | machine: asset cipher, request `{encrypt, src desc*, dst desc*, key*}` |
 | ioctl `0x4024660F`, `0x6607`–`0x660E` | machine: key and mode writes, ignored (the mask comes from the software list) |
 | `open("/dev/mixer")` + OSS ioctls | core: an empty mixer (the games exit without one) |
-| `settimeofday`, `/dev/rtc` | core: no-op / fails harmlessly |
+| `settimeofday`, `stime`, `/dev/rtc` | core: no-op / fails harmlessly |
 | `gettimeofday` | core: never runs backwards (WSL steps the clock when it resyncs; Ogre 1.4's unsigned frame time then spins its animation controllers forever) |
 | `glGetString`, `cgCreateProgram` | core: with `IGS_CG_ARB=1`, NVIDIA Cg profiles as ARB programs (Usage) |
 | `readdir`, `__xstat`, `__lxstat`, `__fxstat`, `stat`, `lstat`, `fstat` | core: backed by the 64-bit calls with the inode number truncated (see below) |
@@ -411,7 +412,7 @@ description to the plugins as `IGS_MACHINE`, `IGS_GAME`, `IGS_ASSET_MASK`,
 | `Mix_OpenAudio`, `Mix_Play*`, `Mix_Halt*`, `Mix_Volume` | core: buffer override and call logging |
 | *(SDL linked into the game, E2000)* | |
 | `XOpenDisplay` | core: clears the display's lock pointers (see below) |
-| `XNextEvent` | core: key events (X keysym → SDL 1.2 symbol) to the machine |
+| `XNextEvent` | core: key events (X keysym → SDL 1.2 symbol) to the machine; on `FocusOut` the keys still held are released |
 | `dlsym(…, "glXSwapBuffers")` | core: hands out a hook: overlay, frame cap, swap |
 | `glXSwapBuffers` called directly (Ogre's GL render system) | core: the same hook, interposed |
 | `XGrabKeyboard`, `XGrabPointer`, `XWarpPointer`, `XAutoRepeatOff` (OIS) | core: no-ops unless `IGS_X11_GRAB=1` |
@@ -426,6 +427,7 @@ description to the plugins as `IGS_MACHINE`, `IGS_GAME`, `IGS_ASSET_MASK`,
 | `/dev/plx/Pci9030*`, `/dev/roio`, `/dev/pccard0`, `/dev/tdcr` | machine `e2000` (`IGS_E2000.md`) |
 | `fopen` of a file the cabinet's system provides (We Dance: a 2.4 kernel's `/proc/meminfo`), `popen` with `IGS_NO_SYSTEM` | core: the machine's `vfile` text, as a memory stream |
 | `socket`, `gethostbyname`, `getaddrinfo` with `IGS_NO_NET` | core: fail (IP only) |
+| `socket`, `connect`, `sendto`, `sendmsg`, name lookups with `IGS_NET` | core: TCP to the game server's ports goes to `IGS_NET`; the rest is refused (Usage) |
 | `/lib/libcasmcard.so` (linked by absolute path) | preloaded stub `build/libcasmcard.so` whose SONAME is that path (feature `preload`) |
 | `iopl`, `in`/`out` (E1000) | core: `iopl` succeeds, the faulting port instruction goes to the machine |
 | `/dev/mem`, `/dev/cpu/0/msr`, `lseek` on `/dev/pccard0` | machine `e1000` (`IGS_E1000.md`) |
@@ -580,6 +582,7 @@ only:
 | Variable | Effect |
 | --- | --- |
 | `IGS_AUDIO_LOG=1` | log audio callback (or `/dev/dsp` write) counts and peak level every 5 s (the first non-silent buffer is always logged) |
+| `IGS_NET`, `IGS_NET_PORTS` | as in WSL (Usage) |
 | `IGS_BACKGROUND=1` | open the window without taking the keyboard focus (test runs; X11 games' windows also go to the bottom of the z-order) |
 | `IGS_VSYNC=1` | also wait for vblank (default: the frame cap alone paces) |
 | `IGS_MISSING_OK=1` | start even with unresolved symbols (they log and return 0 when called) |
@@ -719,7 +722,7 @@ way the exe does and lists the symbols no loaded ELF module defines and
   paths:
   - `/dev/*` goes to the machine plugin or the empty mixer;
   - `/mnt/<d>/` is drive `<d>`;
-  - `/tmp` is `%TEMP%\igs-tmp`;
+  - `/tmp` is `%TEMP%\igs-tmp\<pid>`, one per running loader (two instances of a game must not share it); folders of loaders no longer running are removed;
   - anything else is looked up in the set (the cabinet's root), then DATA.
 
   In an archive set's cache the symlinks are already copies (Rom sets).  In
@@ -749,7 +752,10 @@ way the exe does and lists the symbols no loaded ELF module defines and
   `IGS_NO_SYSTEM`, `cp` and `rm` into `/tmp` run in-process; `popen` returns
   output the machine provides (`vfile`).
 - **Network:** sockets fail; `gethostbyname`, `getifaddrs` and
-  `if_nameindex` find nothing.
+  `if_nameindex` find nothing.  With `IGS_NET` (Usage), TCP sockets are
+  Winsock's (`win/net.c`: `connect`, `send`, `recv`, `select`, `poll`,
+  `fcntl` `O_NONBLOCK`, `getsockopt` `SO_ERROR`), under the Linux rule;
+  datagram sockets only answer the interface ioctls (`SIOCGIFFLAGS`: up).
 - **Files:** opened in binary mode (Linux has no text mode).
 - **Signals:** never delivered.
 - **Threads and the unwinder:** `pthread_cancel` does nothing.  Futex
