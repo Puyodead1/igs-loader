@@ -128,8 +128,9 @@ through SDL_mixer and a V4L camera (`/dev/video0..9`, "CCD").
   (1/60 s), the next within 12.5, the last within 14.
 - **Network** (`NetManager`, `pcli`): the game server `210.5.22.170:9999`
   and patch server (`rewrite/netGame.cfg`, `netPatch.cfg`), FTP
-  `210.5.22.171:6001`; the IGS036 relays encrypted network data (messages
-  15 / 16).  Offline it plays guests only.
+  `210.5.22.171:6001`; the store id is kept FPGA-encrypted in the
+  IGS036 (messages 14, 15, 16).  Offline it plays guests only.  Protocol,
+  commands and a stand-in server plan: `PercussionMaster3_Online.md`.
 - **Shell commands:** `cp` of downloaded lists, `rm` of logs and records
   (operator reset), `hwclock`, `./checkUpdate`.  On Linux they run in the
   set; on Windows they are skipped.
@@ -168,5 +169,8 @@ Open:
       and contest boards, photos (no camera), continue.
 - [ ] The camera error at start-up (about 20 s): there is no camera.
 - [ ] Lamps and meters (message 3 out) are ignored.
+- [ ] Chip messages 14 / 16 (the network registration) are not answered,
+      so the game never connects.
+- [ ] A local game server (`PercussionMaster3_Online.md`).
 - [ ] Linux: the instancing shaders (`vp40`) fail to compile as `arbvp1`;
       the scenes still draw.

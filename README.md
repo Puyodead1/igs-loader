@@ -192,6 +192,9 @@ preloaded libraries, all statically linked.
 - We Dance Online 2: a local game server in the plugin (accounts, QR
   login, saved profiles, rankings, versus between instances); protocol in
   `docs/WeDanceOnline2.md`.
+- Percussion Master 3: a local game server in the plugin (registration,
+  member accounts, saved profiles, rankings, event boards); protocol in
+  `docs/PercussionMaster3_Online.md`.
 - A graphical front end.
 
 ## Documentation
@@ -208,6 +211,7 @@ Controls and per-game settings are on the [wiki](https://github.com/Puyodead1/ig
 | [IGS_E2200.md](docs/IGS_E2200.md) | E2200: the E2100 PC side, the IGS036 framing and messages, the drum I/O board, chart encryption, the screen flow |
 | [IGS_ROFS_REVERSE_ENGINEERING.md](docs/IGS_ROFS_REVERSE_ENGINEERING.md) | the disk formats: E2100 and E2200 `igs_rofs`, E2000 ROFS and IGS_SHFS, boot chains |
 | [IGS_KEYS.md](docs/IGS_KEYS.md) | every key, mask and constant per game |
+| [PercussionMaster3_Online.md](docs/PercussionMaster3_Online.md) | Percussion Master 3's network: servers, framing, registration, commands, profile, a stand-in server plan |
 | [HarpoonLagoon.md](docs/HarpoonLagoon.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md), [PirateRevenge.md](docs/PirateRevenge.md), [GoGoBall2.md](docs/GoGoBall2.md), [SpeedRider.md](docs/SpeedRider.md), [PandaFamily.md](docs/PandaFamily.md), [SpeedDriver2.md](docs/SpeedDriver2.md), [WeDanceOnline2.md](docs/WeDanceOnline2.md), [PercussionKids.md](docs/PercussionKids.md), [PercussionMaster3.md](docs/PercussionMaster3.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
 
 ## Repository layout
