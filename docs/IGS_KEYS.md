@@ -309,6 +309,33 @@ kept); launcher addresses in `poweron` (stripped).
 | Region (type 14, u16 at 8) | 1 China, 2 Hong Kong, 3 other, 4 USA, 5 Korea, 6 Thailand, other Taiwan; language 1 CN for 1, 2 EN for 4..6, else TW | `version_iInit` `0x8081420` |
 | Network registration (type 18) | 80 bytes: store id, CPU key, MAC key, net and program versions (`"7"` at 28); copied to SysV shm key 3293 by the launcher | `net_iInit` `0x817F3E0`; `poweron` `main` `0x804A430` |
 | Book-keeping file | `info/bookEnc.bin`: byte `i` XOR `(i − 20)` over 1040 bytes | `book_iIgs036Read` `0x809D760` |
+| KoNet static AES-256 (ECB) | `KONETv0.1IGS2008` + `B0 DF BB 52 BF 57 B4 4C` + `ARCADE10`: `4B4F4E455476302E3149475332303038B0DFBB52BF57B44C4152434144453130`; login 0x11 and registration 0x21–0x23 | `net_iConnect` `0x817F820`, `net_iReg` `0x8181260` |
+| KoNet session AES-128 (ECB) | the cabinet's keycpu (registration +4, 16 bytes; default `4a0f0000000802069d640000fffbebbf`) | `net_vRecv` `0x817FBB0` |
+| KoNet HMAC-MD5 | key keymac (registration +20, 6 bytes; default `00145e7ea824`) ‖ keycpu, over the 8-byte challenge reordered `c0 c2 c4 c6 c1 c3 c5 c7` | `net_vRecv`, `net_iReg` |
+| KoNet blob check | CRC-16/ARC of the data XOR `lo16(n)` XOR `hi16(n)` | `_netAP_enAES`, `_netAP_enZ` |
+| QR login text | `"%llu-%d"`: `(32 · (store − 10000000)) ^ 0x85B8060F9D12F`, `time ^ 0x1EDBAA25` | `QRcodeMng::Init` `0x82C5060` |
+| Downloaded files | 32 hex MD5 + 1 byte, then the data | `NetWeb::GetWebFile` `0x82E6400` |
+
+## E1000: Percussion Kids M105CN (Linux 2.4.24-gx, uClibc 0.9.26)
+
+Nothing is encrypted on disk: five ext2 partitions (p4 the extended one).
+Game addresses are in `pkids` (symbols kept).  Details: `IGS_E1000.md`.
+
+| Item | Value | Where |
+| --- | --- | --- |
+| a27 packet encode table | 2 rows × 256 bytes; data byte `i` (of the first 256) XOR row `key >> 7`, index `((key & 0xEF) + i) & 0xFF`; row 0 starts `31 CB E0 FE 35 3D 59 EB`, row 1 `9C ED 8E E5 17 3C DC 68` | `m_baaEncodeTable` `0x807E760`, `cmdport_vDecode` `0x805DF3C` |
+| a27 packet checksums | +0x26: low byte of size + mode + bytes +8, +9, +0xE, +0x20, words +0xA, +0xC, +0x22, key; +0x27: 2 × that + data bytes 0..11 after decoding | `cmdport_vCheckSumCheck` `0x805DF90` |
+| Answer checksums | +0xC / +0xD: the same over the answer header, its date and tick | `cmdport_vCheckSumSet` `0x805E048` |
+| a27 start | 0-byte write, mode 29, at `lseek(254)` | `cmdport_vCmdPortInit` `0x805DCEC` |
+| Status byte (read's return) | `0xF0`, `0xFD`, `0xFE` PC error, `0xF2` debug, `0xF3` value error, `0xF4` interrupt error, `0xF5` time-out, `0xFF` assert | `cmdport_vCmdPortValueCheck` `0x805DD60` |
+| Region (command 3) | 1 China, 2 Hong Kong, 3 other, 4 USA, 5 Korea, 6 Thailand, 7 other without card, else Taiwan; version suffix `05CN`, `05HK`, `05FA`, `05US`, `05KR`, `05TL`, `05NC`, `05TW` | `version_vVersionInit` `0x8061290` |
+| GX2 PCI IDs | `0x0028100B` (bus 0 dev 1 fn 0), `0x0030100B` (fn 1); BARs at config `0x80000910` (frame buffer), `…914` (GP), `…918` (DC), `…91C` (VP) | `gfx_detect_cpu` `0x807475C` |
+| VSA registers | `0xAC1C` ← `0xFC53`, index; `0xAC1E` → data: `0x0200` frame buffer / 512 KB, `0x1201` core MHz | `gfx_get_frame_buffer_size` `0x80745F4`, `gfx_get_core_freq` `0x8074580` |
+| GP alpha modes | `0x740000 \| a` blend, `0x460000` source (a = 255), `0x470000` destination (a = 0); colour key flag `0x800` | `gfx2_set_alpha_value` `0x8075C04`, `gfx2_set_source_transparency` `0x8075BBC` |
+| Song table | `g_raBand1List` `0x8083A80`, 31 × 100 bytes: song struct, base rank, MTV rom path, wav list and count | `song_prRomSongGet` `0x8068984` |
+| Song struct | +0 tempo × 100, +2 length (ticks), +5 scroll speed (px per tick), +6 name, +8 rank; +100 36 track pointers | `song_wSongTempoGet` `0x80671CC` |
+| Chart event | u32: bits 0..13 tick (1/8 beat; `0x3FFF` ends a track), 14..23 wav index, 24..31 0 note / 1 roll start / 2 roll end | `song_vSongDataInit` `0x8067344` |
+| Record files | `record/<name>_<rank>_<n>.rec`: 0x66-byte header, then `WAVEDIR `, `TREC1   `, `TREC2   `, `TRECBG  `, ` FILEEND` chunks (none on the disk) | `record_vRecordReadFromFile` `0x80714E0` |
 
 ## Asset cipher (sound/*.wav, action/*.rom)
 

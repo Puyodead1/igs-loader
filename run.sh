@@ -75,5 +75,12 @@ case "$BINARY" in
     /*) EXE="$SET$BINARY" ;;
     *)  EXE="./$BINARY" ;;
 esac
+# LIBC=uclibc (E1000): the executable wants /lib/ld-uClibc.so.0; run it with
+# the host's dynamic linker and the uClibc names from build/uclibc
+LDSO=
+if [ "$LIBC" = uclibc ]; then
+    LD_LIBRARY_PATH="$D/build/uclibc:$LD_LIBRARY_PATH"
+    LDSO=/lib/ld-linux.so.2
+fi
 # IGS_WRAP: a command to run the game under, e.g. "gdb -q --args"
-exec $IGS_WRAP "$EXE"
+exec $IGS_WRAP $LDSO "$EXE"

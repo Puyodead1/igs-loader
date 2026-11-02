@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<!--
+IGS E1000 games: the software list of machine "e1000" (machines/e1000).
+Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
+-->
+<softwarelist name="e1000" description="IGS E1000">
+
+	<software name="percussionkids_m105cn">
+		<description>Percussion Kids (M105CN)</description>
+		<year>2005</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M105CN"/>
+		<info name="usage" value="docs/PercussionKids.md; tunables PK_REGION, PK_AUTOPLAY, PK_NO_FASTPATH"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="percussionkids"/>
+			<feature name="data" value="/pkids/linux"/>
+			<feature name="binary" value="pkids"/>
+			<!-- linked against uClibc 0.9.26: run on the host's glibc (build/uclibc shims) -->
+			<feature name="libc" value="uclibc"/>
+			<!-- a trackball port the game opens and never reads -->
+			<feature name="env" value="IGS_NULL_DEVS=/dev/ttyS0"/>
+			<!-- /etc/init.d/rc.sysinit: hda1 root, hda3 ro at /pkids/linux, hda2 /pkids/gamedata,
+			     hda5 /pkids/log; nothing is encrypted -->
+			<feature name="build" value="mount p1 /; mount p3 /pkids/linux; mount p2 /pkids/gamedata; mount p5 /pkids/log"/>
+			<diskarea name="harddriv">
+				<disk name="c1000_percussionkids_m105cn" sha1="814673360c81f3e65109598cf1c54e928844b119"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/pkids/linux/pkids" size="450809" sha1="51ad7eb5e6a1b320349dbb7f21beec8f9c155cab"/>
+			</dataarea>
+		</part>
+	</software>
+
+</softwarelist>

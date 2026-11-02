@@ -146,3 +146,52 @@ Open:
 - [ ] Linux (Mesa): two of the game's GLSL shaders fail to compile
       (`operands of '==' must have the same type`); not seen on Windows.
 - [ ] Lamps (packet 2) and meters (3) are ignored.
+- [ ] A local game server (below).
+
+## Online (KoNet)
+
+No UDP and no listening sockets; every connection is outgoing TCP from
+`KoTCP_Conn`, so versus play also goes through the server.  Keys are in
+`IGS_KEYS.md`.
+
+| What | Where |
+| --- | --- |
+| Server-IP lookup | `rf.igs.com.tw:80` (fallback `202.133.245.140`), `GET /we5acserverip/wedo`: CRC16, game IP and port, second IP, patch IPs (CN, TW); a difference rewrites `info/ip` and `wedoCliPatch.cfg` (`net_iWebGetFile` `0x8180670`) |
+| Game server | `info/ip` (`210.5.22.168:10000`, alternate `60.199.170.68`) (`netapp_iInit` `0x80D95E0`) |
+| Banners | libcurl, `http://202.153.195.62:8080/wedo/{tw,cn}/*.dds` (`NetWeb::GetWebFile` `0x82E6400`) |
+| Patch server | `wedoCliPatch.exe`, port 10001; the set is at patch 56 |
+| Ping test | ICMP to `info/ping_data.lst`, results as 0x154 |
+| Time | the login reply's time is set with `settimeofday` and `hwclock -w` (2008-07-07..2023-07-04 only) |
+
+Framing (`KoTCP_SendMsg` `0x809A300`, `KoNetAP_MakeSend` `0x8077210`):
+`u16 len` (1..18000; `0x4BFF` ping, `0x4FFF` reply, every 10 s), then
+`u16 cmd & 0xFFF | mode << 12 | 0x4000` (more fragments; up to 6 MB).
+Mode 0 plain, 1 AES, 2 zlib (`u32 rawlen, zlib, u16 crc`), 3 zlib then AES
+(`u32 n` clear, then AES-ECB of `data, u16 crc`, zero-padded).  Fields are
+little-endian, strings fixed-length.
+
+Login (`net_iConnect` `0x817F820`, `net_vRecv` `0x817FBB0`):
+0x11 (mode 3, static key; store id, versions, coin settings) → 0x12
+(challenge, time, `g_wFeature`) → 0x13 (HMAC) → 0x14 / 0x163; then
+AES-128 with keycpu.  Store id 0 first registers (`net_iReg`
+`0x8181260`): 0x21 versions → 0x22 challenge → 0x23 HMAC, keycpu, keymac
+→ 0x24 store id.
+
+| Cmd | |
+| --- | --- |
+| 0x211 → 0x212 | player login (guest flag, or uid, account, password) → error byte or profile (`RecvPlayerLoginAck` `0x81C3F00`, exact length) |
+| 0x21E | QR login: the server pushes a profile |
+| 0x213, 0x215, 0x219, 0x21B, 0x21C | logout, create account, update info, password, transfer |
+| 0x131..0x149 → 0x132..0x14A | rankings (replies zlib) |
+| 0x165..0x16B → 0x166..0x16C | ticker, news, conditions, csvlist (0x16C replaces `csvlist.csv`) |
+| 0x16F | writes a file |
+| 0x225, 0x231..0x237, 0x241..0x243 | versus search, contests, song choice (not decoded) |
+| 0x250 | versus relay (op byte: score, judgement, combo, pet, abort) |
+| 0x251..0x253, 0x255 | fight ready, start, end; avatar |
+| 0x261..0x26D, 0x269 | results, clothes, play log (`PLAYER_LOG`, 0x6F4 bytes, mode 3); not decoded |
+| 0x273, 0x275 | market, WeTicket |
+
+The member-card reader (`reader_iInit`, ttyS1) is never called.  The QR
+code names only the store and the time; the phone app completes it.
+Plan: hook `KoTCP_*` in the plugin and answer in-process; a non-zero
+store id in the registration skips 0x21..0x24.

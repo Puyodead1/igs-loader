@@ -3,7 +3,8 @@
  *   - loads the machine plugin ($IGS_MACHINE, a DLL here) and routes its
  *     device files (open/ioctl/mmap/close, read/write, termios) to it;
  *   - MMIO traps: PAGE_NOACCESS regions whose accesses (the games' plain
- *     movs) are emulated in a vectored exception handler;
+ *     movs) are emulated in a vectored exception handler; port I/O (in/out,
+ *     privileged instructions) for machines that emulate it (E1000);
  *   - an empty OSS mixer, OSS /dev/dsp on waveOut, IGS_NULL_DEVS;
  *   - the overlay (fixed-function GL before each swap), IGS_SHOT frame dumps,
  *     IGS_SCRIPT key presses, the frame cap, the window title;
@@ -191,6 +192,46 @@ static int mmio_access(CONTEXT *c, uint8_t *a)
     return 1;
 }
 
+/*
+ * x86 port I/O (in/out with dx or an imm8 port, 8/16/32-bit) for machines
+ * with port_in/port_out: from user mode the instruction raises a privileged
+ * instruction exception.
+ */
+static int port_access(CONTEXT *c)
+{
+    const uint8_t *ip = (const uint8_t *)c->Eip;
+    int n = 0, size = 4, op;
+    uint16_t port = (uint16_t)c->Edx;
+
+    if (!machine || !machine->port_in || !machine->port_out)
+        return 0;
+    if (ip[0] == 0x66) {
+        size = 2;
+        n = 1;
+    }
+    switch (op = ip[n]) {
+    case 0xe4: case 0xe5: case 0xe6: case 0xe7:   /* in/out al|eax, imm8 */
+        port = ip[n + 1];
+        n++;
+        /* fall through */
+    case 0xec: case 0xed: case 0xee: case 0xef:   /* in/out al|eax, dx */
+        if (!(op & 1))
+            size = 1;
+        if (op & 2)
+            machine->port_out(port, size, get_reg(c, 0, size));
+        else
+            set_reg(c, 0, size, machine->port_in(port, size));
+        c->Eip += n + 1;
+        return 1;
+    }
+    return 0;
+}
+
+int core_ports(void)
+{
+    return machine && machine->port_in;
+}
+
 int elf_owns(uint32_t addr);
 
 static void crash_report(EXCEPTION_POINTERS *ep)
@@ -232,6 +273,8 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS *ep)
     if (code == EXCEPTION_ACCESS_VIOLATION && er->NumberParameters >= 2 && nmmio &&
         mmio_access(ep->ContextRecord, (uint8_t *)er->ExceptionInformation[1]))
         return EXCEPTION_CONTINUE_EXECUTION;
+    if (code == EXCEPTION_PRIV_INSTRUCTION && port_access(ep->ContextRecord))
+        return EXCEPTION_CONTINUE_EXECUTION;
     /* ELF code has no exception handlers of its own: a fault there is fatal */
     if ((code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_ILLEGAL_INSTRUCTION ||
          code == EXCEPTION_PRIV_INSTRUCTION || code == EXCEPTION_INT_DIVIDE_BY_ZERO ||
@@ -272,7 +315,8 @@ static void *core_mmio_map(size_t len, void *opaque, uint32_t (*read)(void *, ui
     if (nmmio == MMIO_MAX)
         return (void *)-1;
     len = (len + 0xfff) & ~(size_t)0xfff;
-    p = VirtualAlloc(NULL, len, MEM_RESERVE | MEM_COMMIT, PAGE_NOACCESS);
+    /* high addresses, as on Linux (E1000's game ANDs its mapped pointers) */
+    p = VirtualAlloc(NULL, len, MEM_RESERVE | MEM_COMMIT | MEM_TOP_DOWN, PAGE_NOACCESS);
     if (!p)
         return (void *)-1;
     mmio[nmmio].base = p;
@@ -909,11 +953,21 @@ int core_ioctl(int fd, unsigned long req, void *arg, int *ret)
     return 0;
 }
 
-int core_mmap(int fd, size_t len, void **ret)
+int core_mmap(int fd, size_t len, int64_t off, void **ret)
 {
     if (!is_machine_fd(fd))
         return 0;
-    *ret = machine->mmap(fd, len);
+    *ret = machine->mmap_at ? machine->mmap_at(fd, len, (uint32_t)off) : machine->mmap(fd, len);
+    return 1;
+}
+
+int core_seek(int fd, long off, int whence, long *ret)
+{
+    if (!nmachine_fd || !machine->seek || !is_machine_fd(fd))
+        return 0;
+    *ret = machine->seek(fd, off, whence);
+    if (*ret < 0)
+        SET_ERRNO(lx_errno_from_crt(errno));
     return 1;
 }
 
@@ -1011,6 +1065,7 @@ void core_init(void)
     core.text = core_text;
     core.font_w = FONT_W;
     core.font_h = FONT_H;
+    core.present = sdl_present;
     if (!path)
         return;
     h = LoadLibraryA(path);

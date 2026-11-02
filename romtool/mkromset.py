@@ -20,8 +20,9 @@ cabinet has it at run time.  The entry's "build" feature says how, as
                           head_part, geca_part, geca_file, piece_file, piece_mode,
                           cut_kb, cut_step)
     mount pN DIR          partition N replaces DIR's contents: p3 SquashFS
-                          (E2100, unsquashfs) or IGS_SHFS (E2000); p4 ext2/3
-                          (debugfs; lost+found is left out)
+                          (E2100, unsquashfs) or IGS_SHFS (E2000); ext2/3
+                          (debugfs; lost+found is left out), e.g. E2000 p4 or
+                          every E1000 partition (p5.. are logical partitions)
     unupx SRC DST         unpack the UPX-packed executable SRC to DST
                           (igs_upx.py; We Dance's wedo), SRC kept as dumped
 
@@ -110,11 +111,31 @@ def sha1_file(path, bufsize=1 << 22):
 
 
 def partitions(image):
+    """{n: (start, count)} in sectors: p1..p4, then the logical p5.. (E1000)."""
     with open(image, 'rb') as f:
         mbr = f.read(512)
-    if mbr[510:512] != b'\x55\xaa':
-        sys.exit('%s: no MBR partition table' % image)
-    return {i + 1: struct.unpack_from('<II', mbr, 446 + 16 * i + 8) for i in range(4)}
+        if mbr[510:512] != b'\x55\xaa':
+            sys.exit('%s: no MBR partition table' % image)
+        parts = {i + 1: struct.unpack_from('<II', mbr, 446 + 16 * i + 8) for i in range(4)}
+        for i in range(4):
+            if mbr[446 + 16 * i + 4] not in (0x05, 0x0f, 0x85):
+                continue
+            # extended: a chain of EBRs, each a logical partition and a link to the next
+            ext, ebr, n = parts[i + 1][0], parts[i + 1][0], 5
+            while n < 64:
+                f.seek(ebr * 512)
+                b = f.read(512)
+                if b[510:512] != b'\x55\xaa':
+                    break
+                start, count = struct.unpack_from('<II', b, 446 + 8)
+                if count:
+                    parts[n] = (ebr + start, count)
+                    n += 1
+                link, = struct.unpack_from('<I', b, 446 + 16 + 8)
+                if not link:
+                    break
+                ebr = ext + link
+    return parts
 
 
 # ---- inputs -------------------------------------------------------------------------------

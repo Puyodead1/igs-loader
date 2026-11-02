@@ -24,6 +24,7 @@ Status (2026-11-01), under WSLg:
 | Panda Family CN | E2000 | attract, coins, stages, ranking, tickets, back to attract; IGS036 packet transport (I/O board and settings, game logic in the executable), no camera (`PandaFamily.md`) |
 | Speed Driver 2 | E2000 | attract (live show), coins, mode / car / gearbox / course select, races with rivals, ranking and name entry, continue, game over, operator menu; IGS036 message transport (Speed Driver 2 layout), the chip's screens rebuilt from the game's art, layout invented (`SpeedDriver2.md`) |
 | We Dance Online 2 | E2000 | offline: attract, coins, song select, songs with judgements and score, results, game over, back to attract, operator menu; UPX-packed executable unpacked by the set builder, IGS027A transport (I/O and settings), no network (`WeDanceOnline2.md`) |
+| Percussion Kids M105CN | E1000 | logo, coin page, coins, select mode and song, songs with the drums judged, result, second song, game over, back to the coin page, operator menu; uClibc executable on glibc, Geode GX2 2D engine emulated, the IGS027A's whole game rebuilt (charts from the executable), no attract demo (`PercussionKids.md`) |
 
 They run at about 56–60 fps (60 fps cap) on Mesa llvmpipe, with continuous
 sound through PulseAudio (WSLg).
@@ -47,7 +48,8 @@ or in WSL:
 sets): `harpoonlagoon_m107us`, `harpoonlagoon_m001uswa`,
 `harpoonlagoon_m200uswa`, `oceanparty_md105cn`, `scratch_m101cn`,
 `heroofrobots_m100fa`, `goldcaptain`, `piraterevenge_m101cn`, `gogoball2_dx`,
-`speedrider_m109cnc`, `pandafamily_cn`, `speeddriver2`, `wedanceonline2`.  The per-game controls are on each
+`speedrider_m109cnc`, `pandafamily_cn`, `speeddriver2`, `wedanceonline2`,
+`percussionkids_m105cn`.  The per-game controls are on each
 game's page (`HarpoonLagoon.md`, `OceanParty.md`).
 
 | Variable | Effect |
@@ -111,7 +113,7 @@ Notes:
 
 The loader runs games by id, MAME style.  Three pieces:
 
-- **Software lists**, `hash/<machine>.xml` (`e2100.xml`, `e2000.xml`), modelled
+- **Software lists**, `hash/<machine>.xml` (`e2100.xml`, `e2000.xml`, `e1000.xml`), modelled
   on MAME's `hash/*.xml`.  One `<software name="<id>">` per dump, with its
   description, year, publisher, version, `cloneof` for clones (informational,
   like MAME), the loader settings as `<feature>`s, the source disk
@@ -122,7 +124,7 @@ The loader runs games by id, MAME style.  Three pieces:
   unique across lists.
 - **Rom sets**: a set is the cabinet's file tree as the running game sees
   it.  The root fs (p2) at `/`; the game data partition (p3) at its mount
-  point (`/Fish`, `/OceanParty`, `/Scratch`, `/Robots`, `/GoldCaptain`, `/pr/linux`, `/GoGoBall2`, `/sr/Game`, `/PF`, `/race/linux`, `/WeDo/system`); p4
+  point (`/Fish`, `/OceanParty`, `/Scratch`, `/Robots`, `/GoldCaptain`, `/pr/linux`, `/GoGoBall2`, `/sr/Game`, `/PF`, `/race/linux`, `/WeDo/system`, E1000's `/pkids/linux`); p4
   where the game needs it (Hero of Robots' `rw_data`, Pirate Revenge's `/fec_data`, Go Go Ball 2's `/rf_data`, Speed Rider's `/rewrite`, Panda Family's `/PF/pf_data`, Speed Driver 2's `/data`, We Dance's `/WeDo/linux`); the executable where
   the cabinet has it at run time (`/Fish.bin/fish`, `/Scratch.bin/swin`
   decrypted, `/Game/GoldCaptain`, `/pr/exec/sship`, `/GoGoBall2/linux/pitch`, `/sr/exec/SR` and `/linux/PF` reassembled, We Dance's `/WeDo/exec/wedo` unpacked).  A set is a folder `<id>/`,
@@ -200,6 +202,7 @@ $ run.sh --verify scratch_m101cn       # the <rom> hashes, like mame -verifyroms
 | `asset_mask` | the asset-cipher mask (exported to the machine as `IGS_ASSET_MASK`; also Scratch's executable mask) |
 | `rofs_profile` / `rofs_key` | E2100 root filesystem variant (`romtool/igs_rofs.py` profile) and its key literal |
 | `geca_sector` … `trim_step`, `head_part`, `geca_part`, `geca_head`, `geca_file`, `piece_file`, `piece_mode`, `cut_kb`, `cut_step` | E2000 executable assembly (`romtool/igs_e2000_extract.py`) |
+| `libc` | `uclibc`: the executable is linked against uClibc 0.9.26 (E1000); `run.sh` runs it with the host's `ld-linux.so.2` and `build/uclibc` (`libc.so.0`, `libm.so.0`, `libdl.so.0` on glibc) |
 | `build` | the builder's recipe (below) |
 
 The description is the window title (exported as `IGS_NAME`).  The `<info
@@ -239,7 +242,7 @@ python3 romtool/mkromset.py goldcaptain goldcaptain.chd --format zip -o /tmp/set
    | `decrypt SRC DST SIZE` | FPGA-cipher decrypt `SRC` into `DST` with `asset_mask`, keep `SIZE` bytes (Scratch's `/bin/unrar /Scratch/swin /Scratch.bin/swin`) |
    | `copy SRC DST` | copy inside the tree (Scratch's `/etc/X11/IGS` copies `asic36.bin`) |
    | `assemble DST` | E2000: rebuild the split executable at `DST` |
-   | `mount pN DIR` | partition N replaces `DIR`'s contents, as the mount hides them: SquashFS (E2100 p3, `unsquashfs -o`), IGS_SHFS (E2000 p3, `igs_shfs.py`) or ext2/3 (p4, `debugfs rdump`; `lost+found` left out) |
+   | `mount pN DIR` | partition N replaces `DIR`'s contents, as the mount hides them: SquashFS (E2100 p3, `unsquashfs -o`), IGS_SHFS (E2000 p3, `igs_shfs.py`) or ext2/3 (p4, every E1000 partition; `debugfs rdump`; `lost+found` left out); p5 and up are logical partitions |
    | `unupx SRC DST` | unpack the UPX-packed executable `SRC` into `DST` (`igs_upx.py`; We Dance's `wedo`); `SRC` stays as dumped |
 
    Only the partitions a recipe names are read, straight from the image
@@ -268,6 +271,7 @@ Set sizes (`7z -mx9`, 7-Zip 23.01) and build times on this machine:
 | `pandafamily_cn` | 251 MB | 0.71 GB | 6 min |
 | `speeddriver2` | 647 MB | 1.0 GB | 5 min |
 | `wedanceonline2` | 941 MB | 1.7 GB | 18 min |
+| `percussionkids_m105cn` | 291 MB | 0.37 GB | 4 min |
 
 ### Reading archives (`romset/`)
 
@@ -307,6 +311,7 @@ tools/
     core/        igs.h core.c  LD_PRELOAD library (Linux/SDL glue)
     machines/e2100/            e2100.h (game API) e2100.c (the board)
     machines/e2000/            e2000.h e2000.c, libcasmcard.c (stub library)
+    machines/e1000/            e1000.h e1000.c
     games/harpoonlagoon/       harpoonlagoon.c
     games/oceanparty/          oceanparty.c
     games/scratch/             scratch.c
@@ -319,8 +324,10 @@ tools/
     games/pandafamily/         pandafamily.c
     games/speeddriver2/        speeddriver2.c
     games/wedanceonline2/      wedanceonline2.c
+    games/percussionkids/      percussionkids.c
     build/                     igs_core.so  e2100.so  e2000.so  <game>.so  libcasmcard.so
                                libcasmcard-nocard.so  libcasmcard-hero.so  igs-romset
+                               uclibc/ (libc.so.0 libm.so.0 libdl.so.0: core/uclibc.c)
 ```
 
 There are three layers, like RetroArch's frontend and cores.  Each talks to
@@ -330,14 +337,17 @@ symbols.
 | Layer | Owns | Today |
 | --- | --- | --- |
 | **core** (`igs_core.so`, the `LD_PRELOAD` library) | libc/SDL interposition, routing device files to the machine, MMIO traps, libc fixes, frame pacing, audio, the overlay renderer | the only Linux/SDL/GL-specific code |
-| **machine** (`$IGS_MACHINE`) | the board: device files, registers, DMA, the protection transport | `e2100`: `/dev/pccard0`, BARs, DMA, the asset cipher (mask from the software list), the ASIC handshake, and three runtime transports: batch framing (Harpoon, Ocean Party), the register table (Scratch) and request/response (Hero of Robots), chosen by the game plugin's `transport`; serial ports with a peripheral the game plugin answers for.  `e2000`: the PLX PCI9030 card (`/dev/plx/*`), the IGS036 shared-RAM transport with RC4-wrapped keys, the IGS027A packet transport, the IGS036 message or packet transport (the game plugin's `transport`), `/dev/roio`, `/dev/pccard0`, the kernel's `/dev/tdcr` cipher |
-| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs), `piraterevenge` (the same commands plus coin counters), `gogoball2` (IGS027A packets: stores, settings, light curtain, tickets, ball stopper, game flow), `speedrider` (IGS036 messages: inputs, coins, NVRAM, zip prefixes, UI, game modes, AI riders), `pandafamily` (IGS036 packets: inputs, coins, tickets, settings, action groups), `speeddriver2` (IGS036 messages, Speed Driver 2 layout: game flow, inputs, coins, texture and sound pages, the `data.hdr` prefix), `wedanceonline2` (IGS027A packets: inputs, coins, system status, settings; the cabinet's `/proc/meminfo`) |
+| **machine** (`$IGS_MACHINE`) | the board: device files, registers, DMA, the protection transport | `e2100`: `/dev/pccard0`, BARs, DMA, the asset cipher (mask from the software list), the ASIC handshake, and three runtime transports: batch framing (Harpoon, Ocean Party), the register table (Scratch) and request/response (Hero of Robots), chosen by the game plugin's `transport`; serial ports with a peripheral the game plugin answers for.  `e2000`: the PLX PCI9030 card (`/dev/plx/*`), the IGS036 shared-RAM transport with RC4-wrapped keys, the IGS027A packet transport, the IGS036 message or packet transport (the game plugin's `transport`), `/dev/roio`, `/dev/pccard0`, the kernel's `/dev/tdcr` cipher.  `e1000`: the Geode GX2 (`/dev/mem`: display controller, 2D engine, frame buffer; PCI and VSA port I/O; `/dev/cpu/0/msr`) and the IGS027A command transport on `/dev/pccard0` |
+| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs), `piraterevenge` (the same commands plus coin counters), `gogoball2` (IGS027A packets: stores, settings, light curtain, tickets, ball stopper, game flow), `speedrider` (IGS036 messages: inputs, coins, NVRAM, zip prefixes, UI, game modes, AI riders), `pandafamily` (IGS036 packets: inputs, coins, tickets, settings, action groups), `speeddriver2` (IGS036 messages, Speed Driver 2 layout: game flow, inputs, coins, texture and sound pages, the `data.hdr` prefix), `wedanceonline2` (IGS027A packets: inputs, coins, system status, settings; the cabinet's `/proc/meminfo`), `percussionkids` (the IGS027A's command lists: the whole game flow, the song engine and judging, the operator menu) |
 
 **Interfaces:**
 - **Core ↔ machine:** `core/igs.h`.
   - The core provides `struct igs_core`: log, config, time, a placeholder
     fd, `mmio_map` (trapped register windows with read/write callbacks), and
-    the overlay primitives `fill`/`text`.
+    the overlay primitives `fill`/`text`, and `present`: a machine that
+    scans out its own frame buffer (E1000) hands each RGB565 frame to the
+    core, which shows it in a window of its own (Linux: SDL GL; Windows: the
+    native SDL window) with the overlay, keys, title and frame cap.
   - The machine may supply `vfile`: the text of files the cabinet's system
     has and the host does not, which the core's `fopen` (and `popen` under
     `IGS_NO_SYSTEM`) return.
@@ -346,7 +356,9 @@ symbols.
     files, optionally `read`/`write` (serial ports; termios calls arrive at
     `ioctl` as `TCGETS`/`TCSETS`/`TCFLSH`), plus `key`, `draw` and `status`
     (a short line for the window title, which E2100/E2000 take from the
-    game plugin's `status`).
+    game plugin's `status`).  Optional, for E1000: `mmap_at` (`/dev/mem`
+    at a physical offset), `seek` (`lseek` on its files), `port_in` /
+    `port_out` (`in`/`out` instructions, trapped; `iopl` then succeeds).
 - **Machine ↔ game:** defined by each machine.  For E2100 it is
   `machines/e2100/e2100.h`.
   - The game exports `e2100_game_entry()`, which returns `struct
@@ -407,6 +419,9 @@ description to the plugins as `IGS_MACHINE`, `IGS_GAME`, `IGS_ASSET_MASK`,
 | `fopen` of a file the cabinet's system provides (We Dance: a 2.4 kernel's `/proc/meminfo`), `popen` with `IGS_NO_SYSTEM` | core: the machine's `vfile` text, as a memory stream |
 | `socket`, `gethostbyname`, `getaddrinfo` with `IGS_NO_NET` | core: fail (IP only) |
 | `/lib/libcasmcard.so` (linked by absolute path) | preloaded stub `build/libcasmcard.so` whose SONAME is that path (feature `preload`) |
+| `iopl`, `in`/`out` (E1000) | core: `iopl` succeeds, the faulting port instruction goes to the machine |
+| `/dev/mem`, `/dev/cpu/0/msr`, `lseek` on `/dev/pccard0` | machine `e1000` (`IGS_E1000.md`) |
+| `__uClibc_start_main`, `__fgetc_unlocked` (uClibc executables) | `build/uclibc/libc.so.0` (`core/uclibc.c`); Windows: native |
 
 **Details:**
 - **MMIO traps.** The trapped instructions are 8/16/32-bit `mov` (`88 89 8A
@@ -524,6 +539,7 @@ Status (2026-11-01, RTX 3060, Windows 11):
 | Panda Family CN | attract, coins, stages, ranking, tickets, back to attract; sound (the set's SDL_mixer on the loader's SDL); 60 fps |
 | Speed Driver 2 | attract, coins, the select screens, race, ranking, continue, game over, back to attract; sound through `/dev/dsp`; 60 fps |
 | We Dance Online 2 | attract after about 30 s, coins, songs, results, game over, back to attract, operator menu; sound (the set's SDL_mixer and Vorbis on the loader's SDL) |
+| Percussion Kids M105CN | logo, coin page, songs, result, game over, operator menu; sound (the set's uClibc SDL_mixer on the loader's SDL); 60 fps |
 
 ### Usage
 
@@ -573,7 +589,7 @@ In WSL (needs `i686-w64-mingw32-gcc-posix`, mingw-w64 13):
 ./win/build-win.sh
 ```
 
-It produces `build/win/igs-loader.exe`, `e2100.dll`, `e2000.dll`, the game
+It produces `build/win/igs-loader.exe`, `e2100.dll`, `e2000.dll`, `e1000.dll`, the game
 plugin DLLs and the preloaded `libcasmcard.dll` / `libcasmcard-nocard.dll` /
 `libcasmcard-hero.dll`.
 Everything is linked statically, so no other DLLs are needed.  The plugins

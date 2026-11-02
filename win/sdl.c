@@ -478,6 +478,62 @@ static void l_SDL_GL_SwapBuffers(void)
     SwapBuffers(hdc);
 }
 
+/*
+ * igs_core.present: a board that scans out its own frame buffer (E1000; the
+ * game sets no video mode).  The window opens at the first frame; each frame
+ * is an RGB565 texture, then the overlay, the frame cap and the swap.  The
+ * game polls no events: the keys go to the machine from the queue here.
+ */
+void sdl_present(const void *px, int w, int h, int pitch)
+{
+    static GLuint tex;
+    static int tw, th;
+    uint8_t e[EV_SIZE];
+
+    if (!hwnd) {
+        if (!l_SDL_SetVideoMode(w, h, 32, 2)) {         /* SDL_OPENGL */
+            LOG("cannot open the window for the frame buffer: %s", sdl_err);
+            l_exit(1);
+        }
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, 0x8363, NULL);   /* 5_6_5 */
+        tw = w;
+        th = h;
+    }
+    pump();
+    while (ev_pop(e, 1)) {
+        if (e[0] == 2 || e[0] == 3) {
+            int sym;
+
+            memcpy(&sym, e + 8, 4);
+            core_key(sym, e[0] == 2);
+        } else if (e[0] == 12) {                          /* SDL_QUIT */
+            LOG("window closed");
+            l_exit(0);
+        }
+    }
+    glViewport(0, 0, tw, th);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, pitch / 2);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w < tw ? w : tw, h < th ? h : th, GL_RGB, 0x8363, px);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glEnable(GL_TEXTURE_2D);
+    glColor4f(1, 1, 1, 1);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0); glVertex2f(-1, 1);
+    glTexCoord2f(1, 0); glVertex2f(1, 1);
+    glTexCoord2f(1, 1); glVertex2f(1, -1);
+    glTexCoord2f(0, 1); glVertex2f(-1, -1);
+    glEnd();
+    glDisable(GL_TEXTURE_2D);
+    core_frame();
+    SwapBuffers(hdc);
+}
+
 int x11_window_title(const char *s);
 
 /* the core's window title: on the SDL window, else on the X11 game's */

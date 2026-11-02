@@ -703,6 +703,18 @@ static void ctype_init(void)
     }
 }
 
+/* uClibc 0.9.26 (E1000): __ctype_b as glibc's, __ctype_toupper with 16-bit entries */
+static int16_t uc_toupper[384];
+static const int16_t *uc_toupper_p = uc_toupper + 128;
+
+static void uc_ctype_init(void)
+{
+    int c;
+
+    for (c = -128; c < 256; c++)
+        uc_toupper[c + 128] = (int16_t)(c >= 'a' && c <= 'z' ? c - 32 : c);
+}
+
 static const uint16_t **l___ctype_b_loc(void) { return &ctype_b_p; }
 static const int32_t **l___ctype_tolower_loc(void) { return &ctype_lower_p; }
 static const int32_t **l___ctype_toupper_loc(void) { return &ctype_upper_p; }
@@ -1243,10 +1255,27 @@ static void __attribute__((noreturn)) l___libc_start_main(void *main_fn, int arg
     l_exit((int)elf_call3(main_fn, argc, U32(argv), U32(envp)));
 }
 
+/* uClibc's _start (E1000): no main argument, the library finds the executable's */
+static void __attribute__((noreturn)) l___uClibc_start_main(int argc, char **argv, char **envp,
+                                                            void *init, void *fini)
+{
+    void *main_fn = elf_dlsym(NULL, "main");
+
+    (void)fini;
+    if (!main_fn) {
+        LOG("the executable exports no main");
+        l_exit(127);
+    }
+    if (init)
+        elf_call3(init, argc, U32(argv), U32(envp));
+    l_exit((int)elf_call3(main_fn, argc, U32(argv), U32(envp)));
+}
+
 void libc_init(void)
 {
     InitializeCriticalSection(&rnd_lock);
     ctype_init();
+    uc_ctype_init();
     c_locale.ctype_b = ctype_b_p;
     c_locale.ctype_tolower = ctype_lower_p;
     c_locale.ctype_toupper = ctype_upper_p;
@@ -1668,6 +1697,7 @@ const struct nsym libc_syms[] = {
     N(fopen), NA(fopen64, l_fopen), N(freopen), NA(freopen64, l_freopen), N(fdopen), N(fclose),
     N(fread), N(fwrite), N(fgets), N(fputs), N(fputc), NA(putc, l_fputc), NA(_IO_putc, l_fputc),
     N(fgetc), NA(getc, l_fgetc), NA(_IO_getc, l_fgetc), N(ungetc), N(feof), N(ferror),
+    NA(__fgetc_unlocked, l_fgetc), NA(__fputc_unlocked, l_fputc),
     N(clearerr), N(fflush), N(fseek), N(ftell), NA(fseeko, l_fseek), NA(ftello, l_ftell),
     N(fseeko64), N(ftello64), N(rewind), N(fgetpos), N(fsetpos), NA(fgetpos64, l_fgetpos),
     NA(fsetpos64, l_fsetpos), N(setvbuf), N(setbuf), N(fileno), N(putchar), N(puts), N(getchar),
@@ -1679,6 +1709,7 @@ const struct nsym libc_syms[] = {
     N(tmpfile),
     /* ctype, locale, wide characters */
     N(__ctype_b_loc), N(__ctype_tolower_loc), N(__ctype_toupper_loc),
+    ND(__ctype_b, &ctype_b_p), ND(__ctype_toupper, &uc_toupper_p),
     N(isalnum), N(isalpha), N(isdigit), N(isxdigit), N(isspace), N(isupper), N(islower),
     N(isprint), N(isgraph), N(ispunct), N(iscntrl), N(isblank), N(tolower), N(toupper),
     N(__newlocale), N(__duplocale), N(__freelocale), N(__uselocale), NA(newlocale, l___newlocale),
@@ -1704,7 +1735,7 @@ const struct nsym libc_syms[] = {
     N(roundf), N(trunc), N(truncf), N(rint), N(rintf), N(llrint), N(ldexpf), N(frexpf), N(cbrtf),
     NF(__divdi3), NF(__moddi3), NF(__udivdi3), NF(__umoddi3),
     /* stdlib */
-    N(__libc_start_main), N(__errno_location),
+    N(__libc_start_main), N(__uClibc_start_main), N(__errno_location),
     N(rand), N(srand), N(random), N(srandom), N(rand_r), N(qsort), N(bsearch),
     N(getenv), NA(secure_getenv, l_getenv), N(setenv), N(unsetenv), N(putenv),
     N(atexit), N(__cxa_atexit), N(__cxa_finalize), N(exit), N(_exit), NA(_Exit, l__exit),

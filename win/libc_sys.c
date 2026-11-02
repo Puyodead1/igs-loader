@@ -441,8 +441,12 @@ static int l_close(int fd)
 
 static long l_lseek(int fd, long off, int wh)
 {
+    long r;
+
     if (bad_fd(fd))
         return -1;
+    if (core_seek(fd, off, wh, &r))
+        return r;
     if (fds[fd].type != FD_CRT)
         return 0;
     return _lseek(fds[fd].crt, off, wh);
@@ -450,8 +454,12 @@ static long l_lseek(int fd, long off, int wh)
 
 static long long l_lseek64(int fd, long long off, int wh)
 {
+    long r;
+
     if (bad_fd(fd))
         return -1;
+    if (core_seek(fd, (long)off, wh, &r))
+        return r;
     if (fds[fd].type != FD_CRT)
         return 0;
     return _lseeki64(fds[fd].crt, off, wh);
@@ -997,7 +1005,7 @@ static void *do_mmap(void *addr, size_t len, int prot, int flags, int fd, int64_
     int c, i;
 
     (void)prot;
-    if (fd >= 0 && core_mmap(fd, len, &r))
+    if (fd >= 0 && core_mmap(fd, len, off, &r))
         return r;
     p = VirtualAlloc((flags & L_MAP_FIXED) ? addr : NULL, len, MEM_RESERVE | MEM_COMMIT,
                      PAGE_EXECUTE_READWRITE);
@@ -1541,9 +1549,21 @@ static char *l___xpg_basename(char *p)
     return s && s[1] ? s + 1 : p;
 }
 static int l_setuid(int u) { (void)u; return 0; }
+/* port I/O: only for a machine that emulates it (in/out are trapped, core_win.c) */
 static int l_ioperm(unsigned long from, unsigned long n, int on)
 {
     (void)from; (void)n; (void)on;
+    if (core_ports())
+        return 0;
+    SET_ERRNO(EPERM);
+    return -1;
+}
+
+static int l_iopl(int level)
+{
+    (void)level;
+    if (core_ports())
+        return 0;
     SET_ERRNO(EPERM);
     return -1;
 }
@@ -1725,7 +1745,7 @@ const struct nsym sys_syms[] = {
     NA(getgid, l_getuid), NA(getegid, l_getuid), N(setsid), N(umask), N(nice), N(uname),
     N(gethostname), N(sysconf), N(getpagesize), N(sync), N(fsync), NA(fdatasync, l_fsync),
     N(getrlimit), N(setrlimit), N(getrusage), N(get_nprocs), NA(get_nprocs_conf, l_get_nprocs),
-    N(setmntent), N(getmntent), N(endmntent), N(getpwnam), N(getpwuid), N(setuid), N(ioperm),
+    N(setmntent), N(getmntent), N(endmntent), N(getpwnam), N(getpwuid), N(setuid), N(ioperm), N(iopl),
     N(getifaddrs), N(freeifaddrs), N(ftruncate), N(ftruncate64), N(utimes), N(__xpg_basename),
     NA(shmget, l_shm_fail), N(shmat), NA(shmdt, l_shm_fail), NA(shmctl, l_shm_fail), N(tmpnam),
     N(mremap),

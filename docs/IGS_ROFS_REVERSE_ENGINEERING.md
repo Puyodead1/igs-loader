@@ -453,3 +453,20 @@ and after them.  `romtool/igs_upx.py` unpacks it (NRV2B/D/E); the rom set
 keeps `wedo` as dumped and adds the unpacked copy at `/WeDo/exec/wedo`
 (build step `unupx`).  `WeDanceOnline2.md` has the launcher and the boot
 scripts.
+
+# E1000 (Linux 2.4.24-gx)
+
+Percussion Kids M105CN: no IGS formats.  Five plain ext2 partitions; p4 is
+an extended partition holding p5.  GRUB boots `bzImage-2.4.24-GX_M-CM_K-PCI_K`
+from p1 with p1 as the root; BusyBox `init` runs `/etc/init.d/rc.sysinit`:
+
+| Partition | Content | Mounted at |
+| --- | --- | --- |
+| p1 | root: BusyBox, uClibc 0.9.26, SDL, SDL_mixer | `/` |
+| p2 | `system/gx2show`, `load.bmp` (the boot picture) | `/pkids/gamedata` |
+| p3 | the game: `pkids`, `main/`, `band1/`, `sound/`, `system/` | `/pkids/linux` (read-only) |
+| p5 | `assert.txt` (the game's error log) | `/pkids/log` |
+
+`rc.sysinit` shows `load.bmp` with `gx2show`, then `/etc/init.d/pkids_game`
+runs `cd /pkids/linux; ./pkids`.  `romtool/mkromset.py` reads logical
+partitions as p5 and up.

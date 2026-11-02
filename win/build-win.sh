@@ -24,10 +24,10 @@ $CC $CF -Wno-format-truncation -o "$OUT/igs-loader.exe" \
     -lopengl32 -lgdi32 -lwinmm
 # plugins: the Linux sources unchanged, with dlfcn.h / sys/mman.h from win/compat
 PF="$CF -shared -static -Iwin/compat -include win/compat/igs_plugin.h"
-for m in e2100 e2000; do
+for m in e2100 e2000 e1000; do
     $CC $PF -o "$OUT/$m.dll" "machines/$m/$m.c"
 done
-for g in harpoonlagoon oceanparty scratch heroofrobots goldcaptain piraterevenge gogoball2 speedrider pandafamily speeddriver2 wedanceonline2; do
+for g in harpoonlagoon oceanparty scratch heroofrobots goldcaptain piraterevenge gogoball2 speedrider pandafamily speeddriver2 wedanceonline2 percussionkids; do
     $CC $PF -o "$OUT/$g.dll" "games/$g/$g.c" || echo "($g.dll not built)"
 done
 # the preloaded libraries (feature "preload"): build/<name>.so on Linux, <name>.dll here

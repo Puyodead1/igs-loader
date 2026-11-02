@@ -47,6 +47,14 @@ struct igs_core {
     void (*fill)(int x, int y, int w, int h, float r, float g, float b, float a);
     void (*text)(int x, int y, const char *s, float r, float g, float b);
     int font_w, font_h;
+
+    /*
+     * For a board that scans out its own frame buffer (E1000): show one
+     * RGB565 frame (pitch in bytes) in the core's window, then the overlay,
+     * key events, the title and the frame cap, as a game's swap does.  Call
+     * it from the game's thread at the end of each frame.
+     */
+    void (*present)(const void *rgb565, int w, int h, int pitch);
 };
 
 /* what a machine plugin provides */
@@ -87,6 +95,16 @@ struct igs_machine {
      * Valid until the next call.
      */
     const char *(*vfile)(const char *name);
+
+    /*
+     * optional (E1000): mmap of a machine fd at a file offset (/dev/mem at a
+     * physical address; mmap is used when this is NULL), lseek on its fds,
+     * and x86 port I/O (in/out instructions, trapped; iopl() succeeds).
+     */
+    void *(*mmap_at)(int fd, size_t len, uint32_t off);
+    long (*seek)(int fd, long off, int whence);
+    uint32_t (*port_in)(uint16_t port, int size);
+    void (*port_out)(uint16_t port, int size, uint32_t v);
 };
 
 /* exported by a machine .so */

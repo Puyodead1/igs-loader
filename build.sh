@@ -21,6 +21,11 @@ gcc $CF -DCASMCARD_SONAME='"libcasmcard.so"' -Wl,-soname,libcasmcard.so -o build
 # Hero of Robots: its smart-card reader and card (preloaded, SONAME libcasmcard.so)
 gcc $CF -fvisibility=hidden -Wl,-soname,libcasmcard.so -o build/libcasmcard-hero.so \
     games/heroofrobots/libcasmcard.c -ldl
+# E1000 executables are linked against uClibc: libc.so.0 and friends on glibc
+mkdir -p build/uclibc
+gcc $CF -Wl,-soname,libc.so.0 -o build/uclibc/libc.so.0 core/uclibc.c -ldl
+gcc $CF -DSHIM_ONLY -Wl,-soname,libm.so.0 -Wl,--no-as-needed -o build/uclibc/libm.so.0 core/uclibc.c -lm
+gcc $CF -DSHIM_ONLY -Wl,-soname,libdl.so.0 -Wl,--no-as-needed -o build/uclibc/libdl.so.0 core/uclibc.c -ldl
 for g in games/*/; do
     n=$(basename "$g")
     gcc $CF -fvisibility=hidden -o "build/$n.so" "$g$n.c"

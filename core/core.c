@@ -13,7 +13,10 @@
  *   - games with SDL linked in statically (E2000): the same through X11
  *     (XNextEvent key events) and GLX (glXSwapBuffers, found via dlsym), and
  *     OSS /dev/dsp played through PulseAudio;
- *   - SDL_mixer: buffer override and logging.
+ *   - SDL_mixer: buffer override and logging;
+ *   - boards with a frame buffer of their own (E1000): port I/O traps and
+ *     iopl, mmap at an offset, lseek on machine files, and a window that
+ *     shows the machine's frames (present).
  * See docs/IGS_LOADER.md.
  */
 #define _GNU_SOURCE
@@ -47,6 +50,8 @@
 
 static struct igs_core core;
 static const struct igs_machine *machine;
+
+static void core_present(const void *px, int w, int h, int pitch);
 
 typedef void (*sighandler_fn)(int);
 
@@ -153,6 +158,40 @@ static int modrm_len(const uint8_t *p)
     return len;
 }
 
+/*
+ * x86 port I/O (in/out with dx or an imm8 port, 8/16/32-bit) for machines
+ * with port_in/port_out: without iopl the instruction faults (SIGSEGV).
+ */
+static int port_access(ucontext_t *uc)
+{
+    const uint8_t *ip = (const uint8_t *)uc->uc_mcontext.gregs[REG_EIP];
+    int n = 0, size = 4, op;
+    uint16_t port = uc->uc_mcontext.gregs[REG_EDX] & 0xffff;
+
+    if (!machine || !machine->port_in || !machine->port_out)
+        return 0;
+    if (ip[0] == 0x66) {
+        size = 2;
+        n = 1;
+    }
+    switch (op = ip[n]) {
+    case 0xe4: case 0xe5: case 0xe6: case 0xe7:   /* in/out al|eax, imm8 */
+        port = ip[n + 1];
+        n++;
+        /* fall through */
+    case 0xec: case 0xed: case 0xee: case 0xef:   /* in/out al|eax, dx */
+        if (!(op & 1))
+            size = 1;
+        if (op & 2)
+            machine->port_out(port, size, get_reg(uc, 0, size));
+        else
+            set_reg(uc, 0, size, machine->port_in(port, size));
+        uc->uc_mcontext.gregs[REG_EIP] += n + 1;
+        return 1;
+    }
+    return 0;
+}
+
 static void segv_handler(int sig, siginfo_t *si, void *ctx)
 {
     ucontext_t *uc = ctx;
@@ -162,6 +201,8 @@ static void segv_handler(int sig, siginfo_t *si, void *ctx)
     int size = 4, reg, n, i;
     uint32_t off;
 
+    if (port_access(uc))
+        return;
     for (i = 0; i < nmmio; i++)
         if (a >= mmio[i].base && a < mmio[i].base + mmio[i].len)
             m = &mmio[i];
@@ -239,12 +280,14 @@ static void segv_handler(int sig, siginfo_t *si, void *ctx)
  * the trap handler without its context.  While traps exist, the game's own
  * SIGSEGV handler is recorded as the fallback instead of replacing ours.
  */
+static int traps_on;                   /* the trap handler is installed */
+
 sighandler_fn signal(int sig, sighandler_fn h)
 {
     REAL(sighandler_fn, signal, (int, sighandler_fn));
     sighandler_fn prev;
 
-    if (sig != SIGSEGV || !nmmio)
+    if (sig != SIGSEGV || !traps_on)
         return real_signal(sig, h);
     prev = old_segv.sa_flags & SA_SIGINFO ? SIG_DFL : old_segv.sa_handler;
     if (h == (sighandler_fn)segv_handler)
@@ -258,7 +301,7 @@ int sigaction(int sig, const struct sigaction *sa, struct sigaction *old)
 {
     REAL(int, sigaction, (int, const struct sigaction *, struct sigaction *));
 
-    if (sig != SIGSEGV || !nmmio)
+    if (sig != SIGSEGV || !traps_on)
         return real_sigaction(sig, sa, old);
     if (old)
         *old = old_segv;
@@ -267,12 +310,24 @@ int sigaction(int sig, const struct sigaction *sa, struct sigaction *old)
     return 0;
 }
 
+static void traps_install(void)
+{
+    REAL(int, sigaction, (int, const struct sigaction *, struct sigaction *));
+    struct sigaction sa;
+
+    if (traps_on)
+        return;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = segv_handler;
+    sa.sa_flags = SA_SIGINFO | SA_NODEFER;
+    real_sigaction(SIGSEGV, &sa, &old_segv);
+    traps_on = 1;
+}
+
 static void *core_mmio_map(size_t len, void *opaque,
                            uint32_t (*read)(void *, uint32_t, int),
                            void (*write)(void *, uint32_t, int, uint32_t))
 {
-    REAL(int, sigaction, (int, const struct sigaction *, struct sigaction *));
-    struct sigaction sa;
     void *p;
 
     if (nmmio == MMIO_MAX)
@@ -281,14 +336,28 @@ static void *core_mmio_map(size_t len, void *opaque,
     p = mmap(NULL, len, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (p == MAP_FAILED)
         return p;
-    mmio[nmmio] = (struct mmio){ p, len, opaque, read, write };
-    if (nmmio++ == 0) {
-        memset(&sa, 0, sizeof(sa));
-        sa.sa_sigaction = segv_handler;
-        sa.sa_flags = SA_SIGINFO | SA_NODEFER;
-        real_sigaction(SIGSEGV, &sa, &old_segv);
-    }
+    mmio[nmmio++] = (struct mmio){ p, len, opaque, read, write };
+    traps_install();
     return p;
+}
+
+/* port I/O is the machine's (port_in/port_out): the trap handler takes in/out */
+int iopl(int level)
+{
+    REAL(int, iopl, (int));
+
+    if (machine && machine->port_in)
+        return 0;
+    return real_iopl(level);
+}
+
+int ioperm(unsigned long from, unsigned long num, int on)
+{
+    REAL(int, ioperm, (unsigned long, unsigned long, int));
+
+    if (machine && machine->port_in)
+        return 0;
+    return real_ioperm(from, num, on);
 }
 
 /* ---- overlay (fixed-function GL) ------------------------------------------ */
@@ -496,6 +565,7 @@ __attribute__((constructor)) static void core_init(void)
         .text = core_text,
         .font_w = FONT_W,
         .font_h = FONT_H,
+        .present = core_present,
     };
     /* the games' own diagnostics go to stdout: keep them in order with ours */
     setvbuf(stdout, NULL, _IOLBF, 0);
@@ -510,6 +580,8 @@ __attribute__((constructor)) static void core_init(void)
         return;
     }
     LOG("machine %s", machine->name);
+    if (machine->port_in)
+        traps_install();
 }
 
 /* ---- device files ------------------------------------------------------------ */
@@ -786,8 +858,17 @@ void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off)
     REAL(void *, mmap, (void *, size_t, int, int, int, off_t));
 
     if (is_machine_fd(fd))
-        return machine->mmap(fd, len);
+        return machine->mmap_at ? machine->mmap_at(fd, len, (uint32_t)off) : machine->mmap(fd, len);
     return real_mmap(addr, len, prot, flags, fd, off);
+}
+
+off_t lseek(int fd, off_t off, int whence)
+{
+    REAL(off_t, lseek, (int, off_t, int));
+
+    if (nmachine_fd && machine->seek && is_machine_fd(fd))
+        return machine->seek(fd, off, whence);
+    return real_lseek(fd, off, whence);
 }
 
 ssize_t read(int fd, void *buf, size_t n)
@@ -1355,6 +1436,93 @@ void SDL_GL_SwapBuffers(void)
 {
     REAL(void, SDL_GL_SwapBuffers, (void));
 
+    overlay();
+    frame_end();
+    real_SDL_GL_SwapBuffers();
+}
+
+/*
+ * Boards that scan out a frame buffer of their own (E1000, no SDL video in
+ * the game): the core opens an SDL GL window at the first frame and shows
+ * each frame the machine hands over as a texture, then runs the overlay,
+ * the key events and the frame cap as a game's swap would.
+ */
+#define GL_TEXTURE_MIN_FILTER     0x2801
+#define GL_TEXTURE_MAG_FILTER     0x2800
+#define GL_LINEAR                 0x2601
+#define GL_RGB                    0x1907
+#define GL_UNSIGNED_SHORT_5_6_5   0x8363
+#define GL_UNPACK_ROW_LENGTH      0x0cf2
+
+static struct {
+    int w, h;
+    unsigned tex;
+    void (*GenTextures)(int, unsigned *), (*BindTexture)(unsigned, unsigned);
+    void (*TexParameteri)(unsigned, unsigned, int);
+    void (*TexImage2D)(unsigned, int, int, int, int, int, unsigned, unsigned, const void *);
+    void (*TexSubImage2D)(unsigned, int, int, int, int, int, unsigned, unsigned, const void *);
+    void (*TexCoord2f)(float, float), (*Viewport)(int, int, int, int);
+} fbw;
+
+static void fb_window(int w, int h)
+{
+    int (*init_sub)(uint32_t) = dlsym(RTLD_DEFAULT, "SDL_InitSubSystem");
+    void *(*gpa)(const char *) = dlsym(RTLD_DEFAULT, "SDL_GL_GetProcAddress");
+
+    if (!init_sub || !gpa || init_sub(0x20) < 0 ||          /* SDL_INIT_VIDEO */
+        !SDL_SetVideoMode(w, h, 0, 0x2)) {                  /* SDL_OPENGL */
+        LOG("cannot open the window for the frame buffer");
+        exit(1);
+    }
+    if (gl_load() || !(*(void **)&fbw.GenTextures = gpa("glGenTextures")) ||
+        !(*(void **)&fbw.BindTexture = gpa("glBindTexture")) ||
+        !(*(void **)&fbw.TexParameteri = gpa("glTexParameteri")) ||
+        !(*(void **)&fbw.TexImage2D = gpa("glTexImage2D")) ||
+        !(*(void **)&fbw.TexSubImage2D = gpa("glTexSubImage2D")) ||
+        !(*(void **)&fbw.TexCoord2f = gpa("glTexCoord2f")) ||
+        !(*(void **)&fbw.Viewport = gpa("glViewport"))) {
+        LOG("frame buffer window: GL entry points missing");
+        exit(1);
+    }
+    gl.ok = 1;
+    fbw.GenTextures(1, &fbw.tex);
+    fbw.BindTexture(GL_TEXTURE_2D, fbw.tex);
+    fbw.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    fbw.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    fbw.TexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, NULL);
+    fbw.w = w;
+    fbw.h = h;
+}
+
+static void core_present(const void *px, int w, int h, int pitch)
+{
+    REAL(void, SDL_GL_SwapBuffers, (void));
+    uint8_t ev[64];
+
+    if (!fbw.w)
+        fb_window(w, h);
+    /* SDL_PollEvent above hands the keys to the machine */
+    while (SDL_PollEvent(ev))
+        if (ev[0] == 12) {                                  /* SDL_QUIT */
+            LOG("window closed");
+            exit(0);
+        }
+    fbw.Viewport(0, 0, fbw.w, fbw.h);
+    fbw.BindTexture(GL_TEXTURE_2D, fbw.tex);
+    gl.PixelStorei(GL_UNPACK_ALIGNMENT, 2);
+    gl.PixelStorei(GL_UNPACK_ROW_LENGTH, pitch / 2);
+    fbw.TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w < fbw.w ? w : fbw.w, h < fbw.h ? h : fbw.h,
+                      GL_RGB, GL_UNSIGNED_SHORT_5_6_5, px);
+    gl.PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    gl.Enable(GL_TEXTURE_2D);
+    gl.Color4f(1, 1, 1, 1);
+    gl.Begin(GL_QUADS);
+    fbw.TexCoord2f(0, 0); gl.Vertex2f(-1, 1);
+    fbw.TexCoord2f(1, 0); gl.Vertex2f(1, 1);
+    fbw.TexCoord2f(1, 1); gl.Vertex2f(1, -1);
+    fbw.TexCoord2f(0, 1); gl.Vertex2f(-1, -1);
+    gl.End();
+    gl.Disable(GL_TEXTURE_2D);
     overlay();
     frame_end();
     real_SDL_GL_SwapBuffers();

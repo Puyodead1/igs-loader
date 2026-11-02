@@ -142,7 +142,9 @@ FILE *lfile_crt(LFILE *lf);
 void core_init(void);                         /* load the machine plugin */
 int core_route_open(const char *path, int *fd);
 int core_ioctl(int fd, unsigned long req, void *arg, int *ret);   /* 1 if handled */
-int core_mmap(int fd, size_t len, void **ret);
+int core_mmap(int fd, size_t len, int64_t off, void **ret);
+int core_seek(int fd, long off, int whence, long *ret);   /* 1 if handled */
+int core_ports(void);                         /* the machine emulates port I/O */
 int core_read(int fd, void *buf, size_t n, long *ret);
 int core_write(int fd, const void *buf, size_t n, long *ret);
 int core_close(int fd);                       /* 1 if the fd stays reserved */
@@ -161,6 +163,7 @@ void core_install_veh(void);
 void *gl_proc(const char *name);              /* cdecl-callable GL entry (thunk) */
 void gl_init(void);
 int sdl_window_title(const char *s);
+void sdl_present(const void *rgb565, int w, int h, int pitch);   /* igs_core.present */
 
 /* ---- Linux structures (i386 glibc) ---------------------------------------------- */
 

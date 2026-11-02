@@ -1,4 +1,8 @@
-/* <sys/mman.h> for the plugins built as Windows DLLs: anonymous mappings only */
+/*
+ * <sys/mman.h> for the plugins built as Windows DLLs: anonymous mappings
+ * only, placed top-down (high addresses, as Linux's mmap gives a 32-bit
+ * process; E1000's game ANDs its mapped pointers together).
+ */
 #ifndef IGS_COMPAT_MMAN_H
 #define IGS_COMPAT_MMAN_H
 
@@ -26,8 +30,20 @@ static inline void *mmap(void *addr, size_t len, int prot, int flags, int fd, lo
     (void)off;
     if (!(flags & MAP_ANONYMOUS) || fd != -1)
         return MAP_FAILED;
-    p = VirtualAlloc(NULL, len, 0x3000 /* MEM_COMMIT | MEM_RESERVE */, 0x04 /* PAGE_READWRITE */);
+    p = VirtualAlloc(NULL, len, 0x103000 /* MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN */,
+                     0x04 /* PAGE_READWRITE */);
     return p ? p : MAP_FAILED;
+}
+
+__declspec(dllimport) int __stdcall VirtualProtect(void *, unsigned long, unsigned long, unsigned long *);
+
+/* the loader maps ELF code read-write-execute already; this makes sure */
+static inline int mprotect(void *p, size_t len, int prot)
+{
+    unsigned long old;
+
+    (void)prot;
+    return VirtualProtect(p, len, 0x40 /* PAGE_EXECUTE_READWRITE */, &old) ? 0 : -1;
 }
 
 static inline int munmap(void *p, size_t len)
