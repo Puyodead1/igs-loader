@@ -225,4 +225,43 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		</part>
 	</software>
 
+	<software name="wedanceonline2">
+		<description>We Dance Online 2</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="WeDo-e2000-v1-e64"/>
+		<info name="usage" value="docs/WeDanceOnline2.md; tunables WEDO_REGION, WEDO_SCRIPT"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="wedanceonline2"/>
+			<feature name="data" value="/WeDo/linux"/>
+			<!-- /WeDo/linux/wedo is UPX-packed; the set also holds it unpacked (step unupx) -->
+			<feature name="binary" value="/WeDo/exec/wedo"/>
+			<!-- SDL 1.2 and SDL_mixer linked dynamically (the host's / the loader's) -->
+			<feature name="libs" value="/usr/lib/libstdc++.so.5"/>
+			<!-- an online game: no IP network; cp/rm into its /tmp RAM disk run in-process,
+			     other shell commands (hdparm, chmod, patcher) not; no card reader on ttyS1 -->
+			<feature name="env" value="IGS_NO_NET=1 IGS_NO_SYSTEM=1 IGS_SET_DIRS=/tmp IGS_NULL_DEVS=/dev/ttyS1"/>
+			<!-- executable assembly (the 43 KB launcher poweron): /bin/tcsh, then /mnt/GECA -->
+			<feature name="geca_part" value="p1"/>
+			<feature name="geca_sector" value="6693"/>
+			<feature name="geca_file" value="/etc/rc.d/rc0.d"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="129918"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="pieces" value="314256"/>
+			<feature name="piece_mode" value="skip"/>
+			<feature name="trim_kb" value="299"/>
+			<feature name="trim_step" value="-3"/>
+			<feature name="build" value="root p2; mount p3 /WeDo/system; assemble /WeDo/exec/poweron; mount p4 /WeDo/linux; unupx /WeDo/linux/wedo /WeDo/exec/wedo"/>
+			<diskarea name="harddriv">
+				<disk name="e2000_wedanceoline2" sha1="7e0934dbcfa72e1b19857370b99ebede9e823ed0"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/WeDo/exec/poweron" size="43756" sha1="5af402e1c0f12c2fbb0cca8f4018ff2ff5981b25"/>
+				<rom name="/WeDo/linux/wedo" size="3220000" sha1="f5229d1016bc2043fed932c8199e5e260b9daba4"/>
+				<rom name="/WeDo/exec/wedo" size="8254965" sha1="1c1f916127874f5792ccd691a65b5766d1a27879"/>
+			</dataarea>
+		</part>
+	</software>
+
 </softwarelist>

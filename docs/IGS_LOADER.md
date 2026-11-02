@@ -23,6 +23,7 @@ Status (2026-11-01), under WSLg:
 | Speed Rider m109cnc | E2000 | attract, coins, story and time-attack races with AI riders, continue, ranking, back to attract; IGS036 message transport, UI table reconstructed, game modes and AI invented, lost archive bytes rebuilt; races about 7 fps on llvmpipe (`SpeedRider.md`) |
 | Panda Family CN | E2000 | attract, coins, stages, ranking, tickets, back to attract; IGS036 packet transport (I/O board and settings, game logic in the executable), no camera (`PandaFamily.md`) |
 | Speed Driver 2 | E2000 | attract (live show), coins, mode / car / gearbox / course select, races with rivals, ranking and name entry, continue, game over, operator menu; IGS036 message transport (Speed Driver 2 layout), the chip's screens rebuilt from the game's art, layout invented (`SpeedDriver2.md`) |
+| We Dance Online 2 | E2000 | offline: attract, coins, song select, songs with judgements and score, results, game over, back to attract, operator menu; UPX-packed executable unpacked by the set builder, IGS027A transport (I/O and settings), no network (`WeDanceOnline2.md`) |
 
 They run at about 56–60 fps (60 fps cap) on Mesa llvmpipe, with continuous
 sound through PulseAudio (WSLg).
@@ -46,7 +47,7 @@ or in WSL:
 sets): `harpoonlagoon_m107us`, `harpoonlagoon_m001uswa`,
 `harpoonlagoon_m200uswa`, `oceanparty_md105cn`, `scratch_m101cn`,
 `heroofrobots_m100fa`, `goldcaptain`, `piraterevenge_m101cn`, `gogoball2_dx`,
-`speedrider_m109cnc`, `pandafamily_cn`, `speeddriver2`.  The per-game controls are on each
+`speedrider_m109cnc`, `pandafamily_cn`, `speeddriver2`, `wedanceonline2`.  The per-game controls are on each
 game's page (`HarpoonLagoon.md`, `OceanParty.md`).
 
 | Variable | Effect |
@@ -66,8 +67,9 @@ game's page (`HarpoonLagoon.md`, `OceanParty.md`).
 | `IGS_CG_ARB=1` | Cg's NVIDIA `vp40` / `fp40` profiles on Mesa: the GL claims `GL_NV_vertex_program3` and `GL_NV_fragment_program2`, Cg compiles them as `arbvp1` / `arbfp1` (Speed Rider's `env`) |
 | `IGS_SCRIPT="sec:key[+],..."` | press keys on a timetable from the first frame, through the game plugin's key handler: an SDL 1.2 key number, a character, or `up down left right space enter ctrl alt shift esc f1..f12`; 0.2 s, or with `+` until the next entry.  For testing |
 | `IGS_NULL_DEVS="/dev/ttyS0 ..."` | device paths that open as a null port: writes are dropped, reads fail with `EAGAIN` (for optional peripherals such as lamp boards; usually set by the game's `env` feature).  Peripherals that must answer are the game plugin's (E2100 `serial`) |
-| `IGS_SET_DIRS="/data ..."` | cabinet directories outside `data` that the game opens by absolute path; they resolve inside the set (`IGS_SET`, exported by `run.sh`), as on Windows (Speed Driver 2's `env`) |
-| `IGS_NO_SYSTEM=1` | `system()` is logged, not run, and `popen()` fails, as on Windows: for games that configure the cabinet with shell commands (Speed Driver 2's `env`) |
+| `IGS_SET_DIRS="/data ..."` | cabinet directories outside `data` that the game opens by absolute path; they resolve inside the set (`IGS_SET`, exported by `run.sh`), as on Windows (Speed Driver 2's `env`).  `/tmp` is an overlay: a path resolves inside the set when it exists there or is being created, else on the host (We Dance's `env`) |
+| `IGS_NO_SYSTEM=1` | `system()` is logged, not run, and `popen()` fails, as on Windows: for games that configure the cabinet with shell commands (Speed Driver 2's `env`).  `cp` and `rm` into `/tmp` run in-process: here only with `/tmp` in `IGS_SET_DIRS`, copies as symlinks; on Windows as file copies in `%TEMP%\igs-tmp`.  `popen` returns output the machine provides (`vfile`) |
+| `IGS_NO_NET=1` | IP sockets fail and name lookups find nothing, as on Windows; Unix sockets (X11, Wayland, PulseAudio) stay (We Dance's `env`) |
 | `IGS_NO_AUDIO=1` | `/dev/dsp` opens no PulseAudio stream (Windows: no waveOut device) and drains at the real rate; for test runs |
 | `IGS_X11_GRAB=1` | keep the game's X keyboard/pointer grabs, pointer warps and `XAutoRepeatOff` (default: no-ops) |
 | `IGS_TITLE` | window title text in place of the game's description; `0` keeps the game's own title.  The title reads `name \| status \| fps`, refreshed every second; the status comes from the game plugin (credits, phase or state) |
@@ -120,10 +122,10 @@ The loader runs games by id, MAME style.  Three pieces:
   unique across lists.
 - **Rom sets**: a set is the cabinet's file tree as the running game sees
   it.  The root fs (p2) at `/`; the game data partition (p3) at its mount
-  point (`/Fish`, `/OceanParty`, `/Scratch`, `/Robots`, `/GoldCaptain`, `/pr/linux`, `/GoGoBall2`, `/sr/Game`, `/PF`, `/race/linux`); p4
-  where the game needs it (Hero of Robots' `rw_data`, Pirate Revenge's `/fec_data`, Go Go Ball 2's `/rf_data`, Speed Rider's `/rewrite`, Panda Family's `/PF/pf_data`, Speed Driver 2's `/data`); the executable where
+  point (`/Fish`, `/OceanParty`, `/Scratch`, `/Robots`, `/GoldCaptain`, `/pr/linux`, `/GoGoBall2`, `/sr/Game`, `/PF`, `/race/linux`, `/WeDo/system`); p4
+  where the game needs it (Hero of Robots' `rw_data`, Pirate Revenge's `/fec_data`, Go Go Ball 2's `/rf_data`, Speed Rider's `/rewrite`, Panda Family's `/PF/pf_data`, Speed Driver 2's `/data`, We Dance's `/WeDo/linux`); the executable where
   the cabinet has it at run time (`/Fish.bin/fish`, `/Scratch.bin/swin`
-  decrypted, `/Game/GoldCaptain`, `/pr/exec/sship`, `/GoGoBall2/linux/pitch`, `/sr/exec/SR` and `/linux/PF` reassembled).  A set is a folder `<id>/`,
+  decrypted, `/Game/GoldCaptain`, `/pr/exec/sship`, `/GoGoBall2/linux/pitch`, `/sr/exec/SR` and `/linux/PF` reassembled, We Dance's `/WeDo/exec/wedo` unpacked).  A set is a folder `<id>/`,
   or an archive `<id>.7z` / `<id>.zip` with the tree at its root or under one
   top folder `<id>/`.  Symlinks are stored as links; absolute ones are made
   relative to the set root.
@@ -238,6 +240,7 @@ python3 romtool/mkromset.py goldcaptain goldcaptain.chd --format zip -o /tmp/set
    | `copy SRC DST` | copy inside the tree (Scratch's `/etc/X11/IGS` copies `asic36.bin`) |
    | `assemble DST` | E2000: rebuild the split executable at `DST` |
    | `mount pN DIR` | partition N replaces `DIR`'s contents, as the mount hides them: SquashFS (E2100 p3, `unsquashfs -o`), IGS_SHFS (E2000 p3, `igs_shfs.py`) or ext2/3 (p4, `debugfs rdump`; `lost+found` left out) |
+   | `unupx SRC DST` | unpack the UPX-packed executable `SRC` into `DST` (`igs_upx.py`; We Dance's `wedo`); `SRC` stays as dumped |
 
    Only the partitions a recipe names are read, straight from the image
    (no partition copies).
@@ -264,6 +267,7 @@ Set sizes (`7z -mx9`, 7-Zip 23.01) and build times on this machine:
 | `speedrider_m109cnc` | 287 MB | 1.2 GB | 9 min |
 | `pandafamily_cn` | 251 MB | 0.71 GB | 6 min |
 | `speeddriver2` | 647 MB | 1.0 GB | 5 min |
+| `wedanceonline2` | 941 MB | 1.7 GB | 18 min |
 
 ### Reading archives (`romset/`)
 
@@ -297,7 +301,7 @@ tools/
     roms/                      default rompath (not in git)
     romset/                    rom sets: lists, rompath, cache, zip + streaming 7z (C)
     romtool/                   mkromset.py (set builder), igs_rofs.py, igs_rofs24.py,
-                               igs_shfs.py, igs_fpga_decrypt.py, igs_e2000_extract.py,
+                               igs_shfs.py, igs_fpga_decrypt.py, igs_e2000_extract.py, igs_upx.py,
                                softlist.py, IgsRofsExtractor/ (the C# original)
     third_party/lzma/          LZMA SDK 23.01 C decoder subset (public domain)
     core/        igs.h core.c  LD_PRELOAD library (Linux/SDL glue)
@@ -314,6 +318,7 @@ tools/
     games/speedrider/          speedrider.c
     games/pandafamily/         pandafamily.c
     games/speeddriver2/        speeddriver2.c
+    games/wedanceonline2/      wedanceonline2.c
     build/                     igs_core.so  e2100.so  e2000.so  <game>.so  libcasmcard.so
                                libcasmcard-nocard.so  libcasmcard-hero.so  igs-romset
 ```
@@ -325,14 +330,17 @@ symbols.
 | Layer | Owns | Today |
 | --- | --- | --- |
 | **core** (`igs_core.so`, the `LD_PRELOAD` library) | libc/SDL interposition, routing device files to the machine, MMIO traps, libc fixes, frame pacing, audio, the overlay renderer | the only Linux/SDL/GL-specific code |
-| **machine** (`$IGS_MACHINE`) | the board: device files, registers, DMA, the protection transport | `e2100`: `/dev/pccard0`, BARs, DMA, the asset cipher (mask from the software list), the ASIC handshake, and three runtime transports: batch framing (Harpoon, Ocean Party), the register table (Scratch) and request/response (Hero of Robots), chosen by the game plugin's `transport`; serial ports with a peripheral the game plugin answers for.  `e2000`: the PLX PCI9030 card (`/dev/plx/*`), the IGS036 shared-RAM transport with RC4-wrapped keys, the IGS027A packet transport, the IGS036 message or packet transport (the game plugin's `transport`), `/dev/roio`, `/dev/pccard0` |
-| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs), `piraterevenge` (the same commands plus coin counters), `gogoball2` (IGS027A packets: stores, settings, light curtain, tickets, ball stopper, game flow), `speedrider` (IGS036 messages: inputs, coins, NVRAM, zip prefixes, UI, game modes, AI riders), `pandafamily` (IGS036 packets: inputs, coins, tickets, settings, action groups), `speeddriver2` (IGS036 messages, Speed Driver 2 layout: game flow, inputs, coins, texture and sound pages, the `data.hdr` prefix) |
+| **machine** (`$IGS_MACHINE`) | the board: device files, registers, DMA, the protection transport | `e2100`: `/dev/pccard0`, BARs, DMA, the asset cipher (mask from the software list), the ASIC handshake, and three runtime transports: batch framing (Harpoon, Ocean Party), the register table (Scratch) and request/response (Hero of Robots), chosen by the game plugin's `transport`; serial ports with a peripheral the game plugin answers for.  `e2000`: the PLX PCI9030 card (`/dev/plx/*`), the IGS036 shared-RAM transport with RC4-wrapped keys, the IGS027A packet transport, the IGS036 message or packet transport (the game plugin's `transport`), `/dev/roio`, `/dev/pccard0`, the kernel's `/dev/tdcr` cipher |
+| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs), `piraterevenge` (the same commands plus coin counters), `gogoball2` (IGS027A packets: stores, settings, light curtain, tickets, ball stopper, game flow), `speedrider` (IGS036 messages: inputs, coins, NVRAM, zip prefixes, UI, game modes, AI riders), `pandafamily` (IGS036 packets: inputs, coins, tickets, settings, action groups), `speeddriver2` (IGS036 messages, Speed Driver 2 layout: game flow, inputs, coins, texture and sound pages, the `data.hdr` prefix), `wedanceonline2` (IGS027A packets: inputs, coins, system status, settings; the cabinet's `/proc/meminfo`) |
 
 **Interfaces:**
 - **Core ↔ machine:** `core/igs.h`.
   - The core provides `struct igs_core`: log, config, time, a placeholder
     fd, `mmio_map` (trapped register windows with read/write callbacks), and
     the overlay primitives `fill`/`text`.
+  - The machine may supply `vfile`: the text of files the cabinet's system
+    has and the host does not, which the core's `fopen` (and `popen` under
+    `IGS_NO_SYSTEM`) return.
   - A machine exports `igs_machine_entry()`, which returns `struct
     igs_machine`: `handles`/`open`/`ioctl`/`mmap`/`close` for its device
     files, optionally `read`/`write` (serial ports; termios calls arrive at
@@ -395,7 +403,9 @@ description to the plugins as `IGS_MACHINE`, `IGS_GAME`, `IGS_ASSET_MASK`,
 | `glXSwapInterval{SGI,MESA}` via `dlsym` / `glXGetProcAddress[ARB]` | core: no-op (Xwayland answers GLXBadContextTag) |
 | `open("/dev/dsp")` + OSS ioctls + `write` | core: a pipe drained by a thread into PulseAudio (`libpulse-simple`) |
 | `signal` / `sigaction(SIGSEGV)` | core: kept on the MMIO trap handler while traps exist; the game's handler becomes the fallback |
-| `/dev/plx/Pci9030*`, `/dev/roio`, `/dev/pccard0` | machine `e2000` (`IGS_E2000.md`) |
+| `/dev/plx/Pci9030*`, `/dev/roio`, `/dev/pccard0`, `/dev/tdcr` | machine `e2000` (`IGS_E2000.md`) |
+| `fopen` of a file the cabinet's system provides (We Dance: a 2.4 kernel's `/proc/meminfo`), `popen` with `IGS_NO_SYSTEM` | core: the machine's `vfile` text, as a memory stream |
+| `socket`, `gethostbyname`, `getaddrinfo` with `IGS_NO_NET` | core: fail (IP only) |
 | `/lib/libcasmcard.so` (linked by absolute path) | preloaded stub `build/libcasmcard.so` whose SONAME is that path (feature `preload`) |
 
 **Details:**
@@ -513,6 +523,7 @@ Status (2026-11-01, RTX 3060, Windows 11):
 | Speed Rider m109cnc | attract after about a minute, coins, story and time-attack races, continue, ranking, back to attract; sound through `/dev/dsp`; 30 fps (the game's own pace); its Cg shaders need an NVIDIA driver |
 | Panda Family CN | attract, coins, stages, ranking, tickets, back to attract; sound (the set's SDL_mixer on the loader's SDL); 60 fps |
 | Speed Driver 2 | attract, coins, the select screens, race, ranking, continue, game over, back to attract; sound through `/dev/dsp`; 60 fps |
+| We Dance Online 2 | attract after about 30 s, coins, songs, results, game over, back to attract, operator menu; sound (the set's SDL_mixer and Vorbis on the loader's SDL) |
 
 ### Usage
 
@@ -709,8 +720,12 @@ way the exe does and lists the symbols no loaded ELF module defines and
 ### Stubbed or faked
 
 - **Processes:** `fork`, `exec*`, `system`, `popen` and `waitpid` fail and
-  log.  Ocean Party calls `system` and `socket` and carries on.
-- **Network:** sockets fail; `gethostbyname` and `if_nameindex` return NULL.
+  log.  Ocean Party calls `system` and `socket` and carries on.  With
+  `IGS_NO_SYSTEM`, `cp` and `rm` into `/tmp` run in-process; `popen` returns
+  output the machine provides (`vfile`).
+- **Network:** sockets fail; `gethostbyname`, `getifaddrs` and
+  `if_nameindex` find nothing.
+- **Files:** opened in binary mode (Linux has no text mode).
 - **Signals:** never delivered.
 - **Threads and the unwinder:** `pthread_cancel` does nothing.  Futex
   `syscall`s sleep 1 ms (libstdc++ static-init guards).
@@ -730,5 +745,5 @@ way the exe does and lists the symbols no loaded ELF module defines and
   dropped.  Xt/Xaw calls return 0.
 - **libc:** `iconv` knows UTF-8, `WCHAR_T`/UCS-4LE, UTF-16LE, Latin-1 and
   the Windows code pages for GBK, Big5, Shift_JIS and EUC-KR; `vswprintf`
-  does not convert `%ls` arguments; `mremap` always moves; `chmod` does nothing; no SysV shared
+  does not convert `%ls` arguments; `mremap` always moves; `chmod` and `utimes` do nothing; no SysV shared
   memory, mount table, users or port I/O.

@@ -79,6 +79,14 @@ struct igs_machine {
 
     /* optional: a short status line for the window title, e.g. "credit 3" */
     void (*status)(char *buf, size_t n);
+
+    /*
+     * optional: the contents of a file the cabinet's system provides and
+     * the host does not (e.g. a 2.4 kernel's /proc/meminfo), or NULL.  name
+     * is the path given to fopen, or "|command" for popen (IGS_NO_SYSTEM).
+     * Valid until the next call.
+     */
+    const char *(*vfile)(const char *name);
 };
 
 /* exported by a machine .so */

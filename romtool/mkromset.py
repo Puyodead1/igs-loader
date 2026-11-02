@@ -22,6 +22,8 @@ cabinet has it at run time.  The entry's "build" feature says how, as
     mount pN DIR          partition N replaces DIR's contents: p3 SquashFS
                           (E2100, unsquashfs) or IGS_SHFS (E2000); p4 ext2/3
                           (debugfs; lost+found is left out)
+    unupx SRC DST         unpack the UPX-packed executable SRC to DST
+                          (igs_upx.py; We Dance's wedo), SRC kept as dumped
 
 Absolute symlinks are made relative to the set root, so the tree works
 wherever it is extracted.  Then the files the entry lists in <dataarea
@@ -60,6 +62,7 @@ import igs_rofs24          # noqa: E402
 import igs_shfs            # noqa: E402
 import igs_fpga_decrypt    # noqa: E402
 import igs_e2000_extract   # noqa: E402
+import igs_upx             # noqa: E402
 
 LOADER = os.path.dirname(HERE)
 
@@ -197,6 +200,10 @@ class Builder:
     def step_copy(self, op, src, dst):
         with open(self.path(src), 'rb') as f:
             self.write(dst, f.read())
+
+    def step_unupx(self, op, src, dst):
+        with open(self.path(src), 'rb') as f:
+            self.write(dst, igs_upx.unpack(f.read()))
 
     def step_assemble(self, op, dst):
         m = self.sw.manifest()

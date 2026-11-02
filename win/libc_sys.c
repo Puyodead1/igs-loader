@@ -20,6 +20,7 @@
 #include <time.h>
 
 #include "lx.h"
+#include "../core/tmpcmd.h"
 
 #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
 #define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x2
@@ -1336,17 +1337,135 @@ static int l_pause(void) { Sleep(INFINITE); return -1; }
 static int l_fork(void) { LOG("fork(): not supported"); SET_ERRNO(L_ENOSYS); return -1; }
 static int l_execvp(const char *f, char *const *a) { (void)a; LOG("exec %s: not supported", f); SET_ERRNO(L_ENOSYS); return -1; }
 static int l_execv(const char *f, char *const *a) { return l_execvp(f, a); }
+static void tmp_rm(const char *win)
+{
+    DWORD a = GetFileAttributesA(win);
+    WIN32_FIND_DATAA fd;
+    char pat[MAX_PATH], sub[MAX_PATH];
+    HANDLE h;
+
+    if (a == INVALID_FILE_ATTRIBUTES)
+        return;
+    if (!(a & FILE_ATTRIBUTE_DIRECTORY) || (a & FILE_ATTRIBUTE_REPARSE_POINT)) {
+        SetFileAttributesA(win, FILE_ATTRIBUTE_NORMAL);
+        if (!DeleteFileA(win))
+            RemoveDirectoryA(win);
+        return;
+    }
+    snprintf(pat, sizeof(pat), "%s\\*", win);
+    if ((h = FindFirstFileA(pat, &fd)) != INVALID_HANDLE_VALUE) {
+        do {
+            if (strcmp(fd.cFileName, ".") && strcmp(fd.cFileName, "..")) {
+                snprintf(sub, sizeof(sub), "%s\\%s", win, fd.cFileName);
+                tmp_rm(sub);
+            }
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+    RemoveDirectoryA(win);
+}
+
+static int tmp_copy(const char *from, const char *to)
+{
+    DWORD a = GetFileAttributesA(from);
+    WIN32_FIND_DATAA fd;
+    char pat[MAX_PATH], f[MAX_PATH], t[MAX_PATH];
+    HANDLE h;
+    int ret = 0;
+
+    if (!(a & FILE_ATTRIBUTE_DIRECTORY))
+        return CopyFileA(from, to, FALSE) ? 0 : -1;
+    CreateDirectoryA(to, NULL);
+    snprintf(pat, sizeof(pat), "%s\\*", from);
+    if ((h = FindFirstFileA(pat, &fd)) == INVALID_HANDLE_VALUE)
+        return 0;
+    do {
+        if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, ".."))
+            continue;
+        snprintf(f, sizeof(f), "%s\\%s", from, fd.cFileName);
+        snprintf(t, sizeof(t), "%s\\%s", to, fd.cFileName);
+        ret |= tmp_copy(f, t);
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    return ret;
+}
+
+/* cp / rm into /tmp (%TEMP%\igs-tmp), core/tmpcmd.h; wildcards in the last component */
+static int tmp_cmd(char **argv, int argc)
+{
+    char src[MAX_PATH], dst[MAX_PATH], dir[MAX_PATH], from[MAX_PATH], to[MAX_PATH], *e;
+    WIN32_FIND_DATAA fd;
+    HANDLE h;
+    int i, isdir, ret = 0;
+    DWORD a;
+
+    for (i = 1; i < argc - (argv[0][0] == 'c'); i++) {
+        if (lx_path(argv[i], src, sizeof(src)))
+            return -1;
+        for (e = src + strlen(src); e > src && e[-1] == '\\'; )
+            *--e = 0;
+        snprintf(dir, sizeof(dir), "%s", src);
+        if ((e = strrchr(dir, '\\')))
+            e[1] = 0;
+        else
+            dir[0] = 0;
+        if ((h = FindFirstFileA(src, &fd)) == INVALID_HANDLE_VALUE)
+            continue;
+        do {
+            if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, ".."))
+                continue;
+            snprintf(from, sizeof(from), "%s%s", dir, fd.cFileName);
+            if (argv[0][0] == 'r') {
+                tmp_rm(from);
+                continue;
+            }
+            if (lx_path(argv[argc - 1], dst, sizeof(dst)))
+                return -1;
+            a = GetFileAttributesA(dst);
+            isdir = (a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY)) ||
+                    argv[argc - 1][strlen(argv[argc - 1]) - 1] == '/';
+            for (e = dst + strlen(dst); e > dst && e[-1] == '\\'; )
+                *--e = 0;
+            snprintf(to, sizeof(to), isdir ? "%s\\%s" : "%s", dst, fd.cFileName);
+            tmp_rm(to);
+            ret |= tmp_copy(from, to);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+    return ret;
+}
+
+/*
+ * system(): nothing runs, except cp and rm into /tmp with IGS_NO_SYSTEM
+ * (We Dance Online 2's RAM disk), which run in-process.
+ */
 static int l_system(const char *cmd)
 {
+    char buf[1024], *argv[TMPCMD_MAX];
+    int argc;
+
     if (!cmd)
         return 0;
+    if (getenv("IGS_NO_SYSTEM") && (argc = tmpcmd_parse(cmd, buf, sizeof(buf), argv)))
+        return tmp_cmd(argv, argc) ? 256 : 0;
     LOG("system(\"%s\"): not run", cmd);
     return -1;
 }
 static int l_waitpid(int pid, int *st, int opt) { (void)pid; (void)st; (void)opt; SET_ERRNO(10); return -1; }
 static int l_wait(int *st) { return l_waitpid(-1, st, 0); }
-static void *l_popen(const char *cmd, const char *m) { (void)m; LOG("popen(\"%s\"): not supported", cmd); return NULL; }
-static int l_pclose(void *f) { (void)f; return -1; }
+/* popen: only output the machine provides (igs_machine.vfile "|command") */
+static void *l_popen(const char *cmd, const char *m)
+{
+    char name[512];
+    void *f;
+
+    snprintf(name, sizeof(name), "|%s", cmd ? cmd : "");
+    if (m && m[0] == 'r' && (f = lx_vfile_open(name)))
+        return f;
+    LOG("popen(\"%s\"): not supported", cmd);
+    return NULL;
+}
+static int l_pclose(void *f) { return f ? lx_vfile_close(f) : -1; }
 static int l_getppid(void) { return 1; }
 static int l_getuid(void) { return 0; }
 static int l_setsid(void) { return l_getpid(); }
@@ -1388,6 +1507,39 @@ static void *l_setmntent(const char *f, const char *m) { (void)f; (void)m; retur
 static void *l_getmntent(void *f) { (void)f; return NULL; }
 static int l_endmntent(void *f) { (void)f; return 1; }
 static void *l_getpwnam(const char *n) { (void)n; return NULL; }
+static void *l_getpwuid(int u) { (void)u; return NULL; }
+
+/* We Dance Online 2's network code: no interfaces here */
+static int l_getifaddrs(void **ifa) { *ifa = NULL; SET_ERRNO(L_ENOSYS); return -1; }
+static void l_freeifaddrs(void *ifa) { (void)ifa; }
+
+static int l_ftruncate64(int fd, long long len)
+{
+    int crt = lx_crt_fd(fd);
+
+    if (crt < 0) {
+        SET_ERRNO(9);                      /* EBADF */
+        return -1;
+    }
+    return _chsize_s(crt, len) ? -1 : 0;
+}
+static int l_ftruncate(int fd, long len) { return l_ftruncate64(fd, len); }
+
+/* file times are not kept */
+static int l_utimes(const char *path, const void *tv) { (void)path; (void)tv; return 0; }
+
+/* POSIX basename: the last component, trailing slashes cut */
+static char *l___xpg_basename(char *p)
+{
+    char *e, *s;
+
+    if (!p || !*p)
+        return ".";
+    for (e = p + strlen(p); e > p + 1 && e[-1] == '/'; )
+        *--e = 0;
+    s = strrchr(p, '/');
+    return s && s[1] ? s + 1 : p;
+}
 static int l_setuid(int u) { (void)u; return 0; }
 static int l_ioperm(unsigned long from, unsigned long n, int on)
 {
@@ -1573,7 +1725,8 @@ const struct nsym sys_syms[] = {
     NA(getgid, l_getuid), NA(getegid, l_getuid), N(setsid), N(umask), N(nice), N(uname),
     N(gethostname), N(sysconf), N(getpagesize), N(sync), N(fsync), NA(fdatasync, l_fsync),
     N(getrlimit), N(setrlimit), N(getrusage), N(get_nprocs), NA(get_nprocs_conf, l_get_nprocs),
-    N(setmntent), N(getmntent), N(endmntent), N(getpwnam), N(setuid), N(ioperm),
+    N(setmntent), N(getmntent), N(endmntent), N(getpwnam), N(getpwuid), N(setuid), N(ioperm),
+    N(getifaddrs), N(freeifaddrs), N(ftruncate), N(ftruncate64), N(utimes), N(__xpg_basename),
     NA(shmget, l_shm_fail), N(shmat), NA(shmdt, l_shm_fail), NA(shmctl, l_shm_fail), N(tmpnam),
     N(mremap),
     N(socket), NA(connect, l_net_fail), NA(bind, l_net_fail), NA(listen, l_net_fail),

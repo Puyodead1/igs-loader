@@ -287,13 +287,28 @@ minor `0x85986F65`.  Game addresses are in the assembled `PF` (stripped).
 | Models | `M:M%03d%s` (`M100CN`), `I:S%01d%02d%s` / `O:S…` from types 5 / 6 | `sub_8077D60` |
 | Camera | `/proc/video/dev/video0..4`: `TP6800`, `TP6810`, `OV511`, `IP293 USB Camera` → types 1..4; photo when found and the setting is on | `libIGS_API` `CameraInfo_Read`; `sub_8068470`, `sub_808C2D0` |
 
-**Other E2000 images** (triage only; executable assembled, not run):
+## E2000: We Dance Online 2 (`WeDo-e2000-v1-e64`, Linux 2.4.31)
 
-| Game | Stage 1 / tag | GECA | Head | Pieces | Executable |
-| --- | --- | --- | --- | --- | --- |
-| We Dance Online 2 `WeDo-e2000-v1-e64` | `/bin/tcsh`, `-WeDo` | p1 6693 + `rc0.d` | p2 129918 | `/etc/rc.d/rc<d>.d`, `314256`, skip 299 −3 | `/WeDo/exec/poweron` |
+IGS_SHFS game type `0x8E1673C2`, version `0xB30596F1`, major `0xFD6700AA`,
+minor `0xDB76E782`.  Game addresses are in the unpacked `wedo` (symbols
+kept); launcher addresses in `poweron` (stripped).
 
-Constants: We Dance `0x804B5EC`.  IGS_SHFS game type `0x8E1673C2`.
+| Item | Value | Where |
+| --- | --- | --- |
+| Stage-1 loader | `/bin/tcsh`, tag `-WeDo` | |
+| Stage-2 stub (GECA) | p1 sector 6693, 1 KiB, + `/etc/rc.d/rc0.d` | GECA constants `0x804B5EC` |
+| Executable head | p2 sector 129918, 1 KiB | tcsh |
+| Pieces / skip | `/etc/rc.d/rc<d>.d`, order `314256`, skip 299 KiB, −3 per piece; ramfs `/WeDo/exec`, file `poweron` (the launcher) | GECA |
+| `wedo` packer | UPX 3: l_info version 13, format 12 (linux/elf386), NRV2E (method 8), no filters; 3,220,000 → 8,254,965 bytes; original entry `0x8055670` | `romtool/igs_upx.py` |
+| IGS027A packet RC4 keys | 12 bytes `EncodeGGB   ` (game → chip), `DecodeGGB   ` (chip → game), as Go Go Ball 2 | `protect_vKeyInit` `0x807C580` |
+| Re-key (type 16) | as Go Go Ball 2 | `protect_vEncodeKeySet` `0x807C7B0`, `protect_vDecodeKeySet` `0x807C870` |
+| `/dev/tdcr` cipher | RC4 variant: KSA `t = S[i] + 3; j += key[k] + t + 0x11; S[i] = S[j]; S[j] = t` (32-bit S), standard PRGA on the words' low bytes; key `abcdef123456` (12 bytes) for `system/CFVER` | kernel `cpu/tdcr` fops `0xC05C8B20`: ioctl `0xC01B9B88`, KSA `0xC01B9CB0`, PRGA `0xC01B9DB0`; game `protect_pvMalloc` `0x807CFA0` |
+| `/dev/tdca`, `tdcm`, `tdc3` | modes 2..5 (key `1234` for 2, 3); unused by the game | `protect_prfopen`, `protect_pvMalloc` |
+| BIOS fingerprint | `/dev/roio` as Gold Captain; group 5: `0xF086E` and `0xFEC7C` `i852-W83627HF`, `0xFEC8A` `6A69YILTC-00`, `0xFECDE` `Ph6A69YILT` | `bios_serial_number` `0x852B9A0`, `BIOS_CRC`; launcher table `0x80507C0` |
+| Key bits (type 1) | 0 OK, 1 up, 2 down, 3 right, 4 left, 5 service, 6 test; keypad 15 `1`, 11 `2`, 7 `3`, 16 `4`, 12 `5`, 8 `6`, 17 `7`, 13 `8`, 9 `9`, 18 `*`, 14 `0`, 10 `#` | `m_saKeyMap` `0x8658060`, `key_iTest` `0x805D100` |
+| Region (type 14, u16 at 8) | 1 China, 2 Hong Kong, 3 other, 4 USA, 5 Korea, 6 Thailand, other Taiwan; language 1 CN for 1, 2 EN for 4..6, else TW | `version_iInit` `0x8081420` |
+| Network registration (type 18) | 80 bytes: store id, CPU key, MAC key, net and program versions (`"7"` at 28); copied to SysV shm key 3293 by the launcher | `net_iInit` `0x817F3E0`; `poweron` `main` `0x804A430` |
+| Book-keeping file | `info/bookEnc.bin`: byte `i` XOR `(i − 20)` over 1040 bytes | `book_iIgs036Read` `0x809D760` |
 
 ## Asset cipher (sound/*.wav, action/*.rom)
 

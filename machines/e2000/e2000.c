@@ -65,7 +65,7 @@
 
 #define BAR3_DOORBELL  14
 
-enum { DEV_NONE, DEV_PLX_DRIVER, DEV_PLX_CARD, DEV_ROIO, DEV_PCCARD };
+enum { DEV_NONE, DEV_PLX_DRIVER, DEV_PLX_CARD, DEV_ROIO, DEV_PCCARD, DEV_TDC };
 
 static const struct igs_core *core;
 static const struct e2000_game *game;
@@ -642,6 +642,52 @@ static int roio_byte(uint32_t addr)
     return 0xff;
 }
 
+/* ---- /dev/tdcr ------------------------------------------------------------------ */
+
+/*
+ * The We Dance kernel's file cipher ("cpu/tdcr", major 214): ioctl 1 takes
+ * {mode, key[256], key length at +0x104}, mode 1 only; each read() then
+ * transforms the caller's buffer in place with one continuous stream.  It
+ * is RC4 with a changed key schedule: S holds 32-bit words, and each swap
+ * stores the old S[i] + 3 at S[j], with j += key + S[i] + 0x14.
+ */
+static struct { uint32_t s[256]; uint8_t i, j; int ready; } tdc;
+
+static void tdc_key(const uint8_t *key, uint32_t n)
+{
+    uint32_t i, j = 0, k = 0;
+
+    for (i = 0; i < 256; i++)
+        tdc.s[i] = i;
+    for (i = 0; i < 256 && n; i++) {
+        uint32_t t = tdc.s[i] + 3;
+
+        j = (j + key[k] + t + 0x11) & 0xff;
+        k = k + 1 == n ? 0 : k + 1;
+        tdc.s[i] = tdc.s[j];
+        tdc.s[j] = t;
+    }
+    tdc.i = tdc.j = 0;
+    tdc.ready = 1;
+}
+
+static void tdc_crypt(uint8_t *b, size_t n)
+{
+    size_t k;
+
+    for (k = 0; k < n; k++) {
+        uint32_t x, y;
+
+        tdc.i++;
+        x = tdc.s[tdc.i];
+        tdc.j += x;
+        y = tdc.s[tdc.j];
+        tdc.s[tdc.i] = y;
+        tdc.s[tdc.j] = x;
+        b[k] ^= tdc.s[(x + y) & 0xff];
+    }
+}
+
 /* ---- device files --------------------------------------------------------------- */
 
 static int dev_kind(const char *path)
@@ -654,6 +700,8 @@ static int dev_kind(const char *path)
         return DEV_ROIO;
     if (!strcmp(path, "/dev/pccard0"))
         return DEV_PCCARD;
+    if (!strcmp(path, "/dev/tdcr"))
+        return DEV_TDC;
     return DEV_NONE;
 }
 
@@ -704,6 +752,25 @@ static int dev_ioctl(int fd, unsigned long req, void *arg)
         if (req == ROIO_READ)
             ret = roio_byte((uint32_t)(uintptr_t)arg ^ ROIO_ADDR_XOR) ^ ROIO_DATA_XOR;
         break;
+    case DEV_TDC: {                    /* 1: {mode, key[256], key length} */
+        const uint8_t *a = arg;
+        uint32_t mode, n;
+
+        if (req != 1 || !a) {
+            errno = EINVAL;
+            ret = -1;
+            break;
+        }
+        memcpy(&mode, a, 4);
+        memcpy(&n, a + 0x104, 4);
+        if (mode != 1 || n > 256) {
+            errno = EINVAL;
+            ret = -1;
+            break;
+        }
+        tdc_key(a + 4, n);
+        break;
+    }
     default:
         break;   /* pccard0: decoys and an unused challenge */
     }
@@ -734,6 +801,32 @@ static void *dev_mmap(int fd, size_t len)
 static void dev_close(int fd)
 {
     (void)fd;  /* the card stays alive */
+}
+
+/* reads: /dev/tdcr transforms the buffer; the other devices read as /dev/null */
+static long dev_read(int fd, void *buf, size_t n)
+{
+    long ret = 0;
+
+    pthread_mutex_lock(&s.lock);
+    if (fd_kind(fd) == DEV_TDC) {
+        if (tdc.ready) {
+            tdc_crypt(buf, n);
+            ret = (long)n;
+        } else {
+            errno = EINVAL;
+            ret = -1;
+        }
+    }
+    pthread_mutex_unlock(&s.lock);
+    return ret;
+}
+
+static long dev_write(int fd, const void *buf, size_t n)
+{
+    (void)fd;
+    (void)buf;
+    return (long)n;
 }
 
 static void machine_key(int sym, int down)
@@ -772,6 +865,18 @@ static void machine_status(char *buf, size_t n)
     pthread_mutex_unlock(&s.lock);
 }
 
+static const char *machine_vfile(const char *name)
+{
+    const char *r;
+
+    if (!game->vfile)
+        return NULL;
+    pthread_mutex_lock(&s.lock);
+    r = game->vfile(name);
+    pthread_mutex_unlock(&s.lock);
+    return r;
+}
+
 /* ---- plugin entry --------------------------------------------------------------- */
 
 static const struct igs_machine machine = {
@@ -782,10 +887,13 @@ static const struct igs_machine machine = {
     .ioctl = dev_ioctl,
     .mmap = dev_mmap,
     .close = dev_close,
+    .read = dev_read,
+    .write = dev_write,
     .key = machine_key,
     .draw = machine_draw,
     .file_opened = machine_file_opened,
     .status = machine_status,
+    .vfile = machine_vfile,
 };
 
 static struct e2000_api api = {

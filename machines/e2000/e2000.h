@@ -115,6 +115,9 @@ struct e2000_game {
 
     /* IGS036 message transport: the header layout (E2000_MSG_SR, the default, or E2000_MSG_SD2) */
     int msg_layout;
+
+    /* optional: igs_machine.vfile, files the cabinet's system provides */
+    const char *(*vfile)(const char *name);
 };
 
 /*

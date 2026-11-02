@@ -147,6 +147,9 @@ int core_read(int fd, void *buf, size_t n, long *ret);
 int core_write(int fd, const void *buf, size_t n, long *ret);
 int core_close(int fd);                       /* 1 if the fd stays reserved */
 void core_note_fopen(const char *path);
+const char *core_vfile(const char *name);     /* igs_machine.vfile, or NULL */
+void *lx_vfile_open(const char *name);        /* libc.c: an LFILE of it, or NULL */
+int lx_vfile_close(void *lf);
 void core_key(int sym, int down);
 void core_frame(void);                        /* overlay + pacing, before a swap */
 void core_set_window(void *hwnd);

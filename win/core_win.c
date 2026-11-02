@@ -964,6 +964,12 @@ int core_close(int fd)
     return 0;
 }
 
+/* files the cabinet's system provides (igs_machine.vfile) */
+const char *core_vfile(const char *name)
+{
+    return name && machine && machine->vfile ? machine->vfile(name) : NULL;
+}
+
 /* data files the machine wants to know about (e.g. which stage is loading) */
 void core_note_fopen(const char *path)
 {

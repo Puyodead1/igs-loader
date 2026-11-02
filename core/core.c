@@ -21,6 +21,10 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ftw.h>
+#include <glob.h>
+#include <limits.h>
+#include <netdb.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -29,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <termios.h>
@@ -38,6 +43,7 @@
 
 #include "igs.h"
 #include "font.h"
+#include "tmpcmd.h"
 
 static struct igs_core core;
 static const struct igs_machine *machine;
@@ -654,9 +660,11 @@ static int null_dev(const char *path)
 /*
  * IGS_SET_DIRS: space-separated cabinet directories outside DATA that the
  * game opens by absolute path (e.g. Speed Driver 2's /data); they resolve
- * inside the set ($IGS_SET), as on Windows.
+ * inside the set ($IGS_SET), as on Windows.  /tmp is an overlay, since the
+ * host's libraries use it too (Xauthority): a path resolves inside the set
+ * when it exists there or is being created (create).
  */
-static const char *set_path(const char *path, char *buf, size_t size)
+static const char *set_path_c(const char *path, char *buf, size_t size, int create)
 {
     const char *list = getenv("IGS_SET_DIRS"), *set = getenv("IGS_SET");
 
@@ -667,12 +675,21 @@ static const char *set_path(const char *path, char *buf, size_t size)
         size_t len = end ? (size_t)(end - list) : strlen(list);
 
         if (len && !strncmp(path, list, len) && (path[len] == '/' || !path[len])) {
+            struct stat64 st;
+
             snprintf(buf, size, "%s%s", set, path);
+            if (!create && len == 4 && !strncmp(list, "/tmp", 4) && lstat64(buf, &st))
+                return path;
             return buf;
         }
         list = end ? end + 1 : NULL;
     }
     return path;
+}
+
+static const char *set_path(const char *path, char *buf, size_t size)
+{
+    return set_path_c(path, buf, size, 0);
 }
 
 static int route_open(const char *path, int *fd)
@@ -720,7 +737,7 @@ int open(const char *path, int flags, ...)
 
     if (route_open(path, &fd))
         return fd;
-    path = set_path(path, buf, sizeof(buf));
+    path = set_path_c(path, buf, sizeof(buf), (flags & O_CREAT) != 0);
     va_start(ap, flags);
     mode = va_arg(ap, int);
     va_end(ap);
@@ -736,7 +753,7 @@ int open64(const char *path, int flags, ...)
 
     if (route_open(path, &fd))
         return fd;
-    path = set_path(path, buf, sizeof(buf));
+    path = set_path_c(path, buf, sizeof(buf), (flags & O_CREAT) != 0);
     va_start(ap, flags);
     mode = va_arg(ap, int);
     va_end(ap);
@@ -853,12 +870,31 @@ static void note_fopen(const char *path, void *f)
         machine->file_opened(path);
 }
 
+/* a file the machine provides (igs_machine.vfile), as a memory stream */
+static FILE *vfile_open(const char *name)
+{
+    const char *txt = name && machine && machine->vfile ? machine->vfile(name) : NULL;
+    FILE *f;
+
+    if (!txt || !(f = fmemopen(NULL, strlen(txt) + 1, "w+")))
+        return NULL;
+    fputs(txt, f);
+    rewind(f);
+    if (core.verbose)
+        LOG("%s: provided by the machine", name);
+    return f;
+}
+
 FILE *fopen(const char *path, const char *mode)
 {
     REAL(FILE *, fopen, (const char *, const char *));
     char buf[512];
-    FILE *f = real_fopen(set_path(path, buf, sizeof(buf)), mode);
+    int w = mode && strpbrk(mode, "wa+") != NULL;
+    FILE *f = w ? NULL : vfile_open(path);
 
+    if (f)
+        return f;
+    f = real_fopen(set_path_c(path, buf, sizeof(buf), w), mode);
     note_fopen(path, f);
     return f;
 }
@@ -867,8 +903,12 @@ FILE *fopen64(const char *path, const char *mode)
 {
     REAL(FILE *, fopen64, (const char *, const char *));
     char buf[512];
-    FILE *f = real_fopen64(set_path(path, buf, sizeof(buf)), mode);
+    int w = mode && strpbrk(mode, "wa+") != NULL;
+    FILE *f = w ? NULL : vfile_open(path);
 
+    if (f)
+        return f;
+    f = real_fopen64(set_path_c(path, buf, sizeof(buf), w), mode);
     note_fopen(path, f);
     return f;
 }
@@ -898,16 +938,128 @@ int chmod(const char *path, mode_t mode)
 }
 
 /*
+ * IGS_NO_NET=1: no IP networking for the game, as on Windows (We Dance
+ * Online 2 logs in to its servers, fetches web files and pings).  Unix
+ * sockets stay: X11, Wayland and PulseAudio use them.
+ */
+int socket(int domain, int type, int proto)
+{
+    REAL(int, socket, (int, int, int));
+
+    if (getenv("IGS_NO_NET") && domain != AF_UNIX) {
+        static int logged;
+
+        if (!logged++)
+            LOG("socket(%d, %d, %d): no network (IGS_NO_NET; logged once)", domain, type, proto);
+        errno = EACCES;
+        return -1;
+    }
+    return real_socket(domain, type, proto);
+}
+
+struct hostent *gethostbyname(const char *name)
+{
+    REAL(struct hostent *, gethostbyname, (const char *));
+
+    if (getenv("IGS_NO_NET")) {
+        h_errno = HOST_NOT_FOUND;
+        return NULL;
+    }
+    return real_gethostbyname(name);
+}
+
+int getaddrinfo(const char *node, const char *svc, const struct addrinfo *hints, struct addrinfo **res)
+{
+    REAL(int, getaddrinfo, (const char *, const char *, const struct addrinfo *, struct addrinfo **));
+
+    if (getenv("IGS_NO_NET"))
+        return EAI_FAIL;
+    return real_getaddrinfo(node, svc, hints, res);
+}
+
+static int tmp_rm_one(const char *p, const struct stat64 *st, int flag, struct FTW *ftw)
+{
+    (void)st;
+    (void)ftw;
+    return flag == FTW_DP ? rmdir(p) : unlink(p);
+}
+
+static void tmp_rm(const char *p)
+{
+    struct stat64 st;
+
+    if (lstat64(p, &st))
+        return;
+    if (S_ISDIR(st.st_mode))
+        nftw64(p, tmp_rm_one, 16, FTW_DEPTH | FTW_PHYS);
+    else
+        unlink(p);
+}
+
+/*
+ * cp / rm into the game's /tmp (core/tmpcmd.h), which must resolve inside
+ * the set (IGS_SET_DIRS has /tmp): the host's /tmp is never touched.  A
+ * copy is a symlink to its source.
+ */
+static int tmp_cmd(char **argv, int argc)
+{
+    char tmp[512], dst[512], src[512], abs[PATH_MAX], to[1024], *name, *e;
+    struct stat64 st;
+    glob64_t g;
+    int i, dir, ret = 0;
+    size_t k;
+
+    if (set_path_c("/tmp", tmp, sizeof(tmp), 1) != tmp)
+        return -1;
+    mkdir(tmp, 0755);
+    for (i = 1; i < argc - (argv[0][0] == 'c'); i++) {
+        const char *s = argv[i][0] == '/' ? set_path_c(argv[i], src, sizeof(src), 1) : argv[i];
+
+        if (glob64(s, 0, NULL, &g))
+            continue;
+        for (k = 0; k < g.gl_pathc; k++) {
+            if (argv[0][0] == 'r') {
+                tmp_rm(g.gl_pathv[k]);
+                continue;
+            }
+            if (!realpath(g.gl_pathv[k], abs)) {
+                ret = -1;
+                continue;
+            }
+            set_path_c(argv[argc - 1], dst, sizeof(dst), 1);
+            dir = (stat64(dst, &st) == 0 && S_ISDIR(st.st_mode)) || dst[strlen(dst) - 1] == '/';
+            for (e = dst + strlen(dst); e > dst + 1 && e[-1] == '/'; )
+                *--e = 0;
+            name = strrchr(abs, '/');
+            snprintf(to, sizeof(to), "%s%s", dst, dir ? name : "");
+            tmp_rm(to);
+            if (symlink(abs, to))
+                ret = -1;
+        }
+        globfree64(&g);
+    }
+    return ret;
+}
+
+/*
  * IGS_NO_SYSTEM=1: the game's shell commands configure the cabinet (Speed
  * Driver 2: ifconfig, route, pppoe, hwclock): not run, as on Windows.
- * popen fails, which such games take as "no network".
+ * popen fails, which such games take as "no network".  cp and rm into /tmp
+ * run in-process (tmp_cmd).
  */
 int system(const char *cmd)
 {
     REAL(int, system, (const char *));
     static int logged;
+    char buf[1024], *argv[TMPCMD_MAX];
+    int argc;
 
     if (getenv("IGS_NO_SYSTEM") && cmd) {
+        if ((argc = tmpcmd_parse(cmd, buf, sizeof(buf), argv))) {
+            if (core.verbose)
+                LOG("system(\"%s\"): in-process", cmd);
+            return tmp_cmd(argv, argc) ? 256 : 0;
+        }
         if (logged++ < 8)
             LOG("system(\"%s\"): not run%s", cmd, logged == 8 ? " (no more logged)" : "");
         return 0;
@@ -915,16 +1067,42 @@ int system(const char *cmd)
     return real_system(cmd);
 }
 
+static FILE *vpipe[8];                 /* popen streams the machine provided */
+static int nvpipe;
+
 FILE *popen(const char *cmd, const char *mode)
 {
     REAL(FILE *, popen, (const char *, const char *));
 
     if (getenv("IGS_NO_SYSTEM")) {
+        char name[512];
+        FILE *f;
+
+        snprintf(name, sizeof(name), "|%s", cmd ? cmd : "");
+        if (mode && mode[0] == 'r' && nvpipe < (int)(sizeof(vpipe) / sizeof(vpipe[0])) &&
+            (f = vfile_open(name))) {
+            vpipe[nvpipe++] = f;
+            return f;
+        }
         LOG("popen(\"%s\"): not run", cmd);
         errno = ENOENT;
         return NULL;
     }
     return real_popen(cmd, mode);
+}
+
+int pclose(FILE *f)
+{
+    REAL(int, pclose, (FILE *));
+    int i;
+
+    for (i = 0; i < nvpipe; i++)
+        if (vpipe[i] == f) {
+            vpipe[i] = vpipe[--nvpipe];
+            fclose(f);
+            return 0;
+        }
+    return real_pclose(f);
 }
 
 /* the games set the system clock from the operator menu: not on a desktop */

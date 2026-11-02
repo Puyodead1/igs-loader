@@ -251,12 +251,39 @@ static void after_write(LFILE *lf)
         fflush(lf->f);
 }
 
+/* binary, as on Linux: a "t" (We Dance's "rt") would make the CRT drop the \r of CRLF lines */
 static void mode_b(const char *mode, char *out)
 {
-    snprintf(out, 8, "%.5s", mode);
-    if (!strchr(out, 'b'))
-        strcat(out, "b");
+    int i, n = 0;
+
+    for (i = 0; mode[i] && n < 5; i++)
+        if (mode[i] != 't' && mode[i] != 'b')
+            out[n++] = mode[i];
+    strcpy(out + n, "b");
 }
+
+/* a file the machine provides (igs_machine.vfile): a temporary copy, deleted on close */
+void *lx_vfile_open(const char *name)
+{
+    const char *txt = core_vfile(name);
+    char dir[MAX_PATH], tmp[MAX_PATH];
+    FILE *f;
+
+    if (!txt || !GetTempPathA(sizeof(dir), dir) || !GetTempFileNameA(dir, "igs", 0, tmp))
+        return NULL;
+    if (!(f = fopen(tmp, "w+bD"))) {
+        DeleteFileA(tmp);
+        return NULL;
+    }
+    fputs(txt, f);
+    rewind(f);
+    if (lx_verbose)
+        LOG("%s: provided by the machine", name);
+    return lfile_wrap(f);
+}
+
+static int l_fclose(LFILE *lf);
+int lx_vfile_close(void *lf) { return l_fclose(lf); }
 
 static LFILE *l_fopen(const char *path, const char *mode)
 {
@@ -266,6 +293,12 @@ static LFILE *l_fopen(const char *path, const char *mode)
     if (!path) {
         SET_ERRNO(EINVAL);
         return NULL;
+    }
+    if (!strpbrk(mode, "wa+")) {
+        LFILE *vf = lx_vfile_open(path);
+
+        if (vf)
+            return vf;
     }
     if (!strcmp(path, "/dev/null")) {
         snprintf(win, sizeof(win), "NUL");

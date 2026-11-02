@@ -364,7 +364,7 @@ The superblock is packed and little-endian:
 | Pirate Revenge m101cn | plain | – | `keyindat sship image sound …` |
 | Speed Driver 2 | plain | – | `data io.inf sd2` |
 | Speed Rider m109cnc | Game Image | `0x3AEF3EEC` | `data bin_linux` |
-| We Dance Online 2 | Game Image | `0x8E1673C2` | `net.cfg … wedoCliPatch.exe …` |
+| We Dance Online 2 | Game Image | `0x8E1673C2` | `CFVER net net.cfg wedoCliPatch.exe …` |
 
 All seven E2000 images use the plaintext ROFS (`0xD4AA2681`) on p2.
 
@@ -441,3 +441,15 @@ Ball 2's `pitch`, Panda Family's `/linux/PF`) are decoys that wipe the disks.
 | Speed Driver 2 | `/race/linux` | `/data` |
 | Speed Rider m109cnc | `/sr/Game` | `/rewrite` |
 | We Dance Online 2 | `/WeDo/system` | `/WeDo/linux` (3.6 GB: the game data and `wedo`) |
+
+**We Dance Online 2** assembles only its launcher, `poweron`; the game,
+`wedo` on p4, is packed with stock UPX 3 (linux/elf386, NRV2E).  After the
+stub's ELF and program headers: `l_info` {checksum, `UPX!`, size, version
+13, format 12}, `p_info` {0, file size, block size}, then blocks of
+`b_info` {uncompressed, compressed, method, filter, cto, 0} and their data
+until an uncompressed size of 0.  The first block is the original ELF and
+program headers, then each `PT_LOAD`'s file bytes, then the gaps between
+and after them.  `romtool/igs_upx.py` unpacks it (NRV2B/D/E); the rom set
+keeps `wedo` as dumped and adds the unpacked copy at `/WeDo/exec/wedo`
+(build step `unupx`).  `WeDanceOnline2.md` has the launcher and the boot
+scripts.
