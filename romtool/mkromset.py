@@ -25,6 +25,13 @@ cabinet has it at run time.  The entry's "build" feature says how, as
                           every E1000 partition (p5.. are logical partitions)
     unupx SRC DST         unpack the UPX-packed executable SRC to DST
                           (igs_upx.py; We Dance's wedo), SRC kept as dumped
+    loop SRC DIR          the SquashFS image file SRC replaces DIR's contents,
+                          as a loop mount; the image is left out of the set.
+                          A '*' in SRC matches files, a '*' in DIR is the
+                          match's name without its extension (E2200 ROMS/*.rom)
+    poweron SRC DST       E2200 launcher decrypt: skip SRC's 4-byte key-id
+                          header, FPGA-cipher decrypt with exe_mask, keep the
+                          size from the 12-byte trailer; SRC kept as dumped
 
 Absolute symlinks are made relative to the set root, so the tree works
 wherever it is extracted.  Then the files the entry lists in <dataarea
@@ -225,6 +232,31 @@ class Builder:
     def step_unupx(self, op, src, dst):
         with open(self.path(src), 'rb') as f:
             self.write(dst, igs_upx.unpack(f.read()))
+
+    def step_poweron(self, op, src, dst):
+        igs_fpga_decrypt.MASK = bytes.fromhex(self.sw.feature('exe_mask'))
+        with open(self.path(src), 'rb') as f:
+            out = igs_fpga_decrypt.decrypt(f.read()[4:])
+        # trailer: random word, plain size, key id
+        _, size, _ = struct.unpack_from('<3I', out, len(out) - 12)
+        if size > len(out) - 12 or out[:4] != b'\x7fELF':
+            sys.exit('%s: bad decrypt (wrong exe_mask?)' % src)
+        self.write(dst, out[:size])
+
+    def step_loop(self, op, src, cab):
+        if '*' in os.path.basename(src):
+            d = self.path(os.path.dirname(src))
+            pat = os.path.basename(src).split('*')
+            for n in sorted(os.listdir(d)):
+                if n.startswith(pat[0]) and n.endswith(pat[1]) and len(n) >= len(pat[0]) + len(pat[1]):
+                    self.step_loop(op, os.path.dirname(src) + '/' + n, cab.replace('*', os.path.splitext(n)[0]))
+            return
+        img, d = self.path(src), self.path(cab)
+        if os.path.isdir(d):
+            shutil.rmtree(d)
+        os.makedirs(os.path.dirname(d), exist_ok=True)
+        subprocess.run(['unsquashfs', '-q', '-n', '-d', d, img], check=True, stdout=subprocess.DEVNULL)
+        os.remove(img)
 
     def step_assemble(self, op, dst):
         m = self.sw.manifest()

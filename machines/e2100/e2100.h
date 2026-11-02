@@ -121,6 +121,12 @@ struct e2100_game {
 
     /* optional: a short status line for the window title */
     void (*status)(char *buf, size_t n);
+
+    /*
+     * optional: the asset-cipher mask for a crypt request's 16-byte key
+     * (E2200: one mask per chart key), or NULL for $IGS_ASSET_MASK
+     */
+    const uint8_t *(*asset_mask)(const uint8_t *key);
 };
 
 /* exported by a game plugin .so */

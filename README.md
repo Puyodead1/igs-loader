@@ -1,6 +1,6 @@
 # igs-loader
 
-A loader for IGS E2100, E2000 and E1000 arcade games, with a modular plugin design
+A loader for IGS E2100, E2200, E2000 and E1000 arcade games, with a modular plugin design
 for the arcade hardware. Runs on Linux/WSL (`LD_PRELOAD`) and natively on
 Windows (`igs-loader.exe`).
 
@@ -25,13 +25,14 @@ data is included.
 | `speeddriver2` | Speed Driver 2 | E2000 | ✓ | ✓ |
 | `wedanceonline2` | We Dance Online 2 (offline) | E2000 | ✓ | ✓ |
 | `percussionkids_m105cn` | Percussion Kids (M105CN) | E1000 | ✓ | ✓ |
+| `percussionmaster3_m107fa` | Percussion Master 3 (M107FA) | E2200 | ✓ | ✓ |
 
 Where the protection chip runs game logic whose code has not been dumped
 (Ocean Party's odds, Scratch's prizes, the E2000 games' weapon tables and
 game flow, Speed Rider's AI riders and lost archive bytes, Speed Driver 2's
-screens and AI throttle, all of Percussion Kids' game flow and judging), the
-plugin reconstructs or invents it, so gameplay may not be completely
-identical to the real cabinet.
+screens and AI throttle, all of Percussion Kids' game flow and judging,
+Percussion Master 3's screen flow), the plugin reconstructs or invents it,
+so gameplay may not be completely identical to the real cabinet.
 
 ## Getting the loader
 
@@ -50,7 +51,8 @@ where the cabinet has it at run time. A set can be:
 - an archive `<id>.7z` or `<id>.zip`, extracted once into the cache.
 
 The games, their settings and the hashes of the source dumps are in the
-software lists `hash/e2100.xml`, `hash/e2000.xml` and `hash/e1000.xml`.
+software lists `hash/e2100.xml`, `hash/e2200.xml`, `hash/e2000.xml` and
+`hash/e1000.xml`.
 
 ### Building sets from your dumps
 
@@ -151,7 +153,7 @@ rate. Useful environment variables:
 
 | Variable | Effect |
 | --- | --- |
-| `IGS_FULLSCREEN=1` | keep the game's fullscreen mode (default: windowed) |
+| `IGS_FULLSCREEN=1` | keep the game's fullscreen mode (default: windowed); on Windows an X11 game's frame is scaled to the monitor |
 | `IGS_FPS_CAP=n` | frame-rate cap (default 60, `0` = off) |
 | `IGS_FPS=1` | log the frame rate every 5 s |
 | `IGS_TITLE=text` | window title instead of the game's name (`0` keeps the game's own) |
@@ -187,7 +189,6 @@ preloaded libraries, all statically linked.
 
 ## Roadmap
 
-- Percussion Master 3 (E2200).
 - We Dance Online 2: a local game server in the plugin (accounts, QR
   login, saved profiles, rankings, versus between instances); protocol in
   `docs/WeDanceOnline2.md`.
@@ -204,16 +205,17 @@ Controls and per-game settings are on the [wiki](https://github.com/Puyodead1/ig
 | [IGS_E2000.md](docs/IGS_E2000.md) | E2000 hardware: PLX9030 interface, IGS036 shared-RAM, IGS027A packet and IGS036 message and packet transports, command sets |
 | [IGS_SOUND_CRYPTO.md](docs/IGS_SOUND_CRYPTO.md) | the FPGA asset cipher used on sounds and sprite banks |
 | [IGS_E1000.md](docs/IGS_E1000.md) | E1000 hardware: the Geode GX2 board, the IGS027A's command protocol |
-| [IGS_ROFS_REVERSE_ENGINEERING.md](docs/IGS_ROFS_REVERSE_ENGINEERING.md) | the disk formats: E2100 `igs_rofs`, E2000 ROFS and IGS_SHFS, boot chains |
+| [IGS_E2200.md](docs/IGS_E2200.md) | E2200: the E2100 PC side, the IGS036 framing and messages, the drum I/O board, chart encryption, the screen flow |
+| [IGS_ROFS_REVERSE_ENGINEERING.md](docs/IGS_ROFS_REVERSE_ENGINEERING.md) | the disk formats: E2100 and E2200 `igs_rofs`, E2000 ROFS and IGS_SHFS, boot chains |
 | [IGS_KEYS.md](docs/IGS_KEYS.md) | every key, mask and constant per game |
-| [HarpoonLagoon.md](docs/HarpoonLagoon.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md), [PirateRevenge.md](docs/PirateRevenge.md), [GoGoBall2.md](docs/GoGoBall2.md), [SpeedRider.md](docs/SpeedRider.md), [PandaFamily.md](docs/PandaFamily.md), [SpeedDriver2.md](docs/SpeedDriver2.md), [WeDanceOnline2.md](docs/WeDanceOnline2.md), [PercussionKids.md](docs/PercussionKids.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
+| [HarpoonLagoon.md](docs/HarpoonLagoon.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md), [PirateRevenge.md](docs/PirateRevenge.md), [GoGoBall2.md](docs/GoGoBall2.md), [SpeedRider.md](docs/SpeedRider.md), [PandaFamily.md](docs/PandaFamily.md), [SpeedDriver2.md](docs/SpeedDriver2.md), [WeDanceOnline2.md](docs/WeDanceOnline2.md), [PercussionKids.md](docs/PercussionKids.md), [PercussionMaster3.md](docs/PercussionMaster3.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
 
 ## Repository layout
 
 | Path | What |
 | --- | --- |
 | `core/` | the Linux `LD_PRELOAD` core: hooks for files, devices, SDL, X11/GLX, OSS audio, overlay, frame cap |
-| `machines/e2100`, `machines/e2000`, `machines/e1000` | the boards: ASIC transports, devices, protection handshakes; E1000's Geode graphics |
+| `machines/e2100`, `machines/e2200`, `machines/e2000`, `machines/e1000` | the boards: ASIC transports, devices, protection handshakes; E1000's Geode graphics; E2200 is E2100's under its own name |
 | `games/<game>/` | per-game plugins: inputs, coins, the protection chip's game logic |
 | `games/heroofrobots/hero-nfc*.c` | `hero-nfc` and `hero-nfc-gui.exe` (Windows), the Hero of Robots NFC card tool (experimental; [HeroOfRobots.md](docs/HeroOfRobots.md#card-tool-experimental)) |
 | `win/` | the native Windows loader: ELF loader, glibc shims on Win32, SDL 1.2 and GL layers |

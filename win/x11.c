@@ -765,6 +765,16 @@ static LRESULT CALLBACK x_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     return DefWindowProcA(h, msg, wp, lp);
 }
 
+/*
+ * IGS_FULLSCREEN: a top-level override-redirect window (a game's fullscreen
+ * window) covers the monitor; the game keeps its own size (the X geometry,
+ * IGS_SCREEN) and the frame is scaled to the monitor at the swap.
+ */
+static int fullscreen_top(const struct xwin *w)
+{
+    return w->override && !w->parent && lx_env("IGS_FULLSCREEN", NULL);
+}
+
 static LRESULT ui_op(struct uireq *r)
 {
     struct xwin *w = r->w;
@@ -790,6 +800,11 @@ static LRESULT ui_op(struct uireq *r)
             y = w->y;
             cw = w->w;
             ch = w->h;
+            if (fullscreen_top(w)) {           /* the monitor; the frame is scaled to it */
+                x = y = 0;
+                cw = GetSystemMetrics(SM_CXSCREEN);
+                ch = GetSystemMetrics(SM_CYSCREEN);
+            }
         } else {
             style = TOP_STYLE;
             SetRect(&rc, 0, 0, w->w, w->h);
@@ -835,7 +850,9 @@ static LRESULT ui_op(struct uireq *r)
     case OP_GEOMETRY:
         if (!w->hwnd)
             return 0;
-        if (w->parent || w->override) {
+        if (fullscreen_top(w)) {
+            MoveWindow(w->hwnd, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), TRUE);
+        } else if (w->parent || w->override) {
             MoveWindow(w->hwnd, w->x, w->y, w->w, w->h, TRUE);
         } else {
             SetRect(&rc, 0, 0, w->w, w->h);
@@ -1023,9 +1040,15 @@ static void *l_XOpenDisplay(const char *name)
     static char vendor[] = "IGS loader", dname[] = ":0.0";
     static XPixFmt fmts[3] = { { 1, 1, 32 }, { 8, 8, 32 }, { 24, 32, 32 } };
     static uint32_t gc_dummy[24];
-    int w = GetSystemMetrics(SM_CXSCREEN), h = GetSystemMetrics(SM_CYSCREEN);
+    int w = GetSystemMetrics(SM_CXSCREEN), h = GetSystemMetrics(SM_CYSCREEN), sw, sh;
+    const char *size = lx_env("IGS_SCREEN", NULL);
 
     (void)name;
+    /* IGS_SCREEN=WxH: the cabinet's screen size (core.c, x11_cabinet_screen) */
+    if (size && sscanf(size, "%dx%d", &sw, &sh) == 2 && sw > 0 && sh > 0) {
+        w = sw;
+        h = sh;
+    }
     x_start();
     d = calloc(1, sizeof(*d));
     InitializeCriticalSection(&d->lock);
@@ -2628,6 +2651,149 @@ static void l_glXDestroyContext(void *d, struct glxctx *x)
     free(x);
 }
 
+/*
+ * A window larger than the game's frame (IGS_FULLSCREEN): the game drew
+ * w x h at the bottom left of the back buffer; copy that to a texture and
+ * draw it over the whole window, aspect kept, all GL state saved.
+ */
+#define GL_FRAMEBUFFER_BINDING_ 0x8ca6
+#define GL_FRAMEBUFFER_ 0x8d40
+#define GL_CURRENT_PROGRAM__ 0x8b8d
+#define GL_ACTIVE_TEXTURE__ 0x84e0
+#define GL_TEXTURE0__ 0x84c0
+#define GL_PIXEL_PACK_BUFFER_ 0x88eb
+#define GL_PIXEL_UNPACK_BUFFER_ 0x88ec
+
+static void scale_frame(struct xwin *w)
+{
+    static void (WINAPI *use_program)(unsigned);
+    static void (WINAPI *bind_fbo)(unsigned, unsigned);
+    static void (WINAPI *active_texture)(unsigned);
+    static void (WINAPI *bind_buffer)(unsigned, unsigned);
+    static GLuint tex;
+    static int tw, th, looked;
+    int cw, ch, dw, dh, prog = 0, fbo = 0, active = 0, bound = 0, pack = 0, unpack = 0, i;
+    RECT rc;
+
+    if (!w->hwnd || !GetClientRect(w->hwnd, &rc))
+        return;
+    cw = rc.right;
+    ch = rc.bottom;
+    if (w->w <= 0 || w->h <= 0 || (cw <= w->w && ch <= w->h))
+        return;
+    if (!looked) {
+        looked = 1;
+        *(void **)&use_program = (void *)wglGetProcAddress("glUseProgram");
+        *(void **)&bind_fbo = (void *)wglGetProcAddress("glBindFramebufferEXT");
+        *(void **)&active_texture = (void *)wglGetProcAddress("glActiveTexture");
+        *(void **)&bind_buffer = (void *)wglGetProcAddress("glBindBuffer");
+    }
+    if (use_program)
+        glGetIntegerv(GL_CURRENT_PROGRAM__, &prog);
+    if (bind_fbo)
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING_, &fbo);
+    if (active_texture)
+        glGetIntegerv(GL_ACTIVE_TEXTURE__, &active);
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+    if (use_program)
+        use_program(0);
+    if (bind_fbo && fbo)
+        bind_fbo(GL_FRAMEBUFFER_, 0);
+    if (bind_buffer) {
+        glGetIntegerv(0x88ed, &pack);         /* GL_PIXEL_PACK_BUFFER_BINDING */
+        glGetIntegerv(0x88ef, &unpack);       /* GL_PIXEL_UNPACK_BUFFER_BINDING */
+        bind_buffer(GL_PIXEL_PACK_BUFFER_, 0);
+        bind_buffer(GL_PIXEL_UNPACK_BUFFER_, 0);
+    }
+    for (i = 3; i >= 0; i--) {
+        if (active_texture)
+            active_texture(GL_TEXTURE0__ + i);
+        else if (i)
+            continue;
+        glDisable(GL_TEXTURE_1D);
+        glDisable(GL_TEXTURE_2D);
+        glDisable(GL_TEXTURE_GEN_S);
+        glDisable(GL_TEXTURE_GEN_T);
+    }
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
+    glDisable(0x8620);                       /* GL_VERTEX_PROGRAM_ARB */
+    glDisable(0x8804);                       /* GL_FRAGMENT_PROGRAM_ARB */
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_FOG);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_ALPHA_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(1, 1, 1, 1);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glReadBuffer(GL_BACK);
+    glDrawBuffer(GL_BACK);
+    if (!tex)
+        glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    if (tw != w->w || th != w->h) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w->w, w->h, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+        tw = w->w;
+        th = w->h;
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, w->w, w->h);
+    /* the largest w:h rectangle that fits, centred; black around it */
+    dw = cw;
+    dh = (int)((long long)cw * w->h / w->w);
+    if (dh > ch) {
+        dh = ch;
+        dw = (int)((long long)ch * w->w / w->h);
+    }
+    glViewport(0, 0, cw, ch);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glViewport((cw - dw) / 2, (ch - dh) / 2, dw, dh);
+    glMatrixMode(GL_TEXTURE);
+    glPushMatrix();
+    glLoadIdentity();
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    glEnable(GL_TEXTURE_2D);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    glColor4f(1, 1, 1, 1);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0); glVertex2f(-1, -1);
+    glTexCoord2f(1, 0); glVertex2f(1, -1);
+    glTexCoord2f(1, 1); glVertex2f(1, 1);
+    glTexCoord2f(0, 1); glVertex2f(-1, 1);
+    glEnd();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_TEXTURE);
+    glPopMatrix();
+    glBindTexture(GL_TEXTURE_2D, bound);
+    glPopClientAttrib();
+    glPopAttrib();
+    if (active_texture)
+        active_texture(active ? active : GL_TEXTURE0__);
+    if (bind_buffer) {
+        bind_buffer(GL_PIXEL_PACK_BUFFER_, pack);
+        bind_buffer(GL_PIXEL_UNPACK_BUFFER_, unpack);
+    }
+    if (bind_fbo && fbo)
+        bind_fbo(GL_FRAMEBUFFER_, fbo);
+    if (use_program)
+        use_program(prog);
+}
+
 /* the frame: the core's overlay, IGS_SHOT and frame cap, then the swap */
 static void l_glXSwapBuffers(void *d, XID draw)
 {
@@ -2635,8 +2801,10 @@ static void l_glXSwapBuffers(void *d, XID draw)
 
     (void)d;
     core_frame();
-    if (w && w->hdc)
+    if (w && w->hdc) {
+        scale_frame(w);
         SwapBuffers(w->hdc);
+    }
 }
 
 static void *l_glXGetCurrentContext(void) { return cur_ctx ? (void *)cur_ctx : (void *)wglGetCurrentContext(); }

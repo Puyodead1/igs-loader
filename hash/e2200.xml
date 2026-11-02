@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<!--
+IGS E2200 games: the software list of machine "e2200" (machines/e2200, the
+E2100 board's PC side).  Format: see hash/e2100.xml and docs/IGS_LOADER.md,
+"Rom sets".
+-->
+<softwarelist name="e2200" description="IGS E2200">
+
+	<software name="percussionmaster3_m107fa">
+		<description>Percussion Master 3 (M107FA)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M107FA"/>
+		<info name="usage" value="docs/PercussionMaster3.md; tunables PM3_VELOCITY (a key press's drum sensor level, 160)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="percussionmaster3"/>
+			<!-- /etc/X11/IGS: cd /PM3/exe; /PM3.bin/pm3 (decrypted by /PM3.bin/PowerOn) -->
+			<feature name="data" value="/PM3/exe"/>
+			<feature name="binary" value="/PM3.bin/pm3"/>
+			<!-- its own Ogre 1.6.1, Cg, zziplib and the NVPerfSDK stub, libXfont 1 and
+			     libpng 1.2 from the root fs.  Host i386 Mesa. -->
+			<feature name="libs" value="/PM3/data/so/libOgreMain-1.6.1.so /PM3/data/so/libCg.so /PM3/data/so/libNVPerfSDK.so.1 /PM3/data/so/libzzip-0.so.13 /usr/lib/libXfont.so.1 /usr/lib/libpng12.so.0"/>
+			<!-- Ogre uses the system libX11 from several threads: keep its locks;
+			     no IP network, as on Windows (the game server is gone); its Cg
+			     shaders want NVIDIA's vp40 / fp40 profiles; the cabinet's X runs 1280x720
+			     (etc/X11/xorg.conf), which its fullscreen window takes as its size -->
+			<feature name="env" value="IGS_X11_LOCKS=1 IGS_NO_NET=1 IGS_CG_ARB=1 IGS_SCREEN=1280x720"/>
+			<feature name="rofs_profile" value="pmaster3"/>
+			<feature name="rofs_key" value="E2200-PMaster-V3"/>
+			<!-- the FPGA cipher mask of PowerOn's key 5, which pm3 is encrypted with -->
+			<feature name="exe_mask" value="3a0e2d44e578a0a81370dd147cbf2e19"/>
+			<!-- the kernel mounts p2 as root; /etc/X11/IGS mounts p3 on /PM3 and p4 on
+			     /PM3/rewrite; /bin/mountloop loop-mounts /PM3/ROMS/*.rom -->
+			<feature name="build" value="root p2; mount p3 /PM3; loop /PM3/ROMS/exe.rom /PM3/exe; loop /PM3/ROMS/data.rom /PM3/data; loop /PM3/ROMS/*.rom /PM3/media/*; mount p4 /PM3/rewrite; poweron /PM3/exe/pm3 /PM3.bin/pm3"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_percussionmaster3" sha1="23ba808748bab3a515096765b16e116f10cb3576"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/PM3.bin/pm3" size="26092192" sha1="2b8c5c37f65267ccee2fa513874ce1af2e11b4c1"/>
+			</dataarea>
+		</part>
+	</software>
+
+</softwarelist>

@@ -1606,6 +1606,88 @@ static int sdl_key(unsigned long ks)
 }
 
 /*
+ * IGS_SCREEN=WxH: the cabinet's X screen size.  A game that asks for a
+ * fullscreen window without a mode switch gets the screen's size (Ogre 1.6's
+ * GLX window, Percussion Master 3), while its menus keep their own layout
+ * for the cabinet's mode; the screen then reports the cabinet's size (struct
+ * Screen on i386: width at 12, height at 16, millimetres at 20 and 24).
+ */
+static void x11_cabinet_screen(void *dpy)
+{
+    REAL(int *, XScreenOfDisplay, (void *, int));
+    REAL(int, XDefaultScreen, (void *));
+    const char *v = getenv("IGS_SCREEN");
+    int w, h, *scr;
+
+    if (!dpy || !v || sscanf(v, "%dx%d", &w, &h) != 2 || w <= 0 || h <= 0 ||
+        !real_XScreenOfDisplay || !real_XDefaultScreen)
+        return;
+    scr = real_XScreenOfDisplay(dpy, real_XDefaultScreen(dpy));
+    if (!scr)
+        return;
+    scr[3] = w;
+    scr[4] = h;
+    scr[5] = w * 254 / 960;
+    scr[6] = h * 254 / 960;
+}
+
+/* ...and no RandR, whose modes are the host's (Ogre then takes the screen's size) */
+int XQueryExtension(void *dpy, const char *name, int *op, int *ev, int *err)
+{
+    REAL(int, XQueryExtension, (void *, const char *, int *, int *, int *));
+
+    if (name && !strcmp(name, "RANDR") && getenv("IGS_SCREEN"))
+        return 0;
+    return real_XQueryExtension(dpy, name, op, ev, err);
+}
+
+/*
+ * A window manager's fullscreen state (_NET_WM_STATE_FULLSCREEN, as a
+ * property or a client message) makes WSLg size the game's window to the
+ * desktop, which Ogre then takes for its frame while its menus keep the
+ * cabinet's layout.  Windowed by default, as SDL's fullscreen flag;
+ * IGS_FULLSCREEN=1 keeps the requests.
+ */
+static int is_atom(void *dpy, unsigned long atom, const char *name)
+{
+    REAL(char *, XGetAtomName, (void *, unsigned long));
+    REAL(int, XFree, (void *));
+    char *n = atom && real_XGetAtomName ? real_XGetAtomName(dpy, atom) : NULL;
+    int same = n && !strcmp(n, name);
+
+    if (n && real_XFree)
+        real_XFree(n);
+    return same;
+}
+
+int XChangeProperty(void *dpy, unsigned long w, unsigned long prop, unsigned long type, int format,
+                    int mode, const unsigned char *data, int n)
+{
+    REAL(int, XChangeProperty, (void *, unsigned long, unsigned long, unsigned long, int, int,
+                                const unsigned char *, int));
+    int i;
+
+    if (!getenv("IGS_FULLSCREEN") && format == 32 && data && is_atom(dpy, prop, "_NET_WM_STATE"))
+        for (i = 0; i < n; i++)
+            if (is_atom(dpy, ((const unsigned long *)data)[i], "_NET_WM_STATE_FULLSCREEN"))
+                return 1;
+    return real_XChangeProperty(dpy, w, prop, type, format, mode, data, n);
+}
+
+int XSendEvent(void *dpy, unsigned long w, int propagate, long mask, void *ev)
+{
+    REAL(int, XSendEvent, (void *, unsigned long, int, long, void *));
+    /* XClientMessageEvent on i386: type at 0, message_type at 20, data.l at 28 */
+    const unsigned long *e = ev;
+
+    if (!getenv("IGS_FULLSCREEN") && e && *(const int *)ev == 33 /* ClientMessage */ &&
+        is_atom(dpy, e[5], "_NET_WM_STATE") &&
+        (is_atom(dpy, e[8], "_NET_WM_STATE_FULLSCREEN") || is_atom(dpy, e[9], "_NET_WM_STATE_FULLSCREEN")))
+        return 1;
+    return real_XSendEvent(dpy, w, propagate, mask, ev);
+}
+
+/*
  * libX11 >= 1.8 turns on its display locks for every client.  SDL 1.2 built
  * into a 2008 game carries Xlib internals of its own (extension code with
  * LockDisplay macros) and deadlocks in the first XMatchVisualInfo.  Clear the
@@ -1622,6 +1704,7 @@ void *XOpenDisplay(const char *name)
         *(void **)((char *)dpy + 1220) = NULL;
         *(void **)((char *)dpy + 1232) = NULL;
     }
+    x11_cabinet_screen(dpy);
     return dpy;
 }
 
@@ -1910,7 +1993,9 @@ const unsigned char *glGetString(unsigned name)
         on = getenv("IGS_CG_ARB") && atoi(getenv("IGS_CG_ARB"));
     if (!on || name != 0x1F03 || !s)          /* GL_EXTENSIONS */
         return s;
-    if (!ext && asprintf(&ext, "%s GL_NV_vertex_program3 GL_NV_fragment_program2", (const char *)s) < 0)
+    /* the trailing space: older GLEW (Ogre 1.6's RenderSystem_GL) never
+       matches the string's last name */
+    if (!ext && asprintf(&ext, "%s GL_NV_vertex_program3 GL_NV_fragment_program2 ", (const char *)s) < 0)
         ext = NULL;
     return ext ? (const unsigned char *)ext : s;
 }

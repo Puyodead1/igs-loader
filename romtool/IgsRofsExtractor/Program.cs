@@ -96,6 +96,16 @@ sealed record RofsProfile(
             Table: (0x50, 1, 0xE1ECA651),
             EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
             PageTableWord: 1),
+        // Percussion Master 3 (PM3-OS, E2200).  Ocean Party's design; XORs
+        // are the init constants - 0xED2E; page ends are word 1.
+        new("pmaster3", "E2200-PMaster-V3",
+            MagicBlock: 0xD8, MagicWord: 1,
+            FirstRecord: 0x150, HeaderSize: 0x78, ModeOffset: 0x74,
+            NameLength: (0x20, 1, 0x498C027F),
+            Size: (0x50, 3, 0xCD83B702),
+            Table: (0x40, 0, 0xEC285CDA),
+            EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
+            PageTableWord: 1),
     ];
 }
 

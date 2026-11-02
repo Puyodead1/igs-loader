@@ -46,6 +46,11 @@ PROFILES = {
     'scratch': ('SwinV1.00Scratch', 0x74, 2, 0x150, 0x78, 0x72,
                 (0x00, 3, 0x2C858D5A), (0x30, 1, 0x2C858D5A), (0x50, 1, 0xE1ECA651),
                 True, True, True, 1),
+    # Percussion Master 3 (PM3-OS, E2200).  Ocean Party's design; XORs are
+    # the init constants - 0xED2E; page ends are word 1.
+    'pmaster3': ('E2200-PMaster-V3', 0xD8, 1, 0x150, 0x78, 0x74,
+                 (0x20, 1, 0x498C027F), (0x50, 3, 0xCD83B702), (0x40, 0, 0xEC285CDA),
+                 True, True, True, 1),
 }
 
 

@@ -337,6 +337,36 @@ Game addresses are in `pkids` (symbols kept).  Details: `IGS_E1000.md`.
 | Chart event | u32: bits 0..13 tick (1/8 beat; `0x3FFF` ends a track), 14..23 wav index, 24..31 0 note / 1 roll start / 2 roll end | `song_vSongDataInit` `0x8067344` |
 | Record files | `record/<name>_<rank>_<n>.rec`: 0x66-byte header, then `WAVEDIR `, `TREC1   `, `TREC2   `, `TRECBG  `, ` FILEEND` chunks (none on the disk) | `record_vRecordReadFromFile` `0x80714E0` |
 
+## E2200: Percussion Master 3 M107FA (`PM3-OS`, Linux 2.6.32.8)
+
+Details: `IGS_E2200.md`, the E2200 part of
+`IGS_ROFS_REVERSE_ENGINEERING.md`.  Kernel addresses are in the
+decompressed `PM3-OS`, launcher addresses in the decrypted `PowerOn`, game
+addresses in the decrypted `pm3` (dynamic symbols).
+
+| Item | Value | Where |
+| --- | --- | --- |
+| ROFS key literal | `E2200-PMaster-V3` (VA `0xC1931EB4`); effective AES key `11 4C 8C 8C 18 16 A8 26 61 73 74 65 E4 5A AC 66` | `init_igs_rofs_fs` `0xC1CF0D59` |
+| ROFS init constants | C0 `0xCD84A430`, C1 `0xEC294A08`, C2 `0x498CEFAD`, C3 `0xE3D904E5`, C4 `0xF78A2A4E` (stored at `0xC1D42DA8..DB8`) | same |
+| ROFS delta | `0xED2E` | `sub_C101FD38` |
+| ROFS field XORs | name length `dec(R+0x20)[1] ^ 0x498C027F` (C2 − delta), size `dec(R+0x50)[3] ^ 0xCD83B702` (C0 − delta), table `dec(R+0x40)[0] ^ 0xEC285CDA` (C1 − delta; C4 + delta `0xF78B177C` behind a flag) | readdir `sub_C10205E5`, `sub_C101FD38`, inode `sub_C101FE06` |
+| ROFS record checks | `dec(R)[3] ^ C1 == 0xA5A5A5A5`, `dec(R+0x60)[1] ^ C2 == 0xAA55EB48` | `sub_C101FE06` |
+| ROFS superblock | magic `dec(0xD8)[1]`; `dec(0xB8)[2] ^ C0 == 0x21ADEE38`, `dec(0xE8)[1] ^ 0x8426AAD4 == 0x49A20EE4`, `dec(0x40)[3] ^ C3 == 0x14532EAB`, `dec(0xA0)[1] ^ C2 == 0xAA55EB48`; root mode at `+0xB4`, features at `+0xFC` | mount `sub_C1020225` |
+| ROFS layout | Ocean Party's: header `0x78`, mode `+0x74` (uid `+0x70`, gid `+0x72`), names AES-CBC (zero IV), page table one encrypted block per page (end offset word 1), zlib headers blanked; root offset `0x150` or `0x350` | readpage `sub_C1020A56`, inflate `sub_C1020BF0` |
+| Launcher decrypt | `/bin/uudecode /PM3/PowerOn /PM3.bin/PowerOn Hello-Percussion`; FPGA mask `2b36333bfe90358941f1c3dbc5399ea3` (from the ELF header) | kernel `sub_C100133A`, strings `0xC1922932` |
+| Executable decrypt | `PowerOn` key table (16 bytes × 10, repeated for ids 10..15) at `0x804FC20`; key id bits: byte 0 bit 3, byte 1 bit 2, byte 2 bit 1, byte 3 bit 6; `pm3` key id 5, mask `3a0e2d44e578a0a81370dd147cbf2e19`; trailer {random, size, id} | `sub_804B61D`, `main` `0x804C22A` |
+| `PowerOn` keys 0..9 | `4e67d598e73e6a6f671d87cda713b27c`, `332d473d27110272eef7a518e51f4a62`, `66118fad6703128c5a2dffb25c721e5e`, `3e07554807ae5a1f3a9d3e2278912e0e`, `3a8d7e5277a2ce3e9e687598e6eeca2f`, `45578593075e675fc47df93279029e36`, `e74d67ced71bb36c43628538ef3b2a66`, `618f87546544753d575a87fd37134274`, `62ed67fdaf6322bcc2edf63ecc6243ae`, `61603e59819475d3c00d7e92769947ce` | `0x804FC20` |
+| Chart masks, keys 0..9 | `3258217a79e88261f139e5adc73d611a`, `d882845fd9c684ab158ff1281df44a03`, `890fe518073ea7283532720c5696da58`, `161de4f0b210bc08d6227528d6ffa952`, `958066ea688ce5d9eece582a5fe95a51`, `3a0e2d44e578a0a81370dd147cbf2e19`, `1803a73fa9fee3e0282df9209d249392`, `9adab82c2da8a0ea30bf41a3663c637a`, `98cfef1ac9b689a452ece22a53945a55`, `cf97d6c82769984790a0e170729b1b31` (59, 62, 96, 91, 79, 82, 98, 104, 78, 65 charts) | charts' statistics and trailers |
+| Chart key id bits | word 0: bit 4, bit 10, bit 17, bit 29 (weights 1, 2, 4, 8) | `AES::iAESDecrypt` `0x86252C0` |
+| Chart cut plaintext | `#------ BASE DAT` (every chart's first 16 bytes) | `BandScript::iLoadBandFile` `0x85ED050` |
+| `SongList.enc` key | `3e07d297578e4a7f471d83c86793326c` (first 16 of 32 bytes); mask `1618a1da69c82069a53bc92cc6782552` | `0x98A2A80`, `BandScript::iLoadList` `0x85ECB60` |
+| IGS036 upload key | `PM3FA Start Now!`; image `A36ROM` (`0x98A2AC0`, `0x80000` bytes) | `Igs036P2A::Igs036P2A` `0x8628FA0` |
+| IGS036 channel RC4 | key schedule on 12 bytes `PM3   IGSA36`, then on the game's 8 random bytes (message 0); standard RC4, one S-box kept, `i`/`j` reset per message | `Game::iIgs036_CmdProcessSend` `0x85E35B0`; RC4 `0x85E3020` / `0x85E30B0` |
+| Frame checks | game → chip: `+0` low byte = `r` + data sum, `+4` = `r`; chip → game: `+0` = `echo` + data sum, `+4` = `echo`, `+8` low nibble = next offset | `Igs036P2A::SendData` `0x8628AD0`, `ReadData` `0x8628CF0` |
+| I/O board record | 20 bytes, byte 19 = sum of 0..18; coin bit 26, service 25, test 24 | `IOBoard::CheckRecvDataChecksum` `0x85F9490` |
+| Developer keys (OIS) | key-in bits 0..23 `6 7 8 9 10 12 11 13 73 55 82 181 2 3 4 5 79 80 81 75 76 77 71 72`, 24..26 `20 47 46`; sensors 0..11 `30 33 17 31 32 18 36 39 23 37 38 24` | `0x95328E0`, `0x95328C8`, `0x9532940` |
+| Judge lines | sensors per line: 3+4 (surface), 2+5 (rims), 0, 1 | `StagePy::CheckLineHit` `0x8554F50`, table `0x952B0A0` |
+| Settings | `rewrite/SettingInfo.dat` (84 bytes): byte 57 coins per credit, 58 free play | `SettingData::SettingData` `0x85B0150` |
 ## Asset cipher (sound/*.wav, action/*.rom)
 
 Details: `IGS_SOUND_CRYPTO.md`.

@@ -25,6 +25,7 @@ Status (2026-11-01), under WSLg:
 | Speed Driver 2 | E2000 | attract (live show), coins, mode / car / gearbox / course select, races with rivals, ranking and name entry, continue, game over, operator menu; IGS036 message transport (Speed Driver 2 layout), the chip's screens rebuilt from the game's art, layout invented (`SpeedDriver2.md`) |
 | We Dance Online 2 | E2000 | offline: attract, coins, song select, songs with judgements and score, results, game over, back to attract, operator menu; UPX-packed executable unpacked by the set builder, IGS027A transport (I/O and settings), no network (`WeDanceOnline2.md`) |
 | Percussion Kids M105CN | E1000 | logo, coin page, coins, select mode and song, songs with the drums judged, result, second song, game over, back to the coin page, operator menu; uClibc executable on glibc, Geode GX2 2D engine emulated, the IGS027A's whole game rebuilt (charts from the executable), no attract demo (`PercussionKids.md`) |
+| Percussion Master 3 M107FA | E2200 | attract (logo, coin page videos, demo song, ranking), coins, guest login, select type, mode, level and song, rounds with the drums judged, results, final result, ranking, back to the logo, operator menu; E2100 request/response transport with its own framing, the IGS036's screen flow rebuilt, chart keys and cut bytes recovered from the dump, no camera (`PercussionMaster3.md`) |
 
 They run at about 56–60 fps (60 fps cap) on Mesa llvmpipe, with continuous
 sound through PulseAudio (WSLg).
@@ -49,12 +50,13 @@ sets): `harpoonlagoon_m107us`, `harpoonlagoon_m001uswa`,
 `harpoonlagoon_m200uswa`, `oceanparty_md105cn`, `scratch_m101cn`,
 `heroofrobots_m100fa`, `goldcaptain`, `piraterevenge_m101cn`, `gogoball2_dx`,
 `speedrider_m109cnc`, `pandafamily_cn`, `speeddriver2`, `wedanceonline2`,
-`percussionkids_m105cn`.  The per-game controls are on each
+`percussionkids_m105cn`, `percussionmaster3_m107fa`.  The per-game controls are on each
 game's page (`HarpoonLagoon.md`, `OceanParty.md`).
 
 | Variable | Effect |
 | --- | --- |
-| `IGS_FULLSCREEN=1` | keep the game's fullscreen request (default: windowed) |
+| `IGS_FULLSCREEN=1` | keep the game's fullscreen request (default: windowed; window-manager fullscreen requests, `_NET_WM_STATE_FULLSCREEN`, are dropped too) |
+| `IGS_SCREEN=WxH` | the X screen's size as the cabinet's (`DisplayWidth` / `DisplayHeight`, no RandR), for games whose fullscreen window takes the screen's size (Percussion Master 3's `env`: 1280x720) |
 | `IGS_FPS_CAP` | frame-rate cap (default 60, `0` = off; see Audio) |
 | `IGS_FPS=1` | log the frame rate every 5 s |
 | `IGS_VERBOSE=1` | log every ASIC message from the game |
@@ -66,7 +68,7 @@ game's page (`HarpoonLagoon.md`, `OceanParty.md`).
 | `IGS_WRAP="cmd"` | run the game under a command, e.g. `gdb -q --args` or `strace -f -o log` |
 | `IGS_DSP_LATENCY_MS` | OSS `/dev/dsp` → PulseAudio target latency (default 60) |
 | `IGS_X11_LOCKS=1` | keep libX11's display locks (see E2000 below) |
-| `IGS_CG_ARB=1` | Cg's NVIDIA `vp40` / `fp40` profiles on Mesa: the GL claims `GL_NV_vertex_program3` and `GL_NV_fragment_program2`, Cg compiles them as `arbvp1` / `arbfp1` (Speed Rider's `env`) |
+| `IGS_CG_ARB=1` | Cg's NVIDIA `vp40` / `fp40` profiles on Mesa: the GL claims `GL_NV_vertex_program3` and `GL_NV_fragment_program2`, Cg compiles them as `arbvp1` / `arbfp1` (Speed Rider's and Percussion Master 3's `env`; the claimed names end with a space, which older GLEW needs) |
 | `IGS_SCRIPT="sec:key[+],..."` | press keys on a timetable from the first frame, through the game plugin's key handler: an SDL 1.2 key number, a character, or `up down left right space enter ctrl alt shift esc f1..f12`; 0.2 s, or with `+` until the next entry.  For testing |
 | `IGS_NULL_DEVS="/dev/ttyS0 ..."` | device paths that open as a null port: writes are dropped, reads fail with `EAGAIN` (for optional peripherals such as lamp boards; usually set by the game's `env` feature).  Peripherals that must answer are the game plugin's (E2100 `serial`) |
 | `IGS_SET_DIRS="/data ..."` | cabinet directories outside `data` that the game opens by absolute path; they resolve inside the set (`IGS_SET`, exported by `run.sh`), as on Windows (Speed Driver 2's `env`).  `/tmp` is an overlay: a path resolves inside the set when it exists there or is being created, else on the host (We Dance's `env`) |
@@ -113,7 +115,7 @@ Notes:
 
 The loader runs games by id, MAME style.  Three pieces:
 
-- **Software lists**, `hash/<machine>.xml` (`e2100.xml`, `e2000.xml`, `e1000.xml`), modelled
+- **Software lists**, `hash/<machine>.xml` (`e2100.xml`, `e2200.xml`, `e2000.xml`, `e1000.xml`), modelled
   on MAME's `hash/*.xml`.  One `<software name="<id>">` per dump, with its
   description, year, publisher, version, `cloneof` for clones (informational,
   like MAME), the loader settings as `<feature>`s, the source disk
@@ -124,10 +126,10 @@ The loader runs games by id, MAME style.  Three pieces:
   unique across lists.
 - **Rom sets**: a set is the cabinet's file tree as the running game sees
   it.  The root fs (p2) at `/`; the game data partition (p3) at its mount
-  point (`/Fish`, `/OceanParty`, `/Scratch`, `/Robots`, `/GoldCaptain`, `/pr/linux`, `/GoGoBall2`, `/sr/Game`, `/PF`, `/race/linux`, `/WeDo/system`, E1000's `/pkids/linux`); p4
-  where the game needs it (Hero of Robots' `rw_data`, Pirate Revenge's `/fec_data`, Go Go Ball 2's `/rf_data`, Speed Rider's `/rewrite`, Panda Family's `/PF/pf_data`, Speed Driver 2's `/data`, We Dance's `/WeDo/linux`); the executable where
+  point (`/Fish`, `/OceanParty`, `/Scratch`, `/Robots`, `/GoldCaptain`, `/pr/linux`, `/GoGoBall2`, `/sr/Game`, `/PF`, `/race/linux`, `/WeDo/system`, E1000's `/pkids/linux`, E2200's `/PM3`); p4
+  where the game needs it (Hero of Robots' `rw_data`, Pirate Revenge's `/fec_data`, Go Go Ball 2's `/rf_data`, Speed Rider's `/rewrite`, Panda Family's `/PF/pf_data`, Speed Driver 2's `/data`, We Dance's `/WeDo/linux`, Percussion Master 3's `/PM3/rewrite`); the executable where
   the cabinet has it at run time (`/Fish.bin/fish`, `/Scratch.bin/swin`
-  decrypted, `/Game/GoldCaptain`, `/pr/exec/sship`, `/GoGoBall2/linux/pitch`, `/sr/exec/SR` and `/linux/PF` reassembled, We Dance's `/WeDo/exec/wedo` unpacked).  A set is a folder `<id>/`,
+  decrypted, `/Game/GoldCaptain`, `/pr/exec/sship`, `/GoGoBall2/linux/pitch`, `/sr/exec/SR` and `/linux/PF` reassembled, We Dance's `/WeDo/exec/wedo` unpacked, Percussion Master 3's `/PM3.bin/pm3` decrypted).  A set is a folder `<id>/`,
   or an archive `<id>.7z` / `<id>.zip` with the tree at its root or under one
   top folder `<id>/`.  Symlinks are stored as links; absolute ones are made
   relative to the set root.
@@ -202,6 +204,7 @@ $ run.sh --verify scratch_m101cn       # the <rom> hashes, like mame -verifyroms
 | `asset_mask` | the asset-cipher mask (exported to the machine as `IGS_ASSET_MASK`; also Scratch's executable mask) |
 | `rofs_profile` / `rofs_key` | E2100 root filesystem variant (`romtool/igs_rofs.py` profile) and its key literal |
 | `geca_sector` … `trim_step`, `head_part`, `geca_part`, `geca_head`, `geca_file`, `piece_file`, `piece_mode`, `cut_kb`, `cut_step` | E2000 executable assembly (`romtool/igs_e2000_extract.py`) |
+| `exe_mask` | E2200: the FPGA-cipher mask of the launcher's key the executable is encrypted with (build step `poweron`) |
 | `libc` | `uclibc`: the executable is linked against uClibc 0.9.26 (E1000); `run.sh` runs it with the host's `ld-linux.so.2` and `build/uclibc` (`libc.so.0`, `libm.so.0`, `libdl.so.0` on glibc) |
 | `build` | the builder's recipe (below) |
 
@@ -244,6 +247,8 @@ python3 romtool/mkromset.py goldcaptain goldcaptain.chd --format zip -o /tmp/set
    | `assemble DST` | E2000: rebuild the split executable at `DST` |
    | `mount pN DIR` | partition N replaces `DIR`'s contents, as the mount hides them: SquashFS (E2100 p3, `unsquashfs -o`), IGS_SHFS (E2000 p3, `igs_shfs.py`) or ext2/3 (p4, every E1000 partition; `debugfs rdump`; `lost+found` left out); p5 and up are logical partitions |
    | `unupx SRC DST` | unpack the UPX-packed executable `SRC` into `DST` (`igs_upx.py`; We Dance's `wedo`); `SRC` stays as dumped |
+   | `loop SRC DIR` | the SquashFS image file `SRC` replaces `DIR`'s contents, as a loop mount (`unsquashfs`); the image is left out of the set.  A `*` in `SRC` matches files, a `*` in `DIR` is each match's name without its extension (E2200's `/PM3/ROMS/*.rom`) |
+   | `poweron SRC DST` | E2200: decrypt `SRC` as the launcher `PowerOn` does (a key-id header, the FPGA cipher with `exe_mask`, the size from the trailer) into `DST`; `SRC` stays as dumped |
 
    Only the partitions a recipe names are read, straight from the image
    (no partition copies).
@@ -272,6 +277,7 @@ Set sizes (`7z -mx9`, 7-Zip 23.01) and build times on this machine:
 | `speeddriver2` | 647 MB | 1.0 GB | 5 min |
 | `wedanceonline2` | 941 MB | 1.7 GB | 18 min |
 | `percussionkids_m105cn` | 291 MB | 0.37 GB | 4 min |
+| `percussionmaster3_m107fa` | 1,138 MB | 1.7 GB | 16 min |
 
 ### Reading archives (`romset/`)
 
@@ -312,6 +318,7 @@ tools/
     machines/e2100/            e2100.h (game API) e2100.c (the board)
     machines/e2000/            e2000.h e2000.c, libcasmcard.c (stub library)
     machines/e1000/            e1000.h e1000.c
+    machines/e2200/            e2200.c (machines/e2100 under its own name)
     games/harpoonlagoon/       harpoonlagoon.c
     games/oceanparty/          oceanparty.c
     games/scratch/             scratch.c
@@ -325,6 +332,7 @@ tools/
     games/speeddriver2/        speeddriver2.c
     games/wedanceonline2/      wedanceonline2.c
     games/percussionkids/      percussionkids.c
+    games/percussionmaster3/   percussionmaster3.c
     build/                     igs_core.so  e2100.so  e2000.so  <game>.so  libcasmcard.so
                                libcasmcard-nocard.so  libcasmcard-hero.so  igs-romset
                                uclibc/ (libc.so.0 libm.so.0 libdl.so.0: core/uclibc.c)
@@ -337,8 +345,8 @@ symbols.
 | Layer | Owns | Today |
 | --- | --- | --- |
 | **core** (`igs_core.so`, the `LD_PRELOAD` library) | libc/SDL interposition, routing device files to the machine, MMIO traps, libc fixes, frame pacing, audio, the overlay renderer | the only Linux/SDL/GL-specific code |
-| **machine** (`$IGS_MACHINE`) | the board: device files, registers, DMA, the protection transport | `e2100`: `/dev/pccard0`, BARs, DMA, the asset cipher (mask from the software list), the ASIC handshake, and three runtime transports: batch framing (Harpoon, Ocean Party), the register table (Scratch) and request/response (Hero of Robots), chosen by the game plugin's `transport`; serial ports with a peripheral the game plugin answers for.  `e2000`: the PLX PCI9030 card (`/dev/plx/*`), the IGS036 shared-RAM transport with RC4-wrapped keys, the IGS027A packet transport, the IGS036 message or packet transport (the game plugin's `transport`), `/dev/roio`, `/dev/pccard0`, the kernel's `/dev/tdcr` cipher.  `e1000`: the Geode GX2 (`/dev/mem`: display controller, 2D engine, frame buffer; PCI and VSA port I/O; `/dev/cpu/0/msr`) and the IGS027A command transport on `/dev/pccard0` |
-| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs), `piraterevenge` (the same commands plus coin counters), `gogoball2` (IGS027A packets: stores, settings, light curtain, tickets, ball stopper, game flow), `speedrider` (IGS036 messages: inputs, coins, NVRAM, zip prefixes, UI, game modes, AI riders), `pandafamily` (IGS036 packets: inputs, coins, tickets, settings, action groups), `speeddriver2` (IGS036 messages, Speed Driver 2 layout: game flow, inputs, coins, texture and sound pages, the `data.hdr` prefix), `wedanceonline2` (IGS027A packets: inputs, coins, system status, settings; the cabinet's `/proc/meminfo`), `percussionkids` (the IGS027A's command lists: the whole game flow, the song engine and judging, the operator menu) |
+| **machine** (`$IGS_MACHINE`) | the board: device files, registers, DMA, the protection transport | `e2100`: `/dev/pccard0`, BARs, DMA, the asset cipher (mask from the software list), the ASIC handshake, and three runtime transports: batch framing (Harpoon, Ocean Party), the register table (Scratch) and request/response (Hero of Robots), chosen by the game plugin's `transport`; serial ports with a peripheral the game plugin answers for.  `e2000`: the PLX PCI9030 card (`/dev/plx/*`), the IGS036 shared-RAM transport with RC4-wrapped keys, the IGS027A packet transport, the IGS036 message or packet transport (the game plugin's `transport`), `/dev/roio`, `/dev/pccard0`, the kernel's `/dev/tdcr` cipher.  `e1000`: the Geode GX2 (`/dev/mem`: display controller, 2D engine, frame buffer; PCI and VSA port I/O; `/dev/cpu/0/msr`) and the IGS027A command transport on `/dev/pccard0`.  `e2200`: `e2100` under its own name; the game plugin may pick the asset-cipher mask by key (`asset_mask`) |
+| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs), `piraterevenge` (the same commands plus coin counters), `gogoball2` (IGS027A packets: stores, settings, light curtain, tickets, ball stopper, game flow), `speedrider` (IGS036 messages: inputs, coins, NVRAM, zip prefixes, UI, game modes, AI riders), `pandafamily` (IGS036 packets: inputs, coins, tickets, settings, action groups), `speeddriver2` (IGS036 messages, Speed Driver 2 layout: game flow, inputs, coins, texture and sound pages, the `data.hdr` prefix), `wedanceonline2` (IGS027A packets: inputs, coins, system status, settings; the cabinet's `/proc/meminfo`), `percussionkids` (the IGS027A's command lists: the whole game flow, the song engine and judging, the operator menu), `percussionmaster3` (IGS036 request/response: channel, state table and screen flow, the drum I/O board, chart keys and cut bytes) |
 
 **Interfaces:**
 - **Core ↔ machine:** `core/igs.h`.
@@ -540,6 +548,7 @@ Status (2026-11-01, RTX 3060, Windows 11):
 | Speed Driver 2 | attract, coins, the select screens, race, ranking, continue, game over, back to attract; sound through `/dev/dsp`; 60 fps |
 | We Dance Online 2 | attract after about 30 s, coins, songs, results, game over, back to attract, operator menu; sound (the set's SDL_mixer and Vorbis on the loader's SDL) |
 | Percussion Kids M105CN | logo, coin page, songs, result, game over, operator menu; sound (the set's uClibc SDL_mixer on the loader's SDL); 60 fps |
+| Percussion Master 3 M107FA | logo after about 50 s, coin page, coins, songs, results, final result, ranking, back to the logo, operator menu; sound; 60 fps |
 
 ### Usage
 
@@ -589,7 +598,7 @@ In WSL (needs `i686-w64-mingw32-gcc-posix`, mingw-w64 13):
 ./win/build-win.sh
 ```
 
-It produces `build/win/igs-loader.exe`, `e2100.dll`, `e2000.dll`, `e1000.dll`, the game
+It produces `build/win/igs-loader.exe`, `e2100.dll`, `e2000.dll`, `e1000.dll`, `e2200.dll`, the game
 plugin DLLs and the preloaded `libcasmcard.dll` / `libcasmcard-nocard.dll` /
 `libcasmcard-hero.dll`.
 Everything is linked statically, so no other DLLs are needed.  The plugins
@@ -751,7 +760,10 @@ way the exe does and lists the symbols no loaded ELF module defines and
 - **Video:** `IGS_FULLSCREEN` switches the display mode with
   `ChangeDisplaySettings` (untested).  X11: SDL's fullscreen window
   (override-redirect) stays hidden unless `IGS_FULLSCREEN`; the GL window
-  stays in its WM window, which takes its size.
+  stays in its WM window, which takes its size.  With `IGS_FULLSCREEN` a
+  top-level override-redirect window covers the monitor while the game keeps
+  its own size, and the frame is scaled to the monitor at each swap (aspect
+  kept, black around it).  `IGS_SCREEN` sets the X screen's size.
 - **Audio:** WAV loading handles PCM only.  Without an audio device the SDL
   callbacks and `/dev/dsp` writes still run, at the real rate, into nothing
   (the games exit when audio fails to open).

@@ -470,3 +470,22 @@ from p1 with p1 as the root; BusyBox `init` runs `/etc/init.d/rc.sysinit`:
 `rc.sysinit` shows `load.bmp` with `gx2show`, then `/etc/init.d/pkids_game`
 runs `cd /pkids/linux; ./pkids`.  `romtool/mkromset.py` reads logical
 partitions as p5 and up.
+# E2200 (Linux 2.6.32.8)
+
+Percussion Master 3 M107FA.  The root filesystem is a Game Image v2
+(`igs_rofs`) with Ocean Party's design: profile `pmaster3`, key literal
+`E2200-PMaster-V3`, constants in `IGS_KEYS.md`; the extractors' walk
+consumed all 3,904 records and inflated every file.  LILO boots
+`PM3-OS` from p1 with p2 as the root.
+
+| Partition | Content | Mounted at |
+| --- | --- | --- |
+| p1 ext3 | LILO map `PM3`, `boot.b`, kernel `PM3-OS` | – |
+| p2 | `igs_rofs`: the root (Fedora-based, X.org, NVIDIA GL), `/PM3/PowerOn` (encrypted), `/bin/uudecode`, `/bin/mountloop` | `/` |
+| p3 ext3 | `ROMS/*.rom`: 32 SquashFS 4 (zlib) images; empty `exe`, `data`, `media` | `/PM3` (by `/etc/X11/IGS`) |
+| p4 ext3 | settings, bookkeeping, rankings, downloads | `/PM3/rewrite` |
+
+`/bin/mountloop` loop-mounts `exe.rom` on `/PM3/exe`, `data.rom` on
+`/PM3/data` and every other `<name>.rom` on `/PM3/media/<name>`.  The
+launcher and the executable are FPGA-cipher encrypted (`IGS_E2200.md`);
+`romtool/mkromset.py`'s `loop` and `poweron` steps do the rest.

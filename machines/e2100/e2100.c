@@ -27,6 +27,11 @@
 
 #include "e2100.h"
 
+/* E2200 builds this file under its own name (machines/e2200) */
+#ifndef MACHINE_NAME
+#define MACHINE_NAME "e2100"
+#endif
+
 #define BAR0_SIZE 0x80000
 #define BAR1_SIZE 0x800
 
@@ -66,7 +71,7 @@ struct crypt_req { uint32_t encrypt; struct dma_desc *src, *dst; uint8_t *key; }
 static const struct igs_core *core;
 static const struct e2100_game *game;
 
-#define LOG(...) core->log("e2100: " __VA_ARGS__)
+#define LOG(...) core->log(MACHINE_NAME ": " __VA_ARGS__)
 
 static struct {
     pthread_mutex_t lock;
@@ -140,13 +145,13 @@ static void st64(uint8_t *p, uint64_t v) { memcpy(p, &v, 8); }
 static uint64_t rol64(uint64_t v, int n) { return (v << n) | (v >> (64 - n)); }
 static uint64_t ror64(uint64_t v, int n) { return (v >> n) | (v << (64 - n)); }
 
-static void cipher_decrypt_block(uint8_t *blk)
+static void cipher_decrypt_block(uint8_t *blk, const uint8_t *mask)
 {
     uint8_t d[16], u[16];
     int i;
 
     for (i = 0; i < 16; i++)
-        d[i] = blk[i] ^ cipher_mask[i];
+        d[i] = blk[i] ^ mask[i];
     st64(u, ror64(ld64(d), 1));
     st64(u + 8, ror64(ld64(d + 8), 3));
     for (i = 0; i < 16; i++)
@@ -156,7 +161,7 @@ static void cipher_decrypt_block(uint8_t *blk)
         blk[i] = u[cipher_perm[i]];
 }
 
-static void cipher_encrypt_block(uint8_t *blk)
+static void cipher_encrypt_block(uint8_t *blk, const uint8_t *mask)
 {
     uint8_t u[16];
     int i;
@@ -169,7 +174,7 @@ static void cipher_encrypt_block(uint8_t *blk)
     st64(u, rol64(ld64(u), 1));
     st64(u + 8, rol64(ld64(u + 8), 3));
     for (i = 0; i < 16; i++)
-        blk[i] = u[i] ^ cipher_mask[i];
+        blk[i] = u[i] ^ mask[i];
 }
 
 /* ---- runtime channel framing ------------------------------------------------ */
@@ -682,15 +687,18 @@ static int dev_ioctl(int fd, unsigned long req, void *arg)
     case IOC_CRYPT_B: {
         /* DMA to SRAM with the cipher applied, then DMA back */
         struct crypt_req *c = arg;
+        const uint8_t *mask = cipher_mask;
         uint32_t i;
 
         if (!c || !dma_check(c->src) || !dma_check(c->dst)) { ret = -1; break; }
+        if (game->asset_mask && c->key && game->asset_mask(c->key))
+            mask = game->asset_mask(c->key);
         memcpy(s.bar0 + c->src->sram, c->src->buf, c->src->len);
         for (i = 0; i + 16 <= c->src->len; i += 16) {
             if (c->encrypt)
-                cipher_encrypt_block(s.bar0 + c->src->sram + i);
+                cipher_encrypt_block(s.bar0 + c->src->sram + i, mask);
             else
-                cipher_decrypt_block(s.bar0 + c->src->sram + i);
+                cipher_decrypt_block(s.bar0 + c->src->sram + i, mask);
         }
         memcpy(c->dst->buf, s.bar0 + c->dst->sram, c->dst->len);
         break;
@@ -756,7 +764,7 @@ static void machine_status(char *buf, size_t n)
 
 static const struct igs_machine machine = {
     .version = IGS_API_VERSION,
-    .name = "e2100",
+    .name = MACHINE_NAME,
     .handles = dev_handles,
     .open = dev_open,
     .ioctl = dev_ioctl,
