@@ -22,8 +22,9 @@ rankings, a market, contests, a patch server.
   game finds no server and runs its own offline mode: guest play,
   "OFFLINE" on the song select.
 - **Online** with `IGS_NET` and the igs-online server (below): members,
-  saved progress, rankings, QR login, versus between two instances
-  (2026-11-02).
+  saved progress, account transfer, QR login, the market and lucky bags,
+  missions, groups, the world tour, rankings, versus and co-op between two
+  instances (2026-11-02).
 
 ## Playing
 
@@ -105,8 +106,20 @@ pings and patch server are refused, so `info/ip` is never rewritten.
   输入数字不足 (not enough digits).  A password equal to the account number,
   or shorter than 6 digits, makes the game ask for a new one after login.  `python -m igs_online wedance add
   <account> <password>` makes an account on the server instead.
-- **Saved:** level, experience, counters, wardrobe and worn items, pets,
-  WeTickets, songs bought; per-song scores feed the rankings.
+- **Saved:** everything the game sends: level, experience, counters,
+  wardrobe and worn items, talks, props, pets, crystals, WeTickets, songs,
+  missions; results feed the rankings.
+- **After a member's login:** the play mode, 是否进入商城 (the market: keypad
+  1 cards, 2 skins and faces, 3 talks, 4 tickets, 5 clothes, 6 lucky bags,
+  0 leave), then the clothes screen, where keypad keys open the player
+  pages (1 data, 2 schedule, 5 hidden songs, 6 achievements, 7 world tour,
+  8 pets, 9 group).  Groups, missions and world settings are the server's
+  (igs-online's README).
+- **Versus:** on the opponent screen one cabinet opens a stage (OK on
+  开新舞台, then 合作 co-op or 对战 fight); the other enters the screen after
+  that and picks it.
+- **Rankings in the attract:** Left and Right together switch the ranking
+  pages to manual browsing.
 - **Clock:** the server sends the real time, which the game ignores (it
   only sets clocks in 2008..2023); `settimeofday` and `stime` are no-ops and
   `hwclock` is not run (`IGS_NO_SYSTEM`).
@@ -186,8 +199,9 @@ Done:
       password, network registration, versions, `/proc/meminfo`, `jlist`.
 - [x] Online through igs-online: `IGS_NET` in both cores (Linux: `connect`,
       `sendto`, lookups; Windows: Winsock sockets, `win/net.c`); registration,
-      login, members, results, rankings, QR login, and a three-song versus
-      between two Windows instances seen working.
+      login, members, results, rankings, QR login, account transfer, the
+      market, lucky bags, missions, groups, the world tour, and versus /
+      co-op between two instances seen working.
 - [x] Key reporting: every press shown 4 frames, repeats separated.
 - [x] Core: `IGS_NO_NET`; `cp` / `rm` into `/tmp` under `IGS_NO_SYSTEM`;
       `/tmp` overlay.  Windows: `getifaddrs`, `ftruncate64`, `utimes`,
@@ -198,8 +212,7 @@ Invented:
       password 0000, fuses good; an empty network registration (store 0).
 
 Open:
-- [ ] Not seen: member cards, the market and other online modes, the
-      camera, the patcher.
+- [ ] Not seen: member cards, the camera, the patcher.
 - [ ] Linux (Mesa): two of the game's GLSL shaders fail to compile
       (`operands of '==' must have the same type`); not seen on Windows.
 - [ ] Lamps (packet 2) and meters (3) are ignored.
@@ -241,11 +254,14 @@ AES-128 with keycpu.  Store id 0 first registers (`net_iReg`
 | 0x131..0x149 → 0x132..0x14A | rankings (replies zlib) |
 | 0x165..0x16B → 0x166..0x16C | ticker, news, conditions, csvlist (0x16C replaces `csvlist.csv`) |
 | 0x16F | writes a file |
+| 0x151..0x154, 0x164, 0x171 → 0x172 | store bookkeeping |
+| 0x161 → 0x162 | activity rate, mission check |
+| 0x21C → 0x21D | account transfer (ARKOPAZE) |
 | 0x222..0x226, 0x231..0x237, 0x241..0x243 | versus search, contests, song choice |
 | 0x250 | versus relay (op byte: score, judgement, combo, pet, abort) |
 | 0x251..0x253, 0x255 | fight ready, start, end; avatar |
-| 0x261..0x26D | results, clothes, play log (`PLAYER_LOG`, 0x6F4 bytes, mode 3) |
-| 0x273, 0x275 | market, WeTicket |
+| 0x261..0x26E → 0x262, 0x264, 0x26C | results, clothes, play log (`PLAYER_LOG`, 0x6F4 bytes, mode 3), missions; places |
+| 0x271 → 0x272, 0x273 → 0x274, 0x275 | market trade, lucky bag, WeTicket |
 
 The member-card reader (`reader_iInit`, ttyS1) is never called.  The QR
 code names only the store and the time; the phone app completes it.
