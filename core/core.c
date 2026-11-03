@@ -1270,6 +1270,32 @@ static int tmp_cmd(char **argv, int argc)
  * popen fails, which such games take as "no network".  cp and rm into /tmp
  * run in-process (tmp_cmd).
  */
+/*
+ * Commands that configure the cabinet's system never run on the host, with
+ * or without IGS_NO_SYSTEM: the clock after a server's time (Percussion
+ * Master 3: "hwclock --systohc"), the network (fixed-IP setting: killall
+ * dhclient, ifconfig, route), the disk (hdparm), power.
+ */
+static int host_cmd(const char *cmd)
+{
+    static const char *const deny[] = {
+        "hwclock", "date", "ifconfig", "route", "killall", "dhclient", "hdparm", "ntpdate",
+        "reboot", "shutdown", "halt", "poweroff", "init", "ip", "pppd", "pppoe",
+    };
+    size_t i, n;
+
+    while (*cmd == ' ' || *cmd == '\t')
+        cmd++;
+    for (i = 0; i < sizeof(deny) / sizeof(deny[0]); i++) {
+        n = strlen(deny[i]);
+        if (!strncmp(cmd, deny[i], n) && (!cmd[n] || cmd[n] == ' ' || cmd[n] == '\t' || cmd[n] == ';'))
+            return 1;
+        if (cmd[0] == '/' && strstr(cmd, deny[i]) == strrchr(cmd, '/') + 1)   /* /sbin/hwclock ... */
+            return 1;
+    }
+    return 0;
+}
+
 int system(const char *cmd)
 {
     REAL(int, system, (const char *));
@@ -1277,6 +1303,10 @@ int system(const char *cmd)
     char buf[1024], *argv[TMPCMD_MAX];
     int argc;
 
+    if (cmd && host_cmd(cmd)) {
+        LOG("system(\"%s\"): not run (configures the host)", cmd);
+        return 0;
+    }
     if (getenv("IGS_NO_SYSTEM") && cmd) {
         if ((argc = tmpcmd_parse(cmd, buf, sizeof(buf), argv))) {
             if (core.verbose)

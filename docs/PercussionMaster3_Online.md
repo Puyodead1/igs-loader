@@ -117,11 +117,13 @@ FPGA-encrypts `{store id, MAC, 0}` and sends it as chip message 16
 (`NetManager::pubResetNetDataWithEncrypt` `0x85B13C0`, from
 `Game::iNetUpData` `0x85E36B0`); the chip keeps it for the next boot.
 
-The loader's plugin answers neither 14 nor 16, so the game stays offline.
-An emulated chip can return 16 zero bytes (register every boot), or
-store message 16's bytes and return them verbatim: the cipher's mask for
-this key is unknown, but encrypt and decrypt both run on the emulated
-FPGA, so any self-inverse mask round-trips.
+The loader's plugin answers both: message 16 is kept in
+`rewrite/igs036.nv` and given back as message 15 (16 zero bytes before
+the first registration).  The real FPGA mask of this key is unknown (no
+cabinet's blob was dumped); encrypt and decrypt both run on the emulated
+FPGA, so the plugin gives the key its own mask (all zero), decrypts the
+blob and clears the MAC before keeping it: a zero MAC is never compared,
+and eth0's differs between the loaders.
 
 ## Connection
 
@@ -160,7 +162,7 @@ Every screen change reconnects at once if offline
 | 0x123 | → | 38: as 0x113 |
 | 0x124 | ← | 1: `s8` result (≥ 0 accepted) |
 | 0x411 | → | 0 |
-| 0x412 | ← | 257: `u8 n`, song ids (the "hot songs" list, select type 4, `SelsongList::ChangeListType` `0x85B8A30`), 1 byte |
+| 0x412 | ← | 257: `u8 n`, song ids (the "hot songs" list, select type 4, `SelsongList::ChangeListType` `0x85B8A30`): `u8 ids[256]` |
 | 0x413 | → | 0 |
 
 **Time:** 0x134 (8: `u32` seconds, `u32` microseconds) is applied only
@@ -214,29 +216,32 @@ menu, `SettingData::vNetCheckSendRecord` `0x85AE7E0`):
 | 0x213 | → | 34 | `p`, `char[16]` password, `char[16]` nickname (Big5, pad keyed in), `u8` role | sign-up done (`Sign::NetCommand` `0x85873C0`) |
 | 0x214 | ← | 2 | `p`, `s8` result (0 ok) | `Sign::NetUpdate` `0x8587060` |
 | 0x215 | → | 33 | `p`, `char[16]` ID, `char[16]` password | member login |
-| 0x216 | ← | 2 | `p`, `s8` error: −5 no such ID, −4/−2 wrong password, −6 refused *(inferred: already in use)*, other: network error | |
+| 0x216 | ← | 2 | `p`, `s8` error: −4 / −2 wrong ID or password (asked again once), −5 "this account has been locked", −6 "this account is already logged in" (both seen in the game), other: network error | |
 | 0x217 | ← | 2004 | profile, 150-song layout | login / sign-up success; 2004-byte builder unsent |
 | 0x218 | → | 1 | `p` | logout (`GameData::PlayerLogout` `0x85FF1F0`) |
-| 0x219 | → | 1 | `p` | a sign-up left half-done (ID reserved, no nickname): from `Sign`, and for each such player when the operator menu opens (`Setting::Init` `0x858E9C0`) *(meaning inferred)* |
+| 0x219 | → | 1 | `p` | a sign-up left half-done (ID reserved, no nickname): from `Sign` at its time-out, and for each such player when the operator menu opens (`Setting::Init` `0x858E9C0`) |
 | 0x21A | → | 1 | `p` | continue (`GameData::PlayerNetContinue` `0x85FE340`) |
 | 0x21B | ↔ | 2748 | profile, 256-song layout | in: as 0x217; out: save (`GameInfo::vSendPlayerDataToNet` `0x85FD3B0`) |
 | 0x221 | → | 2 | `p`, mode byte | unsent |
-| 0x222 | → | 2 | `p`, the player's level choice *(inferred)* (profile byte 1933) | `SelLevel::Process`, `GameData::RestoreModeState` `0x85FE3A0` |
+| 0x222 | → | 2 | `p`, the difficulty chosen (profile byte 1933) | `SelLevel::Process`, `GameData::RestoreModeState` `0x85FE3A0` |
 | 0x223 | → | 2 | `p`, last song for that choice | unsent |
 | 0x231 | → | 144 | play log (below) | `GameInfo::vSendPlayerLog` `0x85FCF80` |
 
 **Rankings** (screen `netrank`, id 33, `netrank::NetUpdata` `0x85F6210`;
-contest `InfoMatch`, id 32, `0x85B60D0`).  Kinds: 0, 1 per class
-(difficulty 0..4), 2, 3, 4 single lists *(the five boards; names not
-found)*.
+contest `InfoMatch`, id 32, `0x85B60D0`).  Kinds on the wire
+(`netrank::DataInit` `0x85F7C20` maps its board index 0..4 to kinds 0, 1,
+3, 4, 2): 0 normal and 1 battle drum mode (`m_mode` 1, the local
+`RankList_Nostop_*`), per difficulty; 2 the Knights' song contest (board
+13, best score on its song), 3 the score contest (board 11, total), 4 the
+combo contest (board 12, best combo).
 
 | Cmd | Dir | Size | Data |
 | --- | --- | --- | --- |
 | 0x232 | → | 20 | `p`, kind, `u8` level choice, `u8` title; kinds 0, 1, 3, 4: +12 `u32` total score, +16 `u16` best max combo, +18 `u8` stage count; kind 2 (contest 13): +4 `u8` class, +5 `u8` song, +8 `u32` best score on the contest song (`GameInfo::vSendRankingData` `0x85FD970`) |
-| 0x233 | ← | 14 | `p`, kind, `u16` rank; kinds 0, 1, 3: +8 `u32`; kind 2: +4 `u32`; kind 4: +12 `u16` (stored per player, P+2960..2968) |
-| 0x234 | → | 2 | `p`, kind: entrants? |
-| 0x235 | ← | 4 | `p`, kind, `u16` count |
-| 0x241..0x249 (odd) | → | 2–4 | `p` and a start index; unsent |
+| 0x233 | ← | 14 | `p`, kind, `u16` place before this upload, the best before it: kinds 0, 1, 3 +8 `u32`, 2 +4 `u32`, 4 +12 `u16` ("new record" when this game's value reaches it, `netrank::DataSet`) |
+| 0x234 | → | 2 | `p`, kind: the place now |
+| 0x235 | ← | 4 | `p`, kind, `u16` place (the rows shown start two above it) |
+| 0x241, 0x243 / 0x245..0x249 (odd) | → | 4 / 2 | class, pad, `u16` start / `u16` start; no caller: an older form of 0x291..0x299 |
 | 0x242, 0x244 | ← | 304 | `u8` class, pad, `u16` start, 5 × 60-byte entries |
 | 0x246, 0x248, 0x24A | ← | 344 | `u16` start, pad, 5 × 68-byte entries |
 | 0x251, 0x253 | → | 6 | `u8` class, pad, `u16` start (50 × page), `u16` count (50); kinds 0, 1 |
@@ -249,10 +254,13 @@ found)*.
 | 0x296, 0x298, 0x29A | ← | 344 | `u16` start, pad, 5 × 68-byte entries |
 
 Ranking entry, 68 bytes (tables of 500 per class at `NetData`
-+11120.., each wire entry at table +4): +0 `u32`, +4 `u32` (score
-*(inferred)*), +8 `u8`, +9 `u8`, +10 `u16`, +12 `char[16]` name, +28
-`char[16]` (store *(inferred)*), +44 `u8`, +48 `u32`, +52..63 small
-fields, +64 `u32`.  The 60-byte entries carry the same up to +59.  The
++11120..; 0x29x write each wire entry at table +4, 0x246..0x24A at +0;
+read by `netrank::DataSet` `0x85F8110`), table offsets: +12 country
+(`store_list.csv`, else "OTHER"), +16 `char[16]` store name, +40
+`char[16]` nickname (also the 200-place tower, all 0x25x fill), +56
+title, +60 `u32` the value shown (+64 `u16` for kind 4).  The 60-byte
+entries (0x242, 0x244) put +13, +14, +16, +40, +56, +60, +64 at 12, 14,
+16, 32, 48, 52, 56.  The
 requests carry no player byte; the replies fill the player's table.
 Flow on the screen: 0x232
 (if the player has a member id), 0x234 → 0x235, 0x29x → 0x29x+1, then
@@ -283,18 +291,45 @@ Flow on the screen: 0x232
 | 0x2A7 | → | 3 | `p`, index, `u8` | dragon 2 entry |
 
 Board, 460 bytes (`BoardInfo`, `RunWordInfo::UpdateRunWordData`
-`0x85533D0`): +4 `u8` kind (0 none, 1..10 holiday, 11..13 contest, 14
-dragon, 22 dragon 2, else "other"), +6 `u16` year, +8 month, +9 day,
-+10 `u16`, +12, +13 (the period; `RunWordData::IsConformDate`), +14
-`char[256]` text, +270..272 three bytes, +276 10 × {`u8`, `u8`, pad,
-`u32`}, +356 10 × {`u32`, `u32`}, +436 `u8[10]` songs (0xFF ends; kind
-13: the contest song), +448 `u32`, +452 `u32`.  Contest kinds 11, 12, 13
-send rankings of kind 3, 4, 2.
+`0x85533D0`): +4 `u8` kind, +6 `u16` year, +8 month, +9 day, +10 `u16`,
++12, +13 (the period; `RunWordData::IsConformDate`), +14 `char[256]`
+text, +270..272 three bytes (the samples: 1, 2, 0; never read), +276 10 ×
+{`u8`, `u8`, pad, `u32` value}, +356 10 × {`u32` level, `u32`}, +436
+`u8[10]` songs (kinds 19, 21, 24; 0xFF ends) or kind 13's song, +448
+`u32`, +452 `u32` (copied, never read).  The game runs the events from
+these (`House::CalcPlayerData` `0x85678E0`, `CheckLevelUp` `0x8567680`):
+18 gives value[0] EXP to a new member's first game, 15..17 and 21
+multiply the EXP of their songs by value[0] % (at most 300), 20 gives
+value[i] EXP on reaching level[i].
+
+Kinds, from the game's own sample boards and tickers
+(`BoardInfo::SetFakeData` `0x8602E70`, texts at `0x9540540`, `0x95402AC`;
+`RunWordInfo::SetFakeData`, `0x9529C80` + 128 × (kind + 2)): 1..10
+holidays (New Year, Labour Day, Dragon Boat, Valentine's, Mid-Autumn,
+National Day, Singles' Day, Christmas, Children's Day, Women's Day: a
+holiday cursor in the songs, hits counted), 11 score contest ("Drum
+Spirit Battle", battle drum mode), 12 combo contest, 13 the Knights' song
+contest (a set song), 14 dragons, 15 / 16 / 17 classical / pop / original
+song festival, 18 sign-up bonus, 19 new songs, 20 level rewards, 21 song
+festival, 22 dragon 2, 23 / 24 PIU / ULTRAWAVE songs.  The newest running
+holiday, contest, dragon, dragon 2 and other board each fill one slot.
+Event titles (fields 25..38 of `pyTitle`, "Event reward") and the event
+songs (150..158) and cursors are not given by the game (`hurule.lua`
+`event=0`): the server grants them in the profile.
 
 Dragon, 80 bytes (`GameInfo::vGetDragonInfoFromNet` `0x85FFA30`): +0
-`u32` present, +5 `u8` kind (9: 20 hit points, else 100), +8 `u32`, +24
-`u8` province (`store_list.csv`), +44 `char[16]`, +60 `char[16]` (names
-*(inferred: the finder and the store)*).
+`u32` present, +5 `u8` kind (0..8 pick its song 141..149,
+`InsertInfo::SetInsertInfo` `0x8563980`; 9: a 20-point dragon, else 100),
++8 `u32` points left, +24 `u8` province (`store_list.csv`), +44
+`char[16]` name, +60 `char[16]` finder.  `SelSong::InitDragonData`
+`0x85B8320` hides each dragon behind a random song of the list (a dragon
+icon, `UpdateList`); a player who picks it fights it after the stage
+(0x285; the catch score depends on the difficulty, 1200..3000), the others
+are dropped (0x28C).  0x282 grades: 1..3 seen, 5..7 fought, 8 caught, 9
+lost; a difficulty with more than six 8s is complete.  Dragon 2 (0x2A2,
+0x2A4): +0 present, +5 slot / kind, +6 grade, +20 country, +48 name (the
+catcher on 0x2A2: "%s from %s" with +64 the time).  The world dragon is
+rolled per stage in song select (20 / 40 / 60 %).
 
 ## Player profile
 
@@ -317,16 +352,16 @@ Dragon, 80 bytes (`GameInfo::vGetDragonInfoFromNet` `0x85FFA30`): +0
 | 1314 | 256 | songs unlocked (`m_getSong`, via `GameConfig`'s table) |
 | 1570 | 256 | charts unlocked (`m_getBand`) |
 | 1826 | 40 | `s8` titles (`m_getTitle`, −1 none) |
-| 1866 | 3 | three levels 0..5, each six flags (`Player`+148, +172, +196) |
-| 1869 | 16 | `u8` × 16 (`Player`+220) |
-| 1885 | 12 | `s8` × 12 (`Player`+284) |
-| 1897 | 12 | `u8` × 12 (`Player`+332) |
+| 1866 | 3 | Speed, Hide, Sudden options unlocked, 0..5 (`Player`+148, +172, +196; `common.lua` `optionReward`) |
+| 1869 | 16 | cursors unlocked (`Player`+220; `optionReward` [2]) |
+| 1885 | 12 | `s8` drum skill levels (`m_getSkillLv`) |
+| 1897 | 12 | drum skill experience (`m_getSkillExp`) |
 | 1912 | 4 × 4 | `m_100ComboCnt`, `m_contCnt`, `m_heavyCnt`, `m_TotalHolidayCursor` |
-| 1928 | 5 | `u8` × 5 |
-| 1933 | 1 | the player's level choice (as 0x222) |
-| 1934 | 5 | last song per level choice (`m_selSong` goes to [choice]) |
-| 1939 | 1 | `m_title` |
-| 1940 | 7 | `Player`+56, +60, 0, +64, `s8` +72, +68, a flag (out only) |
+| 1928 | 5 | `u8` × 5 (`Player`+7488..7504, no Lua name; kept as sent) |
+| 1933 | 1 | the difficulty chosen (as 0x222) |
+| 1934 | 5 | last song per difficulty (`m_selSong` goes to [choice]) |
+| 1939 | 1 | `m_title`, the title worn |
+| 1940 | 7 | options in use: Speed (`Player`+56), Hide (+60), 0, cursor (+64), `s8` skill (+72, −1 none), Sudden (+68), a flag (out only) |
 | 1947 | 1 | n ≤ 100 |
 | 1948 | 800 | n × 8-byte items (`Player`+5872) |
 
@@ -428,57 +463,41 @@ Connect retries: 3 × 10 s, then 300 s; when current, it checks again
 after an hour.  `PowerOn` applies a patch at the next boot.  The loader
 does not run `pcli` or `PowerOn`.
 
-## Not resolved
+## Resolved
 
-- Builders with no caller found: 0x131 (out), 0x217 (out), 0x221,
-  0x223, 0x241..0x249.  Handlers with no request found: 0x131, 0x137,
-  0x139 (in), 0x242..0x24A, 0x416.
-- Meanings of the unnamed profile bytes (1866..1946), the ranking entry
-  fields, the dragon payloads, the bookkeeping fields and 0x412's last
-  byte.
-- The meanings of 0x216 −6, 0x219, 0x222 and 0x234 (from where they
-  are sent, not from texts).
-- The FPGA mask for the registration key (not needed, above).
+- No caller: 0x131 (out; the 0x139 path does the same), 0x217 (out),
+  0x221, 0x223, 0x241..0x249 (an older ranking-page form).  Handled but
+  never asked for: 0x131, 0x137 (a word stored, never read), 0x139 (in:
+  replaces the store info), 0x242..0x24A, 0x416 (the coin page notice):
+  the server pushes 0x416 after login.
+- 0x216 −6, 0x219, 0x222, 0x234, the ranking kinds and entries, the
+  boards' parameters, the dragon payloads, the profile bytes, 0x412's
+  last byte: above.
+- The FPGA mask of the network-data key: unknown on a real FPGA, not
+  needed (above).
+
+## Screen flow online
+
+The IGS036 decides the screens (`IGS_E2200.md`); online the plugin adds,
+from the results the screens report:
+
+| After | Next |
+| --- | --- |
+| Coinpage | Login; result 1 (`GameData` +19716) = online |
+| Login | Sign when result 0 / 1 = 1 (that player finished a new ID's passwords, `Login::Confirm`); result 4 = 1: InfoDragon 35 (dragon 2, level 10+); else Match when online, SelType offline |
+| Sign | Sign again when result 4 % 16 = 1 (the other player signs up too); 3: InfoDragon 35; else as Login |
+| Match | in a game (result 3 % 3 = 1): SelType; in the attract: Logo |
+| House | 1: the second player's House; 3 / 4: InfoMatch / InfoDragon, then that House |
+| Rank | netrank when result 2 & 1 (online) |
+| netrank | Thank after a game, Match in the attract |
 
 ## Stand-in server
 
-Minimum sequences (server replies in bold):
-
-(a) **Member with saved progress:** chip 14 → 15 (16 zero bytes) →
-connect → 0x111 → **0x112** → 0x113 → **0x114** (store id 1) → chip 16
-(keep) → 0x121 → **0x122** → 0x123 → **0x124** (0) → 0x411 → **0x412**
-(n = 0) → 0x413; **0x134** within 6 s of boot (optional).  Then 0x215
-→ **0x21B** (stored profile, or **0x216** −5 / −4); sign-up 0x211 →
-**0x212** 0, 0x213 → **0x21B**.  After play: store 0x21B and 0x231; on
-0x218 forget the session.  Ignore 0x132, 0x133, 0x135, 0x136, 0x139,
-0x219, 0x21A, 0x222.
-(b) **Rankings:** 0x232 → **0x233** (rank); 0x234 → **0x235** (count);
-0x29x → **0x29x+1** (5 entries); 0x25x → **0x25x+1** (names).  Boards:
-0x271 → **0x272** (two kind-0 boards: nothing to show), 0x273 →
-**0x274**.
-(c) **Battle / link:** nothing to answer: versus is local.  Dragon and
-contest need 0x272 boards of kinds 11..14 / 22 and the replies above.
-
-Redirecting the game, from simplest:
-- **Plugin, in-process** (works on Windows, where the loader has no
-  sockets): answer chip 14 with 15; interpose `KoTCP_ConnNonBlock`,
-  `KoTCP_ConnSelect`, `MessageSend`, `MessageRecv` (or `KoTCP_SendMsg`,
-  `KoTCP_RecvMsg`) in `pm3` and serve the messages from a queue,
-  one per call.  As planned for We Dance.
-- **Config:** `rewrite/netGame.cfg` → `NetGame, 127.0.0.1, 9999` and a
-  real server (Linux, without `IGS_NO_NET`); still needs chip 15.  DNS
-  is not used by default (literal IPs).
-- The plugin's screen routing must also lead to `Sign` (6), `netrank`
-  (33), `InfoMatch` (32), `InfoDragon` (30, 35) from the results those
-  screens report; today it never does.
-
-Effort *(estimate)*: chip 14/15/16 plus the in-process transport and
-handshake, 1 day; accounts and profile storage, 1–2 days; rankings and
-boards with empty or local data, 1–2 days; the screen routing for sign-up
-and the net screens, 1–2 days (the IGS036 decides the flow and its rules
-for those screens are unknown).  About a week and a half; dragon and
-contest content as much again.
-
+igs-online's `pm3` (`docs/PM3.md` there).  The loaders route only
+the game's connection (port 9999, the list's `IGS_NET_PORTS`) to
+`IGS_NET`; `pcli`, `PowerOn`, `wget`, the HTTP lists and the pings never
+run or are refused, so nothing re-points the game or reaches a real
+host.
 ## Compared with We Dance's KoNet
 
 Shared: the IGS `Ko` library (`KoTCP_*`, `hash_CRC16`, `aes_*`,

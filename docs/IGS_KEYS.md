@@ -371,12 +371,13 @@ addresses in the decrypted `pm3` (dynamic symbols).
 | Settings | `rewrite/SettingInfo.dat` (84 bytes): byte 57 coins per credit, 58 free play; network bytes in `PercussionMaster3_Online.md` | `SettingData::SettingData` `0x85B0150` |
 | Game link | plaintext: `u16 L` (n + 8, ≤ 4096), `u16` cmd, `u32 n`, data, `u16` CRC-16/ARC (table `0x9541DC0`: `0000 C0C1 C181 0140`, init 0); ping `L` = `0x4BFF`, reply `0x4FFF`, 10 s, drop after 60 s | `MessageSend` `0x8612AF0`, `KoTCP_SendMsg` `0x860C930`, `hash_CRC16` `0x8603960` |
 | Challenge reply (0x113, 0x123, `pcli` 0x313) | `sprintf("%08X%08X", a & b, a \| b)` of the server's `u32 a, b`, 16 chars, then CPUID leaf 1 (`eax`, 0, `ecx`, `edx`) and the MAC | `NetManager::NetProcess` `0x85B19F0`; `pcli` `0x805A970` |
-| Registration blob (chip 14 / 15 / 16) | `{u32 store id, MAC[6], 0}`, FPGA cipher, key `4e27d199473e7a0f573d82c83743629c` (mask unknown) | `0x989E1E0`; `NetManager::pubResetNetDataWithEncrypt` `0x85B13C0`, `iRecvNetDataFrom36WithDecrypt` `0x85B1510` |
+| Registration blob (chip 14 / 15 / 16) | `{u32 store id, MAC[6], 0}`, FPGA cipher, key `4e27d199473e7a0f573d82c83743629c` (real mask unknown; the loader's emulated FPGA uses an all-zero mask for this key) | `0x989E1E0`; `NetManager::pubResetNetDataWithEncrypt` `0x85B13C0`, `iRecvNetDataFrom36WithDecrypt` `0x85B1510` |
 | Default servers | game `210.5.22.170:9999`, patch `210.5.22.170:9998`, FTP `210.5.22.171:6001`, lists `http://202.153.195.62:8080` | `NetManager::NetInit` `0x85B1DF0`; `pcli` `0x80594E0`; `rewrite/net.lst` |
 | Patch FTP login | user `igs_pm3_patch`, password `PM3_PATCH_3293_2011`; `/pm3/patch[_fa]/verNNN/`, `edtNNNMMM/` | `pcli` main `0x805ABC0` |
 | Message tags (not sent) | `IGS2011_PercussionMaster3_Game`, `IGS2011_PercussionMaster3_Patch` | `NetManager::NetInit`; `pcli` `0x80594E0` |
 | Downloaded lists | first line 32 hex MD5 of the rest (checked, only logged) | `PowerOn` `0x804A31F` |
 | Connect test pings | `127.0.0.1`, the FTP host, `168.95.1.1`, the game host | `Setting::ConnectTest` `0x859D630` |
+| Sample boards and tickers | kinds `u8[19]` at `0x9540510`, texts `char[19][256]` at `0x9540540` (Big5); contest / dragon texts `0x95402AC`, `0x9540310`, `0x954036C`, `0x95403D8`, `0x9540444`; new-song lists `0x95404D4`, `0x95404E8`, `0x95404FC`; ticker of kind k at `0x9529C80` + 128 × (k + 2) | `BoardInfo::SetFakeData` `0x8602E70`, `RunWordInfo::SetFakeData` `0x85538F0` |
 ## Asset cipher (sound/*.wav, action/*.rom)
 
 Details: `IGS_SOUND_CRYPTO.md`.

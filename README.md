@@ -25,7 +25,7 @@ data is included.
 | `speeddriver2` | Speed Driver 2 | E2000 | ✓ | ✓ |
 | `wedanceonline2` | We Dance Online 2 (offline; online with `IGS_NET`) | E2000 | ✓ | ✓ |
 | `percussionkids_m105cn` | Percussion Kids (M105CN) | E1000 | ✓ | ✓ |
-| `percussionmaster3_m107fa` | Percussion Master 3 (M107FA) | E2200 | ✓ | ✓ |
+| `percussionmaster3_m107fa` | Percussion Master 3 (M107FA) (offline; online with `IGS_NET`) | E2200 | ✓ | ✓ |
 
 Where the protection chip runs game logic whose code has not been dumped
 (Ocean Party's odds, Scratch's prizes, the E2000 games' weapon tables and
@@ -160,7 +160,7 @@ rate. Useful environment variables:
 | `IGS_VERBOSE=1` | log every message between the game and the emulated hardware |
 | `IGS_SHOT=<prefix>` | save the frame to `<prefix><n>.ppm` every `IGS_SHOT_EVERY` frames (default 600) |
 | `IGS_SCRIPT="sec:key[+],..."` | press keys on a timetable, for testing |
-| `IGS_NET=host[:port]` | online games: connect to a local stand-in server (igs-online; We Dance) instead of staying offline; nothing else reaches the network |
+| `IGS_NET=host[:port]` | online games: connect to a local stand-in server (igs-online; We Dance, Percussion Master 3) instead of staying offline; nothing else reaches the network |
 | `IGS_WRAP="cmd"` | Linux: run the game under a command, e.g. `gdb -q --args` |
 | `IGS_VSYNC=1` | Windows: also wait for vblank |
 
@@ -190,9 +190,9 @@ preloaded libraries, all statically linked.
 
 ## Roadmap
 
-- Percussion Master 3: a local game server in the plugin (registration,
-  member accounts, saved profiles, rankings, event boards); protocol in
-  `docs/PercussionMaster3_Online.md`.
+- Percussion Master 3 online: the dragon fight in song select (offered
+  and listed, never landed on by scripted runs) and the world dragon not
+  yet seen in the game.
 - A graphical front end.
 
 ## Documentation
@@ -209,7 +209,7 @@ Controls and per-game settings are on the [wiki](https://github.com/Puyodead1/ig
 | [IGS_E2200.md](docs/IGS_E2200.md) | E2200: the E2100 PC side, the IGS036 framing and messages, the drum I/O board, chart encryption, the screen flow |
 | [IGS_ROFS_REVERSE_ENGINEERING.md](docs/IGS_ROFS_REVERSE_ENGINEERING.md) | the disk formats: E2100 and E2200 `igs_rofs`, E2000 ROFS and IGS_SHFS, boot chains |
 | [IGS_KEYS.md](docs/IGS_KEYS.md) | every key, mask and constant per game |
-| [PercussionMaster3_Online.md](docs/PercussionMaster3_Online.md) | Percussion Master 3's network: servers, framing, registration, commands, profile, a stand-in server plan |
+| [PercussionMaster3_Online.md](docs/PercussionMaster3_Online.md) | Percussion Master 3's network: servers, framing, registration, commands, profile, boards, the online screen flow |
 | [HarpoonLagoon.md](docs/HarpoonLagoon.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md), [PirateRevenge.md](docs/PirateRevenge.md), [GoGoBall2.md](docs/GoGoBall2.md), [SpeedRider.md](docs/SpeedRider.md), [PandaFamily.md](docs/PandaFamily.md), [SpeedDriver2.md](docs/SpeedDriver2.md), [WeDanceOnline2.md](docs/WeDanceOnline2.md), [PercussionKids.md](docs/PercussionKids.md), [PercussionMaster3.md](docs/PercussionMaster3.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
 
 ## Repository layout

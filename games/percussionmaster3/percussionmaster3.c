@@ -21,15 +21,19 @@
  *     12 and 19 start-up, 16 network data, 17 coin record request.
  *   - IGS036 -> game (Game::iIgs036_RecvCmdPrcess): 2 the current state
  *     object, 3 the I/O board (keys, drum sensors), 5 chart keys, 7 a chart's
- *     cut 16 bytes, 9 sensor thresholds, 13 version, 18 coin record.
+ *     cut 16 bytes, 9 sensor thresholds, 13 version, 15 the network data, 18
+ *     coin record.
  *   - The state machine runs on the pointer we send: the game calls Init,
  *     Process and End on it; after an End we pick the next state.  That
  *     choice was the chip's (not dumped) and is rebuilt here.
+ *   - Network data (messages 14 / 15 / 16): the store id, FPGA-encrypted;
+ *     kept in ../rewrite/igs036.nv.  Without a message 15 the game never
+ *     connects (docs/PercussionMaster3_Online.md).
  *
  * Invented: the state flow; versions, thresholds and the coin record are
- * plausible values; thresholds are not kept between runs.  The charts' keys
- * and cut bytes are recovered from the dump (docs/IGS_KEYS.md), not the
- * chip's.
+ * plausible values; thresholds are not kept between runs; the FPGA mask of
+ * the network-data key.  The charts' keys and cut bytes are recovered from
+ * the dump (docs/IGS_KEYS.md), not the chip's.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +46,8 @@ static const struct e2100_api *api;
 #define VLOG(...) do { if (api->core->verbose) LOG(__VA_ARGS__); } while (0)
 
 #define REPLY_MAX 800                     /* Igs036P2A::ReadData's buffer */
+#define NV_FILE "../rewrite/igs036.nv"    /* cwd /PM3/exe; p4, next to SettingInfo.dat */
+#define NV_MAGIC 0x334d5031u              /* "1PM3" */
 
 /* states: the index in the game's message-1 table (GameProcessStateList) */
 enum {
@@ -63,10 +69,17 @@ static struct {
     int level;                            /* the hit's sensor level (PM3_VELOCITY) */
     uint32_t fix[12][4];                  /* thresholds: max, min, default, current */
     int coins, coin_t;
-    int want_keys, want_cut, want_coinrec, want_fix, booted;
+    int want_keys, want_cut, want_coinrec, want_fix, want_net, booted;
     uint8_t cut[16];
     int help, shift;
     double t0;
+    int after_board;                      /* where InfoMatch / InfoDragon lead back to */
+    int online;                           /* the coin page saw the game server (Coinpage +19716) */
+    struct { uint32_t magic; uint8_t net[16]; } nv;
+    /* PM3_SCRIPT */
+    uint32_t frames;
+    uint32_t script_keys;
+    uint16_t script_sensors;
 } g;
 
 /* ---- channel ------------------------------------------------------------------ */
@@ -167,10 +180,24 @@ static const uint8_t list_mask[16] = {
     0x16, 0x18, 0xa1, 0xda, 0x69, 0xc8, 0x20, 0x69, 0xa5, 0x3b, 0xc9, 0x2c, 0xc6, 0x78, 0x25, 0x52,
 };
 
+/*
+ * The key of the network data (pm3 0x989E1E0; NetManager::pubResetNetDataWithEncrypt,
+ * iRecvNetDataFrom36WithDecrypt).  The real FPGA's mask for it is unknown (no
+ * cabinet's message 16 was dumped); both directions run on this emulated FPGA,
+ * so any mask round-trips.  All zero: the blob is then the cipher's bare
+ * shuffle, which this plugin undoes to read and clear the MAC.
+ */
+static const uint8_t net_key[16] = {
+    0x4e, 0x27, 0xd1, 0x99, 0x47, 0x3e, 0x7a, 0x0f, 0x57, 0x3d, 0x82, 0xc8, 0x37, 0x43, 0x62, 0x9c,
+};
+static const uint8_t net_mask[16];
+
 static const uint8_t *asset_mask(const uint8_t *k)
 {
     int i;
 
+    if (!memcmp(k, net_key, 16))
+        return net_mask;
     if (!memcmp(k, list_key, 16))
         return list_mask;
     for (i = 0; i < 10; i++)
@@ -280,6 +307,52 @@ static void make_cut(const uint8_t *info)
     free(f);
 }
 
+/* ---- network data (messages 14, 15, 16) -------------------------------------------- */
+
+/*
+ * Message 16 is {u32 store id, MAC[6], 0} encrypted with net_key; message 15
+ * gives it back (word 0 zero: not registered, the game registers again).  A
+ * non-zero MAC that differs from eth0's stops the game's network for good
+ * (NetManager::NetProcess state 2), and eth0 differs between the loaders and
+ * between WSL boots, so the MAC is cleared before it is kept: zero is never
+ * compared.
+ */
+static void nv_load(void)
+{
+    FILE *f = fopen(NV_FILE, "rb");
+
+    if (!f || fread(&g.nv, sizeof(g.nv), 1, f) != 1 || g.nv.magic != NV_MAGIC)
+        memset(&g.nv, 0, sizeof(g.nv));
+    if (f)
+        fclose(f);
+}
+
+static void nv_save(void)
+{
+    FILE *f = fopen(NV_FILE, "wb");
+
+    if (!f) {
+        LOG("cannot write %s", NV_FILE);
+        return;
+    }
+    g.nv.magic = NV_MAGIC;
+    fwrite(&g.nv, sizeof(g.nv), 1, f);
+    fclose(f);
+}
+
+static void net_keep(const uint8_t *d)
+{
+    uint8_t b[16];
+
+    memcpy(b, d, 16);
+    cipher_decrypt(b, net_mask);
+    memset(b + 4, 0, 12);                 /* the MAC and the pad */
+    LOG("network data kept: store id %u", ld32(b));
+    cipher_encrypt(b, net_mask);
+    memcpy(g.nv.net, b, 16);
+    nv_save();
+}
+
 /* ---- the state flow (the chip's, rebuilt) ---------------------------------------- */
 
 /*
@@ -294,10 +367,26 @@ static void make_cut(const uint8_t *info)
  *   Resultp    [1] % 15 Resultp::CheckNext: 1, 2 another round, 4 a
  *              holiday or contest board, 5 a dragon board, 0 / 3 the end
  *   FinalResult [0..2] & 1 the holiday or contest / dragon / dragon 2 boards
- *   House      [1] House::CheckNext: 0 photo, 1 / 2 / 6 a player continues
- *              or joins, 3 / 4 boards, 5 sign-up, 7 done
- *   Rank       [0] % 3: 1 after a game, 0 in the attract
+ *   House      [1] House::CheckNext: 0 photo, 2 / 6 one / both players
+ *              continue, 5 online with a guest, 7 done; after player 1's
+ *              house with player 2 in the game: 1 player 2's house, 3 / 4
+ *              a board first
+ *   Rank       [0] % 3: 1 after a game, 0 in the attract; [2] & 1 online
+ *              (NetManager::NetGetStatus > 6)
+ *   Login      [0], [1] player 1 / 2 finished a new ID's passwords
+ *              (Login::Confirm): sign-up; [4] 1: the dragon 2 board for a
+ *              level 10+ member (BoardInfo +1040, cleared by InfoDragon 35)
+ *   Sign       [4] % 16 Sign::CheckNext: 1 the other player signs up too, 3
+ *              the dragon 2 board (as Login's), else done
+ *   netrank    [0] 1 after a game, 0 in the attract
+ *   Match      [0] & 1 online, [3] % 3: 1 in a game (20 s, timer), 0 in
+ *              the attract (10 s)
+ *   Coinpage   [1] online (GameData +19716, GameInfo::CheckConnect)
+ * Online, after the local ranking comes the net ranking (netrank), then in
+ * the attract the event boards (Match); in a game the boards come after the
+ * login, before the play type.
  */
+#define AFTER_LOGIN (g.online ? S_MATCH : S_SELTYPE)
 static int next_state(int id, const uint32_t *w)
 {
     if ((w[8] & 1) && id != S_SETTING)
@@ -306,8 +395,22 @@ static int next_state(int id, const uint32_t *w)
     case S_LOGO:     return S_COINPAGE;
     case S_COINPAGE:
         g.demo = !w[2];
+        g.online = w[3] & 1;
         return w[2] ? S_LOGIN : S_STAGE;
-    case S_LOGIN:    return S_SELTYPE;
+    case S_LOGIN:
+        if (w[2] == 1 || w[3] == 1)
+            return S_SIGN;
+        if (w[6] == 1) {
+            g.after_board = AFTER_LOGIN;
+            return S_DRAGON2;
+        }
+        return AFTER_LOGIN;
+    case S_SIGN:
+        switch (w[6] % 16) {
+        case 1:  return S_SIGN;
+        case 3:  g.after_board = AFTER_LOGIN; return S_DRAGON2;
+        default: return AFTER_LOGIN;
+        }
     case S_SELTYPE:  return S_SELMODE;
     case S_SELMODE:
         return w[2] == 1 ? S_SELSKILL : w[2] == 2 ? S_SELEV : S_SELLEVEL;
@@ -317,6 +420,7 @@ static int next_state(int id, const uint32_t *w)
     case S_SELSONG:  return S_STAGE;
     case S_STAGE:    return g.demo ? S_RANK : S_RESULT;
     case S_RESULT:
+        g.after_board = S_FINAL;
         switch (w[3] % 15) {
         case 1: case 2: return S_SELSONG;
         case 4:         return S_INFOMATCH;
@@ -325,18 +429,27 @@ static int next_state(int id, const uint32_t *w)
         }
     case S_FINAL:    return S_HOUSE;
     case S_HOUSE:
+        /* 1, 3, 4 come only from player 1's house with player 2 in the game:
+           player 2's house is next (after the board) */
+        g.after_board = S_HOUSE;
         switch (w[3]) {
         case 0:            return S_PHOTO;
-        case 1: case 2: case 6: return S_SELMODE;
+        case 1:            return S_HOUSE;
+        case 2: case 6:    return S_SELMODE;
         case 3:            return S_INFOMATCH;
         case 4:            return S_DRAGON;
         default:           return S_RANK;
         }
     case S_PHOTO:    return S_RANK;
-    case S_RANK:     return w[2] % 3 == 1 ? S_THANK : S_LOGO;
+    case S_RANK:
+        if (w[4] & 1)
+            return S_NETRANK;
+        return w[2] % 3 == 1 ? S_THANK : S_LOGO;
+    case S_NETRANK:  return w[2] == 1 ? S_THANK : S_MATCH;
+    case S_MATCH:    return w[5] % 3 == 1 ? S_SELTYPE : S_LOGO;
     case S_INFOMATCH:
     case S_DRAGON:
-    case S_DRAGON2:  return S_FINAL;
+    case S_DRAGON2:  return g.after_board ? g.after_board : S_FINAL;
     default:         return S_LOGO;
     }
 }
@@ -356,6 +469,11 @@ static void message(uint32_t type, const uint8_t *d, uint32_t n)
         if (n == 36) {
             memcpy(w, d, sizeof(w));
             int next = next_state(w[1], w);
+
+            if (g.have_table && next > 0 && next < 36 && !g.table[next]) {
+                LOG("state %d has no object; logo instead", next);
+                next = S_LOGO;
+            }
 
             LOG("%.1f s: state %u ends (%u %u %u %u %u %u), next %d", api->core->now() - g.t0,
                 w[1], w[2], w[3], w[4], w[5], w[6], w[7], next);
@@ -381,6 +499,13 @@ static void message(uint32_t type, const uint8_t *d, uint32_t n)
     case 11:                                 /* one threshold: sensor, max, min, default, current */
         if (n >= 20 && ld32(d) < 12)
             memcpy(g.fix[ld32(d)], d + 4, 16);
+        break;
+    case 14:                                 /* the network data wanted (Game::iIGS_Init) */
+        g.want_net = 1;
+        break;
+    case 16:                                 /* network data to keep (after registration) */
+        if (n >= 16)
+            net_keep(d);
         break;
     case 17:                                 /* coin record wanted */
         g.want_coinrec = 1;
@@ -408,7 +533,8 @@ static uint32_t put(uint8_t *r, uint32_t pos, uint32_t type, const void *data, u
 static uint32_t put_io(uint8_t *r, uint32_t pos)
 {
     uint8_t io[20] = { 0 };
-    uint32_t keys = g.keys;
+    uint32_t keys = g.keys | g.script_keys;
+    uint16_t sensors = g.sensors | g.script_sensors;
     int i;
 
     /* coin: held 4 frames, released 4 (GameKey counts a press from frame 2) */
@@ -423,7 +549,7 @@ static uint32_t put_io(uint8_t *r, uint32_t pos)
     st32(io, keys);
     /* a sensor counts as hit when its level reaches its threshold */
     for (i = 0; i < 12; i++) {
-        if (!(g.sensors >> i & 1))
+        if (!(sensors >> i & 1))
             continue;
         io[5 + i] = g.level;
         if ((uint32_t)g.level >= g.fix[i][3])
@@ -434,9 +560,104 @@ static uint32_t put_io(uint8_t *r, uint32_t pos)
     return put(r, pos, 3, io, sizeof(io));
 }
 
+/* keypad digit -> key-in bit, player 1 (0..9, then the two extra keys) and player 2 */
+static const uint8_t pad_bit[2][12] = {
+    { 6, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 7 },
+    { 10, 16, 17, 18, 19, 20, 21, 22, 23, 8, 9, 11 },
+};
+
+/*
+ * PM3_SCRIPT="sec:key[+],..." presses keys on a timetable from start-up, for
+ * testing.  Keys: coin, service, test; player 1 b1 r1 (little drums 1, 2), d1
+ * (the surface, both halves), m1 (both rims), k0..k9 kstar khash (keypad);
+ * player 2 b2 r2 d2 m2, j0..j9 jstar jhash.  A press lasts 0.2 s, or with a
+ * trailing + until the next entry.  PM3_SCRIPT_CLOCK=frames counts the game's
+ * frames (60 a second) instead of wall time.
+ */
+static int script_key(const char *name, uint32_t *keys, uint16_t *sensors)
+{
+    static const struct { const char *name; uint32_t keys; uint16_t sensors; } named[] = {
+        { "service", 1u << 25, 0 }, { "test", 1u << 24, 0 },
+        { "b1", 0, 1 << 0 }, { "r1", 0, 1 << 1 }, { "d1", 0, 3 << 3 }, { "m1", 0, 1 << 2 | 1 << 5 },
+        { "b2", 0, 1 << 6 }, { "r2", 0, 1 << 7 }, { "d2", 0, 3 << 9 }, { "m2", 0, 1 << 8 | 1 << 11 },
+    };
+    unsigned i;
+    int p, k;
+
+    for (i = 0; i < sizeof(named) / sizeof(named[0]); i++)
+        if (!strcmp(name, named[i].name)) {
+            *keys = named[i].keys;
+            *sensors = named[i].sensors;
+            return 1;
+        }
+    if ((name[0] != 'k' && name[0] != 'j') || !name[1])
+        return 0;
+    p = name[0] == 'j';
+    if (!strcmp(name + 1, "star"))
+        k = 10;
+    else if (!strcmp(name + 1, "hash"))
+        k = 11;
+    else if (name[1] >= '0' && name[1] <= '9' && !name[2])
+        k = name[1] - '0';
+    else
+        return 0;
+    *keys = 1u << pad_bit[p][k];
+    *sensors = 0;
+    return 1;
+}
+
+static void script(void)
+{
+    static const char *p;
+    static double t0, release_at;
+    static int held, frames;
+    const struct igs_core *c = api->core;
+    uint32_t keys;
+    uint16_t sensors;
+    double now, at;
+    char name[16];
+    int n = 0, hold;
+
+    if (!p) {
+        p = c->env("PM3_SCRIPT", "");
+        frames = !strcmp(c->env("PM3_SCRIPT_CLOCK", ""), "frames");
+        t0 = c->now();
+    }
+    now = frames ? g.frames / 60.0 : c->now() - t0;
+    if (held && release_at && now >= release_at) {
+        g.script_keys = 0;
+        g.script_sensors = 0;
+        held = 0;
+    }
+    if (!*p || sscanf(p, "%lf:%15[a-z0-9]%n", &at, name, &n) != 2 || now < at)
+        return;
+    hold = p[n] == '+';
+    p += n + hold;
+    if (*p == ',')
+        p++;
+    g.script_keys = 0;
+    g.script_sensors = 0;
+    held = 0;
+    if (!strcmp(name, "coin")) {
+        g.coins++;
+    } else if (script_key(name, &keys, &sensors)) {
+        g.script_keys = keys;
+        g.script_sensors = sensors;
+        held = 1;
+        release_at = hold ? 0 : now + 0.2;
+    } else {
+        LOG("script: unknown key %s", name);
+        return;
+    }
+    LOG("script %.1f s %s%s", now, name, hold ? " (held)" : "");
+}
+
 static uint32_t build(uint8_t *r)
 {
     uint32_t pos = 0;
+
+    g.frames++;
+    script();
 
     /* the objects these fill exist once the game has sent its state table */
     if (g.have_table && !g.booted) {
@@ -476,6 +697,10 @@ static uint32_t build(uint8_t *r)
 
         pos = put(r, pos, 18, rec, sizeof(rec));
         g.want_coinrec = 0;
+    }
+    if (g.want_net) {                        /* as message 16 left it; zero: not registered */
+        pos = put(r, pos, 15, g.nv.net, 16);
+        g.want_net = 0;
     }
     return pos;
 }
@@ -536,12 +761,6 @@ static const struct { int sym; int sensors; } drums[] = {
     { ' ', 3 << 3 },                          /* Space: both halves of the big drum */
     { 'j', 1 << 6 }, { ';', 1 << 7 }, { 'i', 1 << 8 }, { 'k', 1 << 9 }, { 'l', 1 << 10 }, { 'o', 1 << 11 },
     { 13, 3 << 9 },                           /* Enter: player 2's big drum */
-};
-
-/* keypad digit -> key-in bit, player 1 (0..9, then the two extra keys) and player 2 */
-static const uint8_t pad_bit[2][12] = {
-    { 6, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 7 },
-    { 10, 16, 17, 18, 19, 20, 21, 22, 23, 8, 9, 11 },
 };
 
 static void key(int sym, int down)
@@ -632,6 +851,7 @@ static void reset(struct e2100_channel *ch)
 
     (void)ch;
     rc4_key(boot_key, sizeof(boot_key));
+    nv_load();
     g.cur = S_LOGO;
     g.have_table = g.booted = 0;
     g.help = 1;

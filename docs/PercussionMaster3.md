@@ -22,8 +22,12 @@ member accounts.  Online: member accounts, rankings, contest, holiday and
   is not dumped.  The plugin rebuilds the flow from what each screen
   reports (`IGS_E2200.md`); the game logic, judging and scores are the
   executable's own.
-- **Offline:** no IP network (list `env` `IGS_NO_NET`): guest play, the
-  "OFFLINE" mark.  Nothing of the server is emulated.
+- **Offline** by default: no IP network (list `env` `IGS_NO_NET`): guest
+  play, the "OFFLINE" mark.
+- **Online** with `IGS_NET` and the igs-online server (below): sign-up,
+  member login on both pads, saved profiles, net rankings, event boards,
+  ticker, notice, contests, dragon boards, store bookkeeping
+  (2026-11-03).
 
 ## Playing
 
@@ -74,6 +78,46 @@ start a game; the dumped settings ask 1 coin a credit.
   a `.7z` set, the cache's
   `<cache>/<linux|windows>/percussionmaster3_m107fa/PM3/rewrite/`).  The
   sensor thresholds are the IGS036's and are not kept between runs.
+- `PM3_SCRIPT="sec:key[+],..."` presses keys on a timetable for testing,
+  from start-up.  Keys `coin service test`; player 1 `b1 r1` (little drums
+  1, 2), `d1` (surface), `m1` (rims), `k0..k9 kstar khash` (keypad);
+  player 2 `b2 r2 d2 m2`, `j0..j9 jstar jhash`.  A press lasts 0.2 s, or
+  with `+` until the next entry; `PM3_SCRIPT_CLOCK=frames` times it in
+  game frames.
+
+## Online play (experimental)
+
+The igs-online server (a separate project, Python 3) stands in for IGS's
+game server.
+
+```powershell
+python -m igs_online pm3                               # in the igs-online folder
+$env:IGS_NET = "127.0.0.1:9999"; .\play-win.ps1 percussionmaster3_m107fa
+```
+
+In WSL: `IGS_NET=127.0.0.1:9999 ./run.sh percussionmaster3_m107fa` with the
+server in WSL.  Only the game's connection (port 9999, the list's
+`IGS_NET_PORTS`) goes there; the loaders run no `pcli` or `PowerOn`, and
+shell commands that would set the host's clock or network
+(`hwclock --systohc` after the server's time, the fixed-IP `ifconfig` /
+`route`) never run.
+
+- **First connection:** the cabinet registers; the IGS036's network data
+  (the store id) is kept in `rewrite/igs036.nv`.  A new database takes the
+  store id on.
+- **Login screen** (a coin, a drum hit): the little drums move between
+  Guest, Login and Register, the surface or `#` confirms.  Login: ID (6..11
+  digits), `#`, password (4..8), `#`.  Register: Yes, a new ID, `#`, the
+  password twice; then the name: keypad 2 4 6 8 move, the surface types a
+  letter, `*` deletes; left past the first letter to the column, down to
+  Finish, `#`, Yes.  Player 2 the same on the Shift keypad.
+- **Online screens:** the event boards after the login and in the attract
+  (Match), the net ranking after the local one (netrank), contest and
+  dragon boards after a song (InfoMatch, InfoDragon).
+- **Saved:** the whole profile (level, EXP, titles, unlocks, options),
+  play logs, ranking entries; both players of a versus game.
+- Boards, notice, contests and rewards are the server's
+  (`python -m igs_online pm3 boards --set 1,14`, `notice`, `ranks`).
 
 ## Extracting
 
@@ -126,11 +170,10 @@ through SDL_mixer and a V4L camera (`/dev/video0..9`, "CCD").
 - **Judging** (`StagePy::UpdateInput`): per player four lines: the
   surface, the rims, little drums 1 and 2; the best grade within 7 frames
   (1/60 s), the next within 12.5, the last within 14.
-- **Network** (`NetManager`, `pcli`): the game server `210.5.22.170:9999`
-  and patch server (`rewrite/netGame.cfg`, `netPatch.cfg`), FTP
-  `210.5.22.171:6001`; the store id is kept FPGA-encrypted in the
-  IGS036 (messages 14, 15, 16).  Offline it plays guests only.  Protocol,
-  commands and a stand-in server plan: `PercussionMaster3_Online.md`.
+- **Network** (`NetManager`, `pcli`): the game server (`rewrite/netGame.cfg`,
+  port 9999) and patch server, FTP; the store id is kept FPGA-encrypted in
+  the IGS036 (messages 14, 15, 16).  Offline it plays guests only.
+  Protocol and the online screen flow: `PercussionMaster3_Online.md`.
 - **Shell commands:** `cp` of downloaded lists, `rm` of logs and records
   (operator reset), `hwclock`, `./checkUpdate`.  On Linux they run in the
   set; on Windows they are skipped.
@@ -163,14 +206,25 @@ Invented:
 - [x] The chart keys: PowerOn's key table (key 5 checked); the cut
       bytes rebuilt from every chart's first line (`IGS_E2200.md`).
 
+- [x] Online through igs-online: chip messages 14 / 15 / 16 (network data
+      in `rewrite/igs036.nv`), the online screen flow (Sign, Match,
+      netrank, InfoMatch, InfoDragon, both players' houses), `IGS_NET` on
+      both loaders (port 9999); registration, login, sign-up, member login
+      on both pads (wrong password, locked, already logged in), saves of
+      both versus players, rankings, boards, ticker, notice, contests,
+      dragon boards seen working.  `PM3_SCRIPT`.
+- [x] Core: shell commands that configure the host (`hwclock`,
+      `ifconfig`, `route`, `killall`, `hdparm`, ...) never run.
+
+Invented (online):
+- [x] The FPGA mask of the network-data key (all zero); the routing of
+      the online screens (from the results each screen reports).
+
 Open:
-- [ ] Not seen: member accounts and login, special and battle modes'
-      own screens (event, skill, role select, match), the dragon, holiday
-      and contest boards, photos (no camera), continue.
+- [ ] Not seen: the dragon fight itself (its song is the game's random
+      pick in song select), the world dragon (a per-stage roll), role
+      select (no caller sets its player), photos (no camera).
 - [ ] The camera error at start-up (about 20 s): there is no camera.
 - [ ] Lamps and meters (message 3 out) are ignored.
-- [ ] Chip messages 14 / 16 (the network registration) are not answered,
-      so the game never connects.
-- [ ] A local game server (`PercussionMaster3_Online.md`).
 - [ ] Linux: the instancing shaders (`vp40`) fail to compile as `arbvp1`;
       the scenes still draw.
