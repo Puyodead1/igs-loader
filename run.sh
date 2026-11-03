@@ -16,6 +16,8 @@
 #   IGS_AUDIO_CHUNK=n  audio buffer in samples (default: the game's)
 #   IGS_AUDIO_LOG=1    log the game's mixer calls
 #   IGS_WRAP="cmd"     run the game under cmd (gdb, strace, ...)
+#   IGS_INI=file       settings file instead of igs-loader.ini
+# The ini's [<id>] section is exported for that game (the environment wins).
 D=$(cd "$(dirname "$0")" && pwd)
 ROMSET="$D/build/igs-romset"
 [ -x "$ROMSET" ] || { echo "build first: $D/build.sh"; exit 1; }
@@ -27,6 +29,9 @@ esac
 # DATA BINARY ...), with the set ready in $SET
 VARS=$("$ROMSET" --root "$D" --env "$1") || exit 1
 eval "$VARS"
+# the ini's [<id>] section (the GUI's per-game settings), applied after the
+# list's ENV below; variables already in the environment win
+SECTION=$("$ROMSET" --root "$D" --section "$1") || exit 1
 export IGS_MACHINE="$D/build/$MACHINE.so" IGS_GAME="$D/build/$PLUGIN.so"
 export IGS_ASSET_MASK="$ASSET_MASK"
 # VARIANT: a build the plugin treats differently (e.g. harpoonlagoon "wa")
@@ -50,6 +55,7 @@ export LD_LIBRARY_PATH="$D/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 for e in $ENV; do
     export "$e"
 done
+eval "$SECTION"
 # LIBS: single libraries of the game's own (cabinet paths, or relative to
 # DATA), e.g. GLEW, zzip.  Only these are exposed, so the game's bundled SDL
 # never shadows the host's.

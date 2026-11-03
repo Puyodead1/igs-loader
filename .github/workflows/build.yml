@@ -13,16 +13,20 @@ jobs:
       - name: Install the 32-bit toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gcc-multilib
+          sudo apt-get install -y --no-install-recommends gcc-multilib libsdl2-dev
       - name: Build
         # core/font.h is committed; keep build.sh from regenerating it (needs PIL and a font)
         run: |
           touch core/font.h
           bash build.sh
       - name: Package
+        # build/igs-mkromset is the rom-set builder (finds hash/ one up)
         run: |
+          test -x build/igs-mkromset
+          test -x build/igs-loader-gui
           mkdir -p dist/igs-loader
           cp -a build lib hash run.sh play.ps1 igs-loader.ini.example dist/igs-loader/
+          rm -rf dist/igs-loader/build/obj
       - uses: actions/upload-artifact@v7
         with:
           name: igs-loader-linux
@@ -35,14 +39,16 @@ jobs:
       - name: Install the mingw-w64 i686 toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-i686-posix
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-i686-posix g++-mingw-w64-i686-posix
       - name: Build
         run: |
           touch core/font.h
           bash win/build-win.sh
       - name: Package
-        # igs-loader.exe finds hash\ and igs-loader.ini next to itself
+        # igs-loader.exe and igs-mkromset.exe find hash\ and igs-loader.ini next to themselves
         run: |
+          test -f build/win/igs-mkromset.exe
+          test -f build/win/igs-loader-gui.exe
           mkdir -p dist/igs-loader
           cp -a build/win/. hash igs-loader.ini.example dist/igs-loader/
       - uses: actions/upload-artifact@v7

@@ -6,6 +6,8 @@
  *                                            shell-safe KEY='value' lines to eval
  *   igs-romset [--root DIR] --verify <id>    check the set against the list's hashes
  *   igs-romset [--root DIR] --path <id>      print the set directory
+ *   igs-romset [--root DIR] --section <id>   the ini's [<id>] keys not already in the
+ *                                            environment, as export KEY='value' lines
  *
  * --root is the loader directory (hash/, igs-loader.ini); default: the
  * parent of the directory holding this executable.
@@ -28,6 +30,33 @@ static void shq(const char *k, const char *v)
     puts("'");
 }
 
+/* a shell variable name that is not the shell's own */
+static int env_name_ok(const char *k)
+{
+    const char *c;
+
+    if (!*k || isdigit((unsigned char)*k) || !strcmp(k, "PATH") || !strcmp(k, "HOME") || !strcmp(k, "IFS")
+        || !strcmp(k, "SHELL") || !strncmp(k, "LD_", 3))
+        return 0;
+    for (c = k; *c; c++)
+        if (!isalnum((unsigned char)*c) && *c != '_')
+            return 0;
+    return 1;
+}
+
+/* --section: real environment variables win */
+static void section_line(const char *k, const char *v, void *ctx)
+{
+    (void)ctx;
+    if (!env_name_ok(k)) {
+        fprintf(stderr, "igs-romset: [section] key %s skipped (not a variable name)\n", k);
+        return;
+    }
+    if (getenv(k))
+        return;
+    fputs("export ", stdout);
+    shq(k, v);
+}
 
 int main(int argc, char **argv)
 {
@@ -64,12 +93,17 @@ int main(int argc, char **argv)
         return 0;
     }
     if (!cmd || !id) {
-        fprintf(stderr, "usage: igs-romset [--root DIR] --list | --env <id> | --verify <id> | --path <id>\n");
+        fprintf(stderr, "usage: igs-romset [--root DIR] --list | --env <id> | --verify <id> | --path <id> | "
+                        "--section <id>\n");
         return 2;
     }
     if (!(sw = sw_find(id))) {
         fprintf(stderr, "igs-romset: unknown game %s (--list shows the ids)\n", id);
         return 1;
+    }
+    if (!strcmp(cmd, "--section")) {
+        rs_section(id, section_line, NULL);
+        return 0;
     }
     if (rs_open(id, dir, sizeof(dir))) {
         fprintf(stderr, "igs-romset: %s\n", rs_error);
@@ -99,8 +133,7 @@ int main(int argc, char **argv)
                 k[j] = isalnum((unsigned char)sw->feat[i].name[j]) ? (char)toupper((unsigned char)sw->feat[i].name[j]) : '_';
             k[j] = 0;
             /* never let a list entry clobber the shell's own variables */
-            if (!strcmp(k, "PATH") || !strcmp(k, "HOME") || !strcmp(k, "IFS") || !strcmp(k, "SHELL")
-                || !strncmp(k, "LD_", 3) || isdigit((unsigned char)k[0]))
+            if (!env_name_ok(k))
                 continue;
             shq(k, sw->feat[i].value);
         }

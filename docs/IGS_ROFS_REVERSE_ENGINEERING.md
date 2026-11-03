@@ -211,9 +211,10 @@ nodes it cannot represent on Windows in `IGS_ROFS_SPECIAL_NODES.txt`.
 `romtool/igs_rofs.py` is a Python port with the same
 profiles and the same CLI (`igs_rofs.py <p2.img> [--list] [--extract <dir>]
 [--profile <name>]`).  It keeps file modes, skips special nodes instead of
-listing them, and is what the rom-set builder (`romtool/mkromset.py`,
+listing them, and is what the reference rom-set builder (`romtool/mkromset.py`,
 `IGS_LOADER.md`, Rom sets) uses.  Its output matches the C# tool's file for
-file (checked on Scratch's p2).  A new profile goes into both.
+file (checked on Scratch's p2).  `mkromset/fs_rofs.c` is the C port
+`igs-mkromset` uses.  A new profile goes into all three.
 
 ## Kernel evidence
 
@@ -252,7 +253,7 @@ Reversed from Gold Captain (`GoldCaptain-OS-e65`, `2.4.31-IGS_V1.0`, built
 1 Dec 2008).  One command does all of it:
 `romtool/igs_e2000_extract.py <id> <image> <work dir>`, with
 the constants from the software list (`hash/e2000.xml`); the loader's
-rom sets come from `romtool/mkromset.py`, which reuses its assembly.
+rom sets come from `igs-mkromset` (`mkromset/exe.c`, a port of that assembly).
 
 ## Disk layout
 
@@ -468,7 +469,7 @@ from p1 with p1 as the root; BusyBox `init` runs `/etc/init.d/rc.sysinit`:
 | p5 | `assert.txt` (the game's error log) | `/pkids/log` |
 
 `rc.sysinit` shows `load.bmp` with `gx2show`, then `/etc/init.d/pkids_game`
-runs `cd /pkids/linux; ./pkids`.  `romtool/mkromset.py` reads logical
+runs `cd /pkids/linux; ./pkids`.  The set builder reads logical
 partitions as p5 and up.
 # E2200 (Linux 2.6.32.8)
 
@@ -488,4 +489,4 @@ consumed all 3,904 records and inflated every file.  LILO boots
 `/bin/mountloop` loop-mounts `exe.rom` on `/PM3/exe`, `data.rom` on
 `/PM3/data` and every other `<name>.rom` on `/PM3/media/<name>`.  The
 launcher and the executable are FPGA-cipher encrypted (`IGS_E2200.md`);
-`romtool/mkromset.py`'s `loop` and `poweron` steps do the rest.
+The set builder's `loop` and `poweron` steps do the rest.

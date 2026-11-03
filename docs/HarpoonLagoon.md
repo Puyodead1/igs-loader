@@ -47,7 +47,7 @@ All three images are 1,903,878,144 bytes (the M107US raw image's SHA-256 is
 | p3 | SquashFS game data, mounted at `/Fish`: `asic36.bin`, `sound/`, `action/`, `libs/`, fonts, and `FH -> ../Fish.bin/fish` |
 | p4 | ext2 `rw_data` (unused by the loader) |
 
-The rom sets hold p2 at `/` and p3 at `/Fish` (`romtool/mkromset.py`).
+The rom sets hold p2 at `/` and p3 at `/Fish` (`igs-mkromset`).
 
 ## Formats and protection
 

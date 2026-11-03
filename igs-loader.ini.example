@@ -22,3 +22,11 @@ rompath=roms
 
 # chdman for romtool/mkromset.py, if it is not on PATH ($CHDMAN overrides)
 #chdman=C:\mame\chdman.exe
+
+# A game's own variables (its options; igs-loader-gui writes them here) go
+# in a section named after its id, after the settings above.  Both loaders
+# export them for that game, unless the environment already has them.
+# [gui] holds igs-loader-gui's own settings.
+#[oceanparty_md105cn]
+#OCEAN_COIN=20
+#IGS_FPS_CAP=0

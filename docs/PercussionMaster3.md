@@ -121,7 +121,7 @@ shell commands that would set the host's clock or network
 
 ## Extracting
 
-`romtool/mkromset.py percussionmaster3_m107fa <image>` builds the rom set
+`igs-mkromset percussionmaster3_m107fa <image>` builds the rom set
 (`IGS_LOADER.md` has its size).
 
 | Path | What |

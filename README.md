@@ -56,28 +56,28 @@ software lists `hash/e2100.xml`, `hash/e2200.xml`, `hash/e2000.xml` and
 
 ### Building sets from your dumps
 
-`romtool/mkromset.py` builds a set from a disk image (`.img`) or a MAME CHD
-(`.chd`). It runs on Linux/WSL and needs `7z`, `unsquashfs` (squashfs-tools)
-and `debugfs` (e2fsprogs). `python3-cryptography` speeds up the E2100 root
-filesystem. For CHDs it also needs `chdman`, from `$CHDMAN`, `chdman=` in
-`igs-loader.ini`, or PATH; a Windows `chdman.exe` works from WSL.
+`igs-mkromset` (`build/igs-mkromset` on Linux, `igs-mkromset.exe` on Windows)
+builds a set from a disk image (`.img`) or a MAME CHD (`.chd`, read in place).
+It needs no other tools.
 
 ```bash
-python3 romtool/mkromset.py --list                          # the ids and the dumps they expect
-python3 romtool/mkromset.py scratch_m101cn e2100_scratch_m101cn.img
-python3 romtool/mkromset.py goldcaptain goldcaptain.chd --format zip -o ~/igs-roms
+build/igs-mkromset --list                          # the ids and the dumps they expect
+build/igs-mkromset scratch_m101cn e2100_scratch_m101cn.img
+build/igs-mkromset goldcaptain goldcaptain.chd --format zip -o ~/igs-roms
 ```
 
 | Option | Effect |
 | --- | --- |
 | `-o <dir>` | output directory (default: the first `rompath=` entry, else `roms/`) |
 | `--format 7z\|zip\|dir` | archive type, or a plain folder (default `7z`, `-mx9`) |
-| `--mx N` | 7z compression level |
+| `--mx N` | compression level (7z, zip) |
 | `--no-verify` | skip hashing the whole input image |
+| `--threads N` | compression threads (default: the CPUs) |
 
 The input is checked against the dump's SHA-1 in the software list, and the
-built set against the listed file hashes. Building takes about 4–11 minutes
-per set; Hero of Robots takes about 45.
+built set against the listed file hashes. `romtool/mkromset.py` is the
+Python reference implementation (Linux/WSL, with `7z`, `unsquashfs`,
+`debugfs` and `chdman`); both build the same sets.
 
 ## Configuration
 
@@ -101,6 +101,16 @@ both loaders convert them, so one file serves both. The environment variables
   settings and bookkeeping are kept between runs.
 - **Re-extraction resets them:** a set is extracted again when its archive
   changes, which wipes those settings.
+
+A game's own variables go in a section named after its id; both loaders
+export them for that game only (variables already set in the environment
+win). `IGS_INI` names another settings file.
+
+```ini
+[oceanparty_md105cn]
+OCEAN_COIN=20
+IGS_FPS_CAP=0
+```
 
 ## Usage
 
@@ -146,6 +156,27 @@ From a source checkout, `play-win.ps1 <id>` runs `build\win\igs-loader.exe`.
 The exe needs no other DLLs. It takes the game's own system libraries from
 the rom set.
 
+### GUI
+
+`igs-loader-gui` (`igs-loader-gui.exe` on Windows, `build/igs-loader-gui` on
+Linux, which needs `libsdl2-2.0-0`) is a launcher in the style of a MAME
+front end for the loader of its own platform:
+
+- the game list with set status, search, machine filter, sorting and
+  clones; keyboard and gamepad navigation (Enter or A launches);
+- a page per game: details, the snapshot (`snap/<id>.png`, or the newest
+  frame the Snapshots option saved), the game's options from the software
+  list, online play with an optional local igs-online server, the Hero of
+  Robots NFC card tool;
+- Launch, Verify and Stop, one game at a time, with the log live (also in
+  `logs/<id>.log`);
+- global options (`IGS_*`), settings (rompath, cachepath, hashpath,
+  chdman), set building from a disk image, cache sizes and reset.
+
+Everything is stored in `igs-loader.ini`: the game's options in its
+section, so command-line runs use them too; the launcher's own settings
+in `[gui]`.
+
 ### Window title and options
 
 The window title shows the game, its status (credits, phase) and the frame
@@ -172,28 +203,30 @@ rate. Useful environment variables:
 ./build.sh
 ```
 
-This builds `build/igs_core.so`, one `.so` per machine and per game, and
-`build/igs-romset`, the rom-set helper `run.sh` uses. It also unpacks
+This builds `build/igs_core.so`, one `.so` per machine and per game,
+`build/igs-romset`, the rom-set helper `run.sh` uses, and
+`build/igs-mkromset`, the set builder, and `build/igs-loader-gui` when
+`libsdl2-dev` is installed. It also unpacks
 ncurses 5 from `debs/` into `lib/`, because Ubuntu 24.04 no longer ships
 it. `core/font.h`, the overlay font, is regenerated with Python Pillow only
 when `core/gen_font.py` is newer.
 
 **Windows loader** (cross-compiled; needs the mingw-w64 i686 posix toolchain,
-`gcc-mingw-w64-i686-posix` on Ubuntu):
+`gcc-mingw-w64-i686-posix` and `g++-mingw-w64-i686-posix` on Ubuntu):
 
 ```bash
 ./win/build-win.sh
 ```
 
-This writes `build/win/igs-loader.exe`, the machine and game DLLs and the
-preloaded libraries, all statically linked.
+This writes `build/win/igs-loader.exe`, the machine and game DLLs, the
+preloaded libraries, `igs-mkromset.exe` and `igs-loader-gui.exe`, all
+statically linked.
 
 ## Roadmap
 
 - Percussion Master 3 online: the dragon fight in song select (offered
   and listed, never landed on by scripted runs) and the world dragon not
   yet seen in the game.
-- A graphical front end.
 
 ## Documentation
 
@@ -221,9 +254,15 @@ Controls and per-game settings are on the [wiki](https://github.com/Puyodead1/ig
 | `games/<game>/` | per-game plugins: inputs, coins, the protection chip's game logic |
 | `games/heroofrobots/hero-nfc*.c` | `hero-nfc` and `hero-nfc-gui.exe` (Windows), the Hero of Robots NFC card tool (experimental; [HeroOfRobots.md](docs/HeroOfRobots.md#card-tool-experimental)) |
 | `win/` | the native Windows loader: ELF loader, glibc shims on Win32, SDL 1.2 and GL layers |
+| `gui/` | `igs-loader-gui`: Dear ImGui on Win32 + OpenGL 3 (Windows) or SDL2 + OpenGL 3 (Linux) |
 | `romset/` | rom-set lookup, software-list parser, `.7z` / `.zip` reading |
-| `romtool/` | the set builder and the disk-image filesystem tools |
+| `mkromset/` | the set builder, `igs-mkromset` (a library and its CLI) |
+| `romtool/` | the Python reference builder and the disk-image filesystem tools |
 | `hash/` | the software lists |
 | `docs/` | the documentation (above) |
-| `third_party/lzma/` | LZMA SDK 23.01 decoder (public domain) |
+| `third_party/lzma/` | LZMA SDK 23.01 subset (public domain) |
+| `third_party/zlib/` | zlib 1.3.1 and minizip (zlib licence) |
+| `third_party/libchdr/` | libchdr (BSD-3-Clause) with zstd 1.5.7 (BSD) and dr_flac (public domain / MIT-0) |
+| `third_party/imgui/` | Dear ImGui 1.92.9b (MIT) |
+| `third_party/stb/` | stb_image 2.28 (public domain / MIT) |
 | `debs/` | ncurses 5 (i386) from Ubuntu 22.04 |

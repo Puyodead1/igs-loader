@@ -10,7 +10,10 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		<year>2005</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M105CN"/>
-		<info name="usage" value="docs/PercussionKids.md; tunables PK_REGION, PK_AUTOPLAY, PK_NO_FASTPATH"/>
+		<info name="usage" value="docs/PercussionKids.md"/>
+		<info name="tunable" value="PK_REGION enum:1|2|0|3|4|5|6 1 region the chip reports: 1 China, 2 Hong Kong, 0 Taiwan (Tempo Kiddo), 3..6 English"/>
+		<info name="tunable" value="PK_AUTOPLAY bool 0 [Testing] the chip plays every note itself"/>
+		<info name="tunable" value="PK_NO_FASTPATH bool 0 [Testing] draw bitmaps through the emulated 2D engine (slow)"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="percussionkids"/>
 			<feature name="data" value="/pkids/linux"/>

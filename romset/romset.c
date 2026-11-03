@@ -35,7 +35,7 @@
 char rs_error[512];
 int rs_quiet;
 
-static char cfg_root[RS_PATH], cfg_rompath[RS_PATH * 4], cfg_cache[RS_PATH], cfg_hash[RS_PATH * 4];
+static char cfg_root[RS_PATH], cfg_ini[RS_PATH], cfg_rompath[RS_PATH * 4], cfg_cache[RS_PATH], cfg_hash[RS_PATH * 4];
 
 /* ---- paths ------------------------------------------------------------------------------ */
 
@@ -253,38 +253,90 @@ static void default_cache(char *out, size_t n)
 #endif
 }
 
-void rs_config(const char *root)
+/*
+ * The key=value lines of one part of the ini: name "" is the globals (the
+ * lines before the first [section]), else [name].  '#' and ';' start comments.
+ */
+static int ini_scan(const char *name, void (*fn)(const char *key, const char *value, void *ctx), void *ctx)
 {
-    char ini[RS_PATH], line[RS_PATH * 4], rompath[RS_PATH * 4] = "roms", hash[RS_PATH * 4] = "hash", cache[RS_PATH] = "";
-    const char *v;
+    char line[RS_PATH * 4], cur[256] = "";
+    int n = 0;
     FILE *f;
 
-    host_form(root, cfg_root, sizeof(cfg_root));
-    snprintf(ini, sizeof(ini), "%s%cigs-loader.ini", cfg_root, SEP);
-    if ((f = fopen(ini, "r"))) {
-        while (fgets(line, sizeof(line), f)) {
-            char *k = line, *eq, *e;
+    if (!(f = fopen(cfg_ini, "r")))
+        return 0;
+    while (fgets(line, sizeof(line), f)) {
+        char *k = line, *eq, *e, *v;
 
-            while (*k == ' ' || *k == '\t')
-                k++;
-            if (*k == '#' || *k == ';' || *k == '[' || !(eq = strchr(k, '=')))
-                continue;
-            *eq = 0;
-            for (e = eq; e > k && (e[-1] == ' ' || e[-1] == '\t'); e--)
-                e[-1] = 0;
-            for (v = eq + 1; *v == ' ' || *v == '\t'; v++)
+        while (*k == ' ' || *k == '\t')
+            k++;
+        for (e = k + strlen(k); e > k && (e[-1] == '\n' || e[-1] == '\r' || e[-1] == ' ' || e[-1] == '\t'); e--)
+            e[-1] = 0;
+        if (*k == '[') {
+            if ((e = strchr(k, ']')))
+                *e = 0;
+            for (k++; *k == ' '; k++)
                 ;
-            for (e = (char *)v + strlen(v); e > v && (e[-1] == '\n' || e[-1] == '\r' || e[-1] == ' '); e--)
+            for (e = k + strlen(k); e > k && e[-1] == ' '; e--)
                 e[-1] = 0;
-            if (!strcmp(k, "rompath"))
-                snprintf(rompath, sizeof(rompath), "%s", v);
-            else if (!strcmp(k, "cachepath"))
-                snprintf(cache, sizeof(cache), "%s", v);
-            else if (!strcmp(k, "hashpath"))
-                snprintf(hash, sizeof(hash), "%s", v);
+            snprintf(cur, sizeof(cur), "[%s", k);       /* never "" again: globals end here */
+            continue;
         }
-        fclose(f);
+        if (*k == '#' || *k == ';' || !(eq = strchr(k, '=')) || eq == k)
+            continue;
+        if (name[0] ? cur[0] != '[' || strcmp(cur + 1, name) : cur[0] != 0)
+            continue;
+        *eq = 0;
+        for (e = eq; e > k && (e[-1] == ' ' || e[-1] == '\t'); e--)
+            e[-1] = 0;
+        for (v = eq + 1; *v == ' ' || *v == '\t'; v++)
+            ;
+        fn(k, v, ctx);
+        n++;
     }
+    fclose(f);
+    return n;
+}
+
+int rs_section(const char *name, void (*fn)(const char *key, const char *value, void *ctx), void *ctx)
+{
+    return name && name[0] ? ini_scan(name, fn, ctx) : 0;
+}
+
+struct globals { char *rompath, *hash, *cache; };
+
+static void global_line(const char *k, const char *v, void *ctx)
+{
+    struct globals *g = ctx;
+
+    if (!strcmp(k, "rompath"))
+        snprintf(g->rompath, RS_PATH * 4, "%s", v);
+    else if (!strcmp(k, "cachepath"))
+        snprintf(g->cache, RS_PATH, "%s", v);
+    else if (!strcmp(k, "hashpath"))
+        snprintf(g->hash, RS_PATH * 4, "%s", v);
+}
+
+void rs_config(const char *root)
+{
+    char rompath[RS_PATH * 4] = "roms", hash[RS_PATH * 4] = "hash", cache[RS_PATH] = "";
+    struct globals g = { rompath, hash, cache };
+    const char *v;
+
+    host_form(root, cfg_root, sizeof(cfg_root));
+    /* IGS_INI: another settings file (relative: to the root) */
+    if ((v = getenv("IGS_INI")) && *v) {
+        char h[RS_PATH];
+
+        host_form(v, h, sizeof(h));
+        if (is_abs(h))
+            snprintf(cfg_ini, sizeof(cfg_ini), "%s", h);
+        else
+            snprintf(cfg_ini, sizeof(cfg_ini), "%s%c%s", cfg_root, SEP, h);
+    } else {
+        snprintf(cfg_ini, sizeof(cfg_ini), "%s%cigs-loader.ini", cfg_root, SEP);
+    }
+    ini_scan("", global_line, &g);
     if ((v = getenv("IGS_ROMPATH")) && *v)
         snprintf(rompath, sizeof(rompath), "%s", v);
     if ((v = getenv("IGS_HASHPATH")) && *v)
@@ -314,6 +366,8 @@ void rs_config(const char *root)
 #endif
 }
 
+const char *rs_root(void) { return cfg_root; }
+const char *rs_ini(void) { return cfg_ini; }
 const char *rs_hashpath(void) { return cfg_hash; }
 const char *rs_rompath(void) { return cfg_rompath; }
 const char *rs_cachepath(void) { return cfg_cache; }
@@ -842,6 +896,87 @@ int rs_open(const char *id, char *dir, size_t n)
     if (rename(part, dir)) {
 #endif
         snprintf(rs_error, sizeof(rs_error), "cannot rename %s to %s", part, dir);
+        return -1;
+    }
+    return 0;
+}
+
+/* ---- the cache: sizes and reset --------------------------------------------------------- */
+
+void rs_cache_dir(const char *id, char *out, size_t n)
+{
+    snprintf(out, n, "%s%c%s", cfg_cache, SEP, id);
+}
+
+long long rs_tree_size(const char *path)
+{
+    long long total = 0;
+#ifdef _WIN32
+    WIN32_FIND_DATAA fd;
+    HANDLE h;
+    char pat[RS_PATH];
+
+    snprintf(pat, sizeof(pat), "%s\\*", path);
+    h = FindFirstFileA(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return 0;
+    do {
+        char c[RS_PATH];
+
+        if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, ".."))
+            continue;
+        if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && !(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            snprintf(c, sizeof(c), "%s\\%s", path, fd.cFileName);
+            total += rs_tree_size(c);
+        } else {
+            total += ((long long)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    DIR *d = opendir(path);
+    struct dirent *e;
+
+    if (!d)
+        return 0;
+    while ((e = readdir(d))) {
+        char c[RS_PATH];
+        struct stat st;
+
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+            continue;
+        snprintf(c, sizeof(c), "%s/%s", path, e->d_name);
+        if (lstat(c, &st))
+            continue;
+        total += S_ISDIR(st.st_mode) ? rs_tree_size(c) : (long long)st.st_size;
+    }
+    closedir(d);
+#endif
+    return total;
+}
+
+long long rs_cache_size(const char *id)
+{
+    char d[RS_PATH];
+
+    rs_cache_dir(id, d, sizeof(d));
+    return is_dir(d) ? rs_tree_size(d) : -1;
+}
+
+int rs_cache_reset(const char *id)
+{
+    char d[RS_PATH], part[RS_PATH];
+
+    if (!id[0] || strchr(id, '/') || strchr(id, '\\') || strstr(id, "..")) {
+        snprintf(rs_error, sizeof(rs_error), "bad id %s", id);
+        return -1;
+    }
+    rs_cache_dir(id, d, sizeof(d));
+    snprintf(part, sizeof(part), "%s.part", d);
+    rmtree(part);
+    rmtree(d);
+    if (exists(d)) {
+        snprintf(rs_error, sizeof(rs_error), "cannot delete %s (in use?)", d);
         return -1;
     }
     return 0;

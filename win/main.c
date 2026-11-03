@@ -9,7 +9,8 @@
  * %LOCALAPPDATA%\igs-loader\cache\<id>) is the cabinet's file tree: the
  * game's cwd is <set>\<DATA>, system libraries come from <set>\lib and
  * <set>\usr\lib, absolute paths resolve inside the set.  Sets up the same
- * IGS_* environment run.sh does, loads the machine plugin DLL and the
+ * IGS_* environment run.sh does (plus the ini's [<id>] section, where the
+ * variable is not already set), loads the machine plugin DLL and the
  * game's i386 ELF binary with its libraries, and starts it.  --check lists
  * every module and unresolved symbol.  See docs/IGS_LOADER.md, "Windows"
  * and "Rom sets".
@@ -55,6 +56,20 @@ static void setenv_kv(const char *k, const char *v)
     _putenv_s(k, v ? v : "");
 }
 
+/* the ini's [<id>] section: kept unless the variable is already set, applied after the list's env */
+static char **sec;
+static int nsec;
+
+static void section_line(const char *k, const char *v, void *ctx)
+{
+    (void)ctx;
+    if (getenv(k) || strchr(k, ' '))
+        return;
+    sec = realloc(sec, (nsec + 2) * sizeof(*sec));
+    sec[nsec++] = strdup(k);
+    sec[nsec++] = strdup(v);
+}
+
 int main(int argc, char **argv)
 {
     char exedir[MAX_PATH], root[MAX_PATH], data[MAX_PATH], rootfs[MAX_PATH], buf[MAX_PATH * 2];
@@ -67,6 +82,9 @@ int main(int argc, char **argv)
     /* first of all: keep the executable's link address range free */
     elf_reserve_low();
     log_init();
+    /* unbuffered, also into a pipe (the GUI's log pane) */
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     SetProcessDPIAware();
     timeBeginPeriod(1);
@@ -119,8 +137,7 @@ int main(int argc, char **argv)
         printf("%s: %s\n", game, n ? "BAD" : sw->nrom ? "good" : "no hashes listed");
         return n ? 1 : 0;
     }
-    lx_verbose = getenv("IGS_VERBOSE") != NULL;
-    lx_lddebug = (int)lx_env_long("IGS_LDDEBUG", 0);
+    rs_section(game, section_line, NULL);
 
     /* the environment run.sh sets up */
     snprintf(buf, sizeof(buf), "%s\\%s.dll", exedir, sw->list);
@@ -143,6 +160,10 @@ int main(int argc, char **argv)
         for (w = strtok_r(envs, " ", &save); w; w = strtok_r(NULL, " ", &save))
             _putenv(w);
     }
+    for (i = 0; i < nsec; i += 2)
+        setenv_kv(sec[i], sec[i + 1]);
+    lx_verbose = getenv("IGS_VERBOSE") != NULL;
+    lx_lddebug = (int)lx_env_long("IGS_LDDEBUG", 0);
 
     libc_init();
     sys_init();

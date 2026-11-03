@@ -80,6 +80,7 @@ game's page (`HarpoonLagoon.md`, `OceanParty.md`).
 | `IGS_TITLE` | window title text in place of the game's description; `0` keeps the game's own title.  The title reads `name \| status \| fps`, refreshed every second; the status comes from the game plugin (credits, phase or state) |
 | game plugins | their own, e.g. `OCEAN_BET_SECONDS`, `GC_SCRIPT`, `HERO_CARD_CREDIT`, `HERO_NFC` (see the game's page) |
 | `IGS_ROMPATH`, `IGS_CACHE`, `IGS_HASHPATH` | override `rompath=`, `cachepath=`, `hashpath=` of `igs-loader.ini` (see Rom sets) |
+| `IGS_INI` | the settings file instead of `igs-loader.ini` (relative: to the loader root); both loaders, the set builder and the GUI |
 
 ## Setup (once)
 
@@ -97,15 +98,15 @@ sudo apt install libxaw7:i386 libfontenc1:i386 libjpeg62:i386
 `build.sh` needs `gcc-multilib` and Python Pillow (for the overlay font).  It
 does three things:
 
-1. Builds `build/igs_core.so`, one `.so` per machine and one per game, and
+1. Builds `build/igs_core.so`, one `.so` per machine and one per game,
    `build/igs-romset` (native 64-bit: software lists, rompath, `.7z`/`.zip`
-   sets; see Rom sets).
+   sets; see Rom sets) and `build/igs-mkromset` (the set builder).
 2. Generates `core/font.h` from DejaVu Sans Mono Bold.
 3. Unpacks ncurses 5 into `lib/` (`debs/`, from Ubuntu 22.04; 24.04 no
    longer has it).
 
-Then build the rom sets from the disk images (`romtool/mkromset.py`, next
-section) and point `rompath=` in `igs-loader.ini` at them.
+Then build the rom sets from the disk images (`igs-mkromset`, next section)
+and point `rompath=` in `igs-loader.ini` at them.
 
 Notes:
 - `libsdl1.2debian` is `sdl12-compat` on SDL2.
@@ -164,6 +165,31 @@ $ run.sh --verify scratch_m101cn       # the <rom> hashes, like mame -verifyroms
 
 `igs-loader.exe --list` and `--verify <id>` do the same on Windows.
 
+### Per-game settings: `[<id>]` sections
+
+`igs-loader.ini` is `key=value` lines, `#` and `;` comments, MAME-style
+sections.  The loaders' settings (`rompath=`, `cachepath=`, `hashpath=`,
+`chdman=`) are the lines before the first section; keys under a section are
+never read as settings.  A section named after an id holds that game's
+environment variables (its tunables, a global option for this game only):
+
+```ini
+rompath=roms
+[oceanparty_md105cn]
+OCEAN_COIN=20
+IGS_FPS_CAP=0
+[gui]
+snapshots=1
+```
+
+- **Both loaders export it** when they run that id: `run.sh` through
+  `igs-romset --section <id>` (shell-quoted `export` lines), the exe in
+  `main.c`.  They apply it after the list's `env` feature, so a section can
+  change those too.
+- **The environment wins:** a variable already set is left alone.
+- **`[gui]`** is the GUI's own (its settings and the global options it
+  passes); the loaders ignore it.
+
 ### Software list entries
 
 ```xml
@@ -209,58 +235,83 @@ $ run.sh --verify scratch_m101cn       # the <rom> hashes, like mame -verifyroms
 | `libc` | `uclibc`: the executable is linked against uClibc 0.9.26 (E1000); `run.sh` runs it with the host's `ld-linux.so.2` and `build/uclibc` (`libc.so.0`, `libm.so.0`, `libdl.so.0` on glibc) |
 | `build` | the builder's recipe (below) |
 
-The description is the window title (exported as `IGS_NAME`).  The `<info
-name="usage">` line points at the game's page and its plugin tunables.
-Keys and constants are also tabulated in `IGS_KEYS.md`.
+The description is the window title (exported as `IGS_NAME`).  Keys and
+constants are also tabulated in `IGS_KEYS.md`.  `<info>` lines:
+
+| Info | Value |
+| --- | --- |
+| `version` | the dump's version string |
+| `usage` | the game's page (`docs/<Game>.md`) |
+| `tunable` | one of the game plugin's environment variables: `NAME type default text`.  Types `int`, `hex`, `bool`, `str`, `enum:a\|b\|c`; default `-` = unset (the plugin's own); a text starting `[Group] ` groups it (`NFC`, `Testing`).  The GUI shows one field per tunable |
+| `online` | the igs-online package and its port (`wedance 10000`): the game can play online with `IGS_NET` |
+| `tool` | a helper program next to the loaders, `<name> [Group] label` (`hero-nfc [NFC] card tool`): the GUI opens `<name>-gui.exe`, else runs `<name>` |
+
+```xml
+<info name="tunable" value="OCEAN_BET_SECONDS int 20 length of the betting period, seconds"/>
+<info name="tunable" value="HERO_NFC enum:0|all|scan|dispense|points|scan,dispense|scan,points|dispense,points 0 [NFC] NFC tags for the QR cards and the points card (experimental)"/>
+```
+
+`softlist.c` keeps every `<info>` (`sw_info_value`) and parses the tunables
+(`struct sw_tunable`); `softlist.py` gives `Software.tunables`.
 
 The lists are read by a small strict parser in C (`romset/softlist.c`, no
 XML library) and by `romtool/softlist.py` (the Python tools).  In WSL,
 `run.sh` gets the entry from `build/igs-romset --env <id>`, which prints the
 features as shell-quoted `KEY='value'` lines (upper case: `DATA`, `BINARY`,
 `LIBS`, ...) plus `ID`, `NAME`, `MACHINE`, `PARENT` and `SET` (the resolved
-set directory).
+set directory), and the ini section from `igs-romset --section <id>`.
 
-### Building sets: `romtool/mkromset.py`
+### Building sets: `igs-mkromset`
 
 ```bash
-python3 romtool/mkromset.py --list
-python3 romtool/mkromset.py scratch_m101cn e2100_scratch_m101cn.img
-python3 romtool/mkromset.py goldcaptain goldcaptain.chd --format zip -o /tmp/sets
+build/igs-mkromset --list
+build/igs-mkromset scratch_m101cn e2100_scratch_m101cn.img
+build/igs-mkromset goldcaptain goldcaptain.chd --format zip -o /tmp/sets
 ```
 
-`mkromset.py <id> <image.chd|image.img> [-o <dir>] [--format 7z|zip|dir]
-[--mx N] [--no-verify]`.  It runs in WSL (needs `7z`, `unsquashfs`,
-`debugfs`; `python3-cryptography` speeds up the E2100 root fs).
+`igs-mkromset <id> <image.chd|image.img> [-o <dir>] [--format 7z|zip|dir]
+[--mx N] [--no-verify] [--threads N] [--root DIR]` (`igs-mkromset.exe` on
+Windows).  Plain C, no external tools: `mkromset/` is a library (the GUI
+runs it in-process, `mkromset/mkromset.h`) and its CLI.  It finds `hash/`
+and `igs-loader.ini` next to itself, one directory up (`build/`) or two
+(`build\win\`), or in `--root`.  `romtool/mkromset.py` is the reference
+implementation (WSL; `7z`, `unsquashfs`, `debugfs`, `chdman`) and builds
+the same sets: same paths, contents, symlinks and modes.
 
 1. **Input.**  A `.img` is hashed and compared with the list's disk SHA-1
-   (a warning on mismatch; `--no-verify` skips the full read).  For a
-   `.chd` the header's data SHA-1 is compared, then `chdman extracthd`
-   writes a temporary image (chdman: `$CHDMAN`, `chdman=` in
-   `igs-loader.ini`, or PATH; a Windows chdman is fine from WSL).
+   (a warning on mismatch; `--no-verify` skips the full read).  A `.chd`'s
+   header data SHA-1 is compared, then the CHD is read in place (libchdr;
+   no temporary image).
 2. **The recipe**, the entry's `build` feature: `;`-separated steps that
    follow the cabinet's boot.
 
    | Step | Does |
    | --- | --- |
-   | `root p2` | the root fs: E2100 `igs_rofs` (`romtool/igs_rofs.py`, the entry's `rofs_profile`), E2000 plaintext ROFS (`igs_rofs24.py`) |
+   | `root p2` | the root fs: E2100/E2200 `igs_rofs` (the entry's `rofs_profile`), E2000 plaintext ROFS |
    | `decrypt SRC DST SIZE` | FPGA-cipher decrypt `SRC` into `DST` with `asset_mask`, keep `SIZE` bytes (Scratch's `/bin/unrar /Scratch/swin /Scratch.bin/swin`) |
    | `copy SRC DST` | copy inside the tree (Scratch's `/etc/X11/IGS` copies `asic36.bin`) |
    | `assemble DST` | E2000: rebuild the split executable at `DST` |
-   | `mount pN DIR` | partition N replaces `DIR`'s contents, as the mount hides them: SquashFS (E2100 p3, `unsquashfs -o`), IGS_SHFS (E2000 p3, `igs_shfs.py`) or ext2/3 (p4, every E1000 partition; `debugfs rdump`; `lost+found` left out); p5 and up are logical partitions |
-   | `unupx SRC DST` | unpack the UPX-packed executable `SRC` into `DST` (`igs_upx.py`; We Dance's `wedo`); `SRC` stays as dumped |
-   | `loop SRC DIR` | the SquashFS image file `SRC` replaces `DIR`'s contents, as a loop mount (`unsquashfs`); the image is left out of the set.  A `*` in `SRC` matches files, a `*` in `DIR` is each match's name without its extension (E2200's `/PM3/ROMS/*.rom`) |
+   | `mount pN DIR` | partition N replaces `DIR`'s contents, as the mount hides them: SquashFS 4 (E2100 p3), IGS_SHFS (E2000 p3) or ext2/3 (p4, every E1000 partition; `lost+found` left out); p5 and up are logical partitions |
+   | `unupx SRC DST` | unpack the UPX-packed executable `SRC` into `DST` (We Dance's `wedo`); `SRC` stays as dumped |
+   | `loop SRC DIR` | the SquashFS image file `SRC` replaces `DIR`'s contents, as a loop mount; the image is left out of the set.  A `*` in `SRC` matches files, a `*` in `DIR` is each match's name without its extension (E2200's `/PM3/ROMS/*.rom`) |
    | `poweron SRC DST` | E2200: decrypt `SRC` as the launcher `PowerOn` does (a key-id header, the FPGA cipher with `exe_mask`, the size from the trailer) into `DST`; `SRC` stays as dumped |
 
-   Only the partitions a recipe names are read, straight from the image
-   (no partition copies).
-3. **Fix-ups.**  Absolute symlinks become relative to the set root.
+   Only the partitions a recipe names are read, straight from the image.
+   Modes follow what the Python tools produced: ROFS files keep theirs,
+   ext2/3 entries their rwx bits, SquashFS entries theirs without
+   setuid/setgid (`loop` files: `& 0755` unless sticky); new directories
+   are 0755.  Device nodes, fifos and sockets are left out.
+3. **Fix-ups.**  `lost+found` is dropped; absolute symlinks become relative
+   to the set root.
 4. **Check** the `<rom>` hashes and the executable.
-5. **Pack**: `7z a -mx9 -snl` (default), zip (deflate, Info-ZIP symlinks),
-   or a folder.  Output goes to `-o`, else the first `rompath=` entry of
-   `igs-loader.ini`, else `roms/`; the staging tree is
-   `<output>/.<id>.stage` and is deleted when packed.
-
-Set sizes (`7z -mx9`, 7-Zip 23.01) and build times on this machine:
+5. **Pack**: `.7z` (default; one solid LZMA2 stream, multithreaded, `--mx`
+   as 7-Zip's levels, symlinks stored as links), zip (deflate, Info-ZIP
+   symlinks) or a folder (on Windows, links become copies, as when the
+   loader extracts an archive).  Output goes to `-o`, else the first
+   `rompath=` entry of `igs-loader.ini`, else `roms/`.  File contents are
+   staged in `<output>/.<id>.stage`, deleted at the end.
+Set sizes (`7z -mx9`, 7-Zip 23.01) and build times of `mkromset.py` in WSL
+on this machine:
 
 | Id | `.7z` | Extracted | Build |
 | --- | ---: | ---: | ---: |
@@ -302,6 +353,40 @@ into `igs-loader.exe`:
   targets, resolved inside the set: file links copied, directory links
   copied as trees, links into themselves and dangling links skipped.
 - Entry names with `..`, absolute names and drive letters are refused.
+## GUI
+
+`igs-loader-gui` (`gui/`) is a launcher for the loader of its own platform:
+`igs-loader.exe` next to it on Windows, `run.sh` on Linux.  Dear ImGui
+1.92.9b (`third_party/imgui/`): Win32 + OpenGL 3 on Windows (i686, static,
+from `win/build-win.sh`), SDL2 + OpenGL 3 on Linux (`build.sh`, when
+`sdl2-config` is found).  It finds the loader root as the exe does (next to
+itself, its parent `build/`, or two up from `build\win\`).
+
+| Part | Source | GUI |
+| --- | --- | --- |
+| Game list | `romset/` in-process (`sw_load`, `sw_at`, `rs_locate`) | id, description, machine, year, parent, set; search, machine filter, sorting, clones grouped under their parent; keyboard and gamepad navigation |
+| Game page | the list entry | details, set path, cache size, the `usage` page, snapshot, tunables, online, tool |
+| Snapshot | `snap/<id>.png` (MAME), else the newest `.png`/`.ppm` in `snap/<id>/` | the Snapshots option sets `IGS_SHOT=snap/<id>/<id>-` |
+| Launch, Verify, Stop | the loader | one game at a time; output in the log pane and `logs/<id>.log` (`<id>.verify.log`) |
+| Tunables | `<info name="tunable">` | one field per tunable, grouped; saved in the game's section (empty = unset) |
+| Online | `<info name="online">` | `IGS_NET` in the game's section; a local igs-online server (`python -m igs_online <package> --listen <address>`) when the igs-online folder is set |
+| Tool | `<info name="tool">` | Windows: `hero-nfc-gui.exe --root --game`; Linux: `hero-nfc <command> --yes`, output in the log pane; the game's section as environment |
+| Global options | a table in `gui/app.cpp` | `IGS_*` for this platform's loader, saved in `[gui]`, passed as environment unless the game's section or the environment has them |
+| Settings | `igs-loader.ini` | `rompath` (list), `cachepath`, `hashpath`, `chdman`, and `[gui]`: snapshots folder, igs-online folder, python, font size; comments and unknown lines kept |
+| Build | `mkromset/` in-process | id, image, output, format, `--mx`, `--no-verify`; log, progress, Cancel |
+| Cache | `rs_cache_size`, `rs_cache_reset` | the extracted size per id; Reset deletes the copy (and the game's settings, bookkeeping and rankings in it) after a warning |
+
+- **Stop:** Windows: each child is in a job object, terminated as a whole.
+  Linux: each child leads its own session; Stop sends `SIGTERM` to the
+  process group, then `SIGKILL` after 8 s.
+- **Keys:** F5 launch, F6 verify, F8 stop; Enter or double-click on a row
+  launches it; gamepad A on a row, Start and Back.
+- **Test scripts:** `igs-loader-gui --script <file>` runs commands through
+  the buttons' code (`select`, `launch`, `stop`, `waitlog <task> <s> <text>`,
+  `shot <file.bmp>` (the window's own frame), `dump <file>`, ...; see
+  `script_step` in `gui/app.cpp`).  With `IGS_BACKGROUND=1` the window opens
+  without focus at the bottom, and Windows games start minimized.
+
 ## Architecture
 
 ```
@@ -311,10 +396,15 @@ tools/
     igs-loader.ini(.example)   rompath=, cachepath= (the .ini is local, not in git)
     roms/                      default rompath (not in git)
     romset/                    rom sets: lists, rompath, cache, zip + streaming 7z (C)
-    romtool/                   mkromset.py (set builder), igs_rofs.py, igs_rofs24.py,
+    gui/                       igs-loader-gui (Dear ImGui, third_party/imgui; stb_image, third_party/stb)
+    mkromset/                  igs-mkromset, the set builder (C library + CLI): ROFS, IGS_SHFS,
+                               SquashFS, ext2/3 readers, executables, .7z/.zip writers
+    romtool/                   mkromset.py (reference builder), igs_rofs.py, igs_rofs24.py,
                                igs_shfs.py, igs_fpga_decrypt.py, igs_e2000_extract.py, igs_upx.py,
                                softlist.py, IgsRofsExtractor/ (the C# original)
-    third_party/lzma/          LZMA SDK 23.01 C decoder subset (public domain)
+    third_party/lzma/          LZMA SDK 23.01 subset (public domain)
+    third_party/zlib/          zlib 1.3.1 + minizip (zlib licence)
+    third_party/libchdr/       libchdr + zstd decoder + dr_flac (CHD reading)
     core/        igs.h core.c  LD_PRELOAD library (Linux/SDL glue)
     machines/e2100/            e2100.h (game API) e2100.c (the board)
     machines/e2000/            e2000.h e2000.c, libcasmcard.c (stub library)
@@ -476,7 +566,7 @@ description to the plugins as `IGS_MACHINE`, `IGS_GAME`, `IGS_ASSET_MASK`,
 2. **Add a `<software>` entry to `hash/<machine>.xml`** (id = the dump name
    without the machine prefix; the disk SHA-1; features; a `build` recipe),
    add the keys to `IGS_KEYS.md`, and build the set with
-   `romtool/mkromset.py <id> <image>`.  Copy the hashes it prints into the
+   `igs-mkromset <id> <image>`.  Copy the hashes it prints into the
    entry's `<rom>` lines.
 3. **Start with a copy of the closest game plugin** in
    `games/<game>/<game>.c`.

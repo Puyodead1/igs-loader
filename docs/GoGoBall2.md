@@ -54,7 +54,7 @@ The attract starts after the light-curtain check (about 15 s).  A credit
 
 ## Extracting
 
-`romtool/mkromset.py gogoball2_dx <image>` builds the rom set;
+`igs-mkromset gogoball2_dx <image>` builds the rom set;
 `romtool/igs_e2000_extract.py gogoball2_dx <image> <work dir>` a full
 workspace.
 

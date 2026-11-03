@@ -55,7 +55,7 @@ archives).  A credit (2 coins by default) and S/Boost start a game.
 
 ## Extracting
 
-`romtool/mkromset.py speedrider_m109cnc <image>` builds the rom set;
+`igs-mkromset speedrider_m109cnc <image>` builds the rom set;
 `romtool/igs_e2000_extract.py speedrider_m109cnc <image> <work dir>` a full
 workspace.
 

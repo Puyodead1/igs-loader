@@ -1,8 +1,9 @@
 #!/bin/bash
 # win/build-win.sh - build the Windows loader (run in WSL; needs the mingw-w64
-# i686 posix toolchain): build/win/igs-loader.exe, the machine plugins, the
-# game plugins and the preloaded libraries as DLLs.  Nothing here is needed at
-# run time but those files.
+# i686 posix toolchain, gcc and g++): build/win/igs-loader.exe, the machine
+# plugins, the game plugins and the preloaded libraries as DLLs, the card
+# tool and the GUI (igs-loader-gui.exe).  Nothing here is needed at run time
+# but those files.
 set -e
 cd "$(dirname "$0")/.."
 OUT=build/win
@@ -10,11 +11,24 @@ CC=${CC:-i686-w64-mingw32-gcc-posix}
 mkdir -p "$OUT"
 [ core/font.h -nt core/gen_font.py ] || python3 core/gen_font.py core/font.h
 CF="-O2 -g -Wall -std=gnu11 -fno-strict-aliasing -D__USE_MINGW_ANSI_STDIO=1 -D_WIN32_WINNT=0x0A00"
-# rom sets (software lists, .7z/.zip reading): romset/ and the LZMA SDK subset
+# rom sets (software lists, .7z/.zip reading): romset/ and the LZMA SDK subset, compiled once
+# into build/obj-win/ for the exe, the card tool and the GUI
 LZ=third_party/lzma
-RS="romset/romset.c romset/softlist.c romset/zip.c romset/sevenzip.c romset/hash.c
-    $LZ/7zArcIn.c $LZ/7zBuf.c $LZ/7zCrc.c $LZ/7zCrcOpt.c $LZ/7zDec.c $LZ/7zStream.c $LZ/Bcj2.c
-    $LZ/Bra.c $LZ/Bra86.c $LZ/BraIA64.c $LZ/CpuArch.c $LZ/Delta.c $LZ/LzmaDec.c $LZ/Lzma2Dec.c"
+OBJ=build/obj-win
+mkdir -p "$OBJ"
+# obj <compiler> <flags> <source>: $OBJ/<name>.o, compiled when the source is newer
+obj() {
+    local o=$OBJ/$(basename "${3%.*}").o
+    [ "$o" -nt "$3" ] || $1 $2 -c -o "$o" "$3"
+    echo "$o"
+}
+[ ! -e "$OBJ/romset.o" ] || [ "$OBJ/romset.o" -nt romset/romset.h ] || rm -f "$OBJ"/*.o
+RS=
+for s in romset/romset.c romset/softlist.c romset/zip.c romset/sevenzip.c romset/hash.c \
+         $LZ/7zArcIn.c $LZ/7zBuf.c $LZ/7zCrc.c $LZ/7zCrcOpt.c $LZ/7zDec.c $LZ/7zStream.c $LZ/Bcj2.c \
+         $LZ/Bra.c $LZ/Bra86.c $LZ/BraIA64.c $LZ/CpuArch.c $LZ/Delta.c $LZ/LzmaDec.c $LZ/Lzma2Dec.c; do
+    RS="$RS $(obj $CC "$CF -Wno-format-truncation" $s)"
+done
 # the executable: no ASLR (ELF executables want 0x08048000 free), 16 MiB main stack,
 # committed (ELF code has no stack probes: see libc_thread.c)
 $CC $CF -Wno-format-truncation -o "$OUT/igs-loader.exe" \
@@ -40,4 +54,22 @@ $CC $CF -Wno-format-truncation -Iromset -o "$OUT/hero-nfc.exe" games/heroofrobot
 ${WINDRES:-i686-w64-mingw32-windres} games/heroofrobots/hero-nfc-gui.rc -O coff -o build/hero-nfc-gui-res.o
 $CC $CF -Wno-format-truncation -Wno-unused-function -Iromset -mwindows -o "$OUT/hero-nfc-gui.exe" \
     games/heroofrobots/hero-nfc-gui.c build/hero-nfc-gui-res.o $RS -static -lcomctl32 -lcomdlg32 -lshell32 -lgdi32
+# the rom-set builder, igs-mkromset.exe (mkromset/): its objects in $OBJ/mkr ($MKR_OBJ, for the GUI too)
+. mkromset/sources.sh
+MKR_OBJ=$(mkr_objs $CC "$CF -Wno-format-truncation" "$OBJ/mkr")
+$CC $CF -Wno-format-truncation -Imkromset -Iromset -o "$OUT/igs-mkromset.exe" mkromset/igs-mkromset.c $MKR_OBJ $RS -static
+# the GUI, igs-loader-gui.exe: Dear ImGui on Win32 + OpenGL 3; 32-bit like the exe, so it links the
+# same romset objects; libstdc++ static
+CXX=${CXX:-i686-w64-mingw32-g++-posix}
+IM=third_party/imgui
+GF="-O2 -Wall -std=c++17 -D_WIN32_WINNT=0x0A00 -Iromset -I$IM -Ithird_party/stb"
+# the set builder in-process (mkromset/)
+[ -n "$MKR_OBJ" ] && GF="$GF -DIGS_GUI_MKROMSET -Imkromset"
+GO=
+for s in $IM/imgui.cpp $IM/imgui_draw.cpp $IM/imgui_tables.cpp $IM/imgui_widgets.cpp \
+         $IM/backends/imgui_impl_win32.cpp $IM/backends/imgui_impl_opengl3.cpp $IM/misc/cpp/imgui_stdlib.cpp; do
+    GO="$GO $(obj $CXX "$GF" $s)"
+done
+$CXX $GF -mwindows -o "$OUT/igs-loader-gui.exe" gui/app.cpp gui/task.cpp gui/ini.cpp gui/setbuild.cpp gui/sys_win.cpp gui/main_win.cpp \
+    $GO $MKR_OBJ $RS -static -lopengl32 -lgdi32 -limm32 -ldwmapi -lole32 -luuid -lshell32
 ls -l "$OUT"

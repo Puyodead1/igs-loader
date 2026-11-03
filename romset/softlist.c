@@ -5,7 +5,7 @@
  *   <softwarelist name="e2100" description="...">
  *     <software name="id" [cloneof="parent"]>
  *       <description>..</description> <year>..</year> <publisher>..</publisher>
- *       <info name="version" value=".."/>
+ *       <info name="version" value=".."/>  (every <info> is kept; "tunable" is parsed)
  *       <sharedfeat name=".." value=".."/>
  *       <part name="hdd" interface="..">
  *         <feature name=".." value=".."/>
@@ -54,6 +54,56 @@ const char *sw_feature(const struct sw_info *sw, const char *name, const char *d
         if (!strcmp(sw->feat[i].name, name))
             return sw->feat[i].value;
     return def;
+}
+
+const char *sw_info_value(const struct sw_info *sw, const char *name, const char *def)
+{
+    int i;
+
+    for (i = 0; sw && i < sw->ninfo; i++)
+        if (!strcmp(sw->info[i].name, name))
+            return sw->info[i].value;
+    return def;
+}
+
+void sw_free(void)
+{
+    int i, j;
+
+    for (i = 0; i < nsw; i++) {
+        struct sw_info *s = &sws[i];
+
+        free(s->list);
+        free(s->name);
+        free(s->cloneof);
+        free(s->description);
+        free(s->year);
+        free(s->publisher);
+        free(s->version);
+        free(s->disk);
+        free(s->disk_sha1);
+        for (j = 0; j < s->nfeat; j++) {
+            free(s->feat[j].name);
+            free(s->feat[j].value);
+        }
+        for (j = 0; j < s->ninfo; j++) {
+            free(s->info[j].name);
+            free(s->info[j].value);
+        }
+        for (j = 0; j < s->nrom; j++) {
+            free(s->rom[j].name);
+            free(s->rom[j].sha1);
+        }
+        for (j = 0; j < s->ntun; j++)
+            free(s->tun[j].name);       /* one block: name type def group text */
+        free(s->feat);
+        free(s->info);
+        free(s->rom);
+        free(s->tun);
+    }
+    free(sws);
+    sws = NULL;
+    nsw = capsw = 0;
 }
 
 /* ---- the parser ------------------------------------------------------------------------- */
@@ -170,6 +220,47 @@ static const char *aget(const struct attrs *a, const char *k)
 
 static char *dupnull(const char *s) { return s ? strdup(s) : NULL; }
 
+/* "NAME type default [Group] text": one block, split in place */
+static int add_tunable(struct sw_info *sw, const char *v)
+{
+    size_t l = strlen(v);
+    char *b = malloc(l + 2), *f[4], *p = b;
+    struct sw_tunable *t;
+    int i;
+
+    memcpy(b, v, l + 1);
+    b[l + 1] = 0;                       /* an empty string for "no group" */
+    for (i = 0; i < 4; i++) {
+        while (*p == ' ')
+            p++;
+        f[i] = p;
+        if (i < 3) {
+            while (*p && *p != ' ')
+                p++;
+            if (!*p || p == f[i]) {
+                free(b);
+                return -1;
+            }
+            *p++ = 0;
+        }
+    }
+    sw->tun = realloc(sw->tun, (sw->ntun + 1) * sizeof(*sw->tun));
+    t = &sw->tun[sw->ntun++];
+    t->name = f[0];
+    t->type = f[1];
+    t->def = f[2];
+    t->group = b + l + 1;
+    t->text = f[3];
+    if (f[3][0] == '[' && (p = strchr(f[3], ']'))) {
+        *p++ = 0;
+        t->group = f[3] + 1;
+        while (*p == ' ')
+            p++;
+        t->text = p;
+    }
+    return 0;
+}
+
 static int start_el(struct xp *x, struct state *st, const char *tag, const struct attrs *a)
 {
     struct sw_info *sw = st->cur;
@@ -209,8 +300,16 @@ static int start_el(struct xp *x, struct state *st, const char *tag, const struc
             free(st->text);
             st->text = strdup("");
         } else if (!strcmp(tag, "info")) {
-            if (n && v && !strcmp(n, "version"))
+            if (!n || !v)
+                return fail(x, "info without name or value");
+            if (!strcmp(n, "version"))
                 sw->version = strdup(v);
+            if (!strcmp(n, "tunable") && add_tunable(sw, v))
+                return fail(x, "tunable is not \"NAME type default text\"");
+            sw->info = realloc(sw->info, (sw->ninfo + 1) * sizeof(*sw->info));
+            sw->info[sw->ninfo].name = strdup(n);
+            sw->info[sw->ninfo].value = strdup(v);
+            sw->ninfo++;
         } else if (!strcmp(tag, "feature") || !strcmp(tag, "sharedfeat")) {
             if (!n || !v)
                 return fail(x, "feature without name or value");

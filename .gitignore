@@ -4,6 +4,9 @@
 # local rom sets and settings (igs-loader.ini.example)
 /roms/
 /igs-loader.ini
+# igs-loader-gui: run logs, snapshots
+/logs/
+/snap/
 # dotnet output of the C# ROFS extractor
 /romtool/IgsRofsExtractor/bin/
 /romtool/IgsRofsExtractor/obj/

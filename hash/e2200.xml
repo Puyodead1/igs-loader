@@ -11,7 +11,11 @@ E2100 board's PC side).  Format: see hash/e2100.xml and docs/IGS_LOADER.md,
 		<year>2012</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M107FA"/>
-		<info name="usage" value="docs/PercussionMaster3.md; tunables PM3_VELOCITY (a key press's drum sensor level, 160), PM3_SCRIPT"/>
+		<info name="usage" value="docs/PercussionMaster3.md"/>
+		<info name="tunable" value="PM3_VELOCITY int 160 level a key press reports to the drum sensors (1..255)"/>
+		<info name="tunable" value="PM3_SCRIPT str - [Testing] keys on a timetable, sec:key[+],... (coin service test b1 r1 d1 m1 k0..k9 kstar khash b2 r2 d2 m2 j0..j9 jstar jhash)"/>
+		<info name="tunable" value="PM3_SCRIPT_CLOCK enum:wall|frames wall [Testing] time PM3_SCRIPT in wall-clock seconds or game frames"/>
+		<info name="online" value="pm3 9999"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="percussionmaster3"/>
 			<!-- /etc/X11/IGS: cd /PM3/exe; /PM3.bin/pm3 (decrypted by /PM3.bin/PowerOn) -->

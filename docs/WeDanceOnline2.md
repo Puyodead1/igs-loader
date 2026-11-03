@@ -126,7 +126,7 @@ pings and patch server are refused, so `info/ip` is never rewritten.
 
 ## Extracting
 
-`romtool/mkromset.py wedanceonline2 <image>` builds the rom set (941 MB,
+`igs-mkromset wedanceonline2 <image>` builds the rom set (941 MB,
 1.7 GB extracted).
 
 | Path | What |

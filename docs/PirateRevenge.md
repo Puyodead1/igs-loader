@@ -54,7 +54,7 @@ The attract starts within a few seconds.  A credit starts the game at once
 
 ## Extracting
 
-`romtool/mkromset.py piraterevenge_m101cn <image>` builds the rom set;
+`igs-mkromset piraterevenge_m101cn <image>` builds the rom set;
 `romtool/igs_e2000_extract.py piraterevenge_m101cn <image> <work dir>` a
 full workspace (`root/`, `game/`, `sship.bin`, `loader/GECA`).
 

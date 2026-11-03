@@ -10,6 +10,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#ifdef __cplusplus
+extern "C" {                    /* the GUI (gui/) is C++ */
+#endif
+
 #define RS_PATH 1024
 
 /* ---- software lists --------------------------------------------------------------------- */
@@ -17,34 +21,51 @@
 struct sw_feature { char *name, *value; };
 struct sw_rom { char *name, *sha1; long long size; };
 
+/*
+ * <info name="tunable" value="NAME type default text"/>: a game plugin's
+ * environment variable.  type: int, hex, bool, str or enum:a|b|c; default
+ * "-" = unset (the plugin's own).  A text starting "[Group] " puts it in a
+ * group.
+ */
+struct sw_tunable { char *name, *type, *def, *group, *text; };
+
 struct sw_info {
     char *list;                 /* the machine: e2100, e2000 */
     char *name, *cloneof;
     char *description, *year, *publisher, *version;
     char *disk, *disk_sha1;
-    int nfeat, nrom;
+    int nfeat, nrom, ninfo, ntun;
     struct sw_feature *feat;
     struct sw_rom *rom;
+    struct sw_feature *info;    /* every <info>, in order */
+    struct sw_tunable *tun;
 };
 
 /* parse every *.xml in the hash dirs (';'-separated); 0 or -1 (message in rs_error) */
 int sw_load(const char *hashpath);
+void sw_free(void);             /* forget the lists (sw_load again to reload) */
 int sw_count(void);
 const struct sw_info *sw_at(int i);
 const struct sw_info *sw_find(const char *name);
 const char *sw_feature(const struct sw_info *sw, const char *name, const char *def);
+const char *sw_info_value(const struct sw_info *sw, const char *name, const char *def);
 
 /* ---- configuration ---------------------------------------------------------------------- */
 
 /*
  * The loader root (holds hash/ and igs-loader.ini).  Reads igs-loader.ini
- * there (rompath=, cachepath=, hashpath=); IGS_ROMPATH / IGS_CACHE /
- * IGS_HASHPATH override.
+ * there (IGS_INI names another file): rompath=, cachepath=, hashpath= before
+ * the first [section]; IGS_ROMPATH / IGS_CACHE / IGS_HASHPATH override.
  */
 void rs_config(const char *root);
+const char *rs_root(void);
+const char *rs_ini(void);
 const char *rs_hashpath(void);
 const char *rs_rompath(void);
 const char *rs_cachepath(void);
+
+/* the key=value lines of the ini's [<name>] section, in order; the count */
+int rs_section(const char *name, void (*fn)(const char *key, const char *value, void *ctx), void *ctx);
 
 /* ---- sets ------------------------------------------------------------------------------- */
 
@@ -65,6 +86,12 @@ void rs_list(FILE *out);
 
 /* check the list's <rom> entries in a set dir; prints a line each; 0 = all good */
 int rs_verify(const struct sw_info *sw, const char *dir, FILE *out);
+
+/* an archive set's extracted copy: <cachepath>/<id>; its size in bytes (-1: none); delete it */
+void rs_cache_dir(const char *id, char *out, size_t n);
+long long rs_cache_size(const char *id);
+int rs_cache_reset(const char *id);
+long long rs_tree_size(const char *path);   /* bytes in a tree (links not followed) */
 
 extern char rs_error[512];
 extern int rs_quiet;
@@ -94,5 +121,9 @@ struct rs_sha1 { uint32_t h[5]; uint64_t len; uint8_t buf[64]; };
 void rs_sha1_init(struct rs_sha1 *c);
 void rs_sha1_update(struct rs_sha1 *c, const void *p, size_t n);
 void rs_sha1_final(struct rs_sha1 *c, uint8_t out[20]);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

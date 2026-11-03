@@ -382,7 +382,8 @@ addresses in the decrypted `pm3` (dynamic symbols).
 
 Details: `IGS_SOUND_CRYPTO.md`.
 
-- The 16-byte block shuffle is the same in both games: the `PERM`, the
+- The 16-byte block shuffle is the same in both games: the `PERM`
+  (plaintext byte i from byte `[14,10,8,1,0,12,9,4,3,6,11,7,2,13,5,15][i]`), the
   flipped bytes `{1,4,6,7,10,12,13,15}`, and rotations 1/3.
 - Only the final XOR mask differs.  It follows the runtime key the ASIC
   sends; Harpoon stores it at `byte_84059A0`, from message 44.

@@ -10,7 +10,9 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		<year>2009</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="GoldCaptian-E2000-v1-e65"/>
-		<info name="usage" value="docs/GoldCaptain.md; tunables GC_STEER, GC_SCRIPT"/>
+		<info name="usage" value="docs/GoldCaptain.md"/>
+		<info name="tunable" value="GC_STEER int 3 lever turn rate, VR units per frame (the VR runs 0..512)"/>
+		<info name="tunable" value="GC_SCRIPT str - [Testing] keys on a timetable, sec:key[+],... (coin start left right l r setting service)"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="goldcaptain"/>
 			<!-- cd /GoldCaptain; ./GoldCaptain  (-> /Game/GoldCaptain) -->
@@ -43,7 +45,9 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		<year>2008</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="PirateRevenge-E2000-v05-e61"/>
-		<info name="usage" value="docs/PirateRevenge.md; tunables PR_STEER, PR_SCRIPT"/>
+		<info name="usage" value="docs/PirateRevenge.md"/>
+		<info name="tunable" value="PR_STEER int 3 rudder turn rate, VR units per frame (the VR runs 0..512)"/>
+		<info name="tunable" value="PR_SCRIPT str - [Testing] keys on a timetable, sec:key[+],... (coin coin2 bomb left right l r test service)"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="piraterevenge"/>
 			<!-- /etc/X11/IGS: cd /pr/linux; ./sship  (p3, the same code as /pr/exec/sship) -->
@@ -80,7 +84,10 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		<year>2008</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="GoGoBall2-E2000-v1-e63"/>
-		<info name="usage" value="docs/GoGoBall2.md; tunables GGB_REGION, GGB_AIM, GGB_SCRIPT"/>
+		<info name="usage" value="docs/GoGoBall2.md"/>
+		<info name="tunable" value="GGB_REGION enum:1|2|3|4|5|6|0 4 region the chip reports: 1 CN, 2 HK, 3 FA, 4 US, 5 KR, 6 TL, 0 TW"/>
+		<info name="tunable" value="GGB_AIM int 8 crosshair speed, pixels per frame"/>
+		<info name="tunable" value="GGB_SCRIPT str - [Testing] keys on a timetable, sec:key[+],... (coin coin2 key1 key2 test service left right up down throw rthrow)"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="gogoball2"/>
 			<!-- /etc/X11/IGS: cd /GoGoBall2; ./pitch  (-> linux/pitch, the ramfs GECA fills) -->
@@ -116,7 +123,10 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		<year>2009</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="SR-E2000-v1-e64"/>
-		<info name="usage" value="docs/SpeedRider.md; tunables SR_LEAN, SR_TRACE, SR_PREFIX_DIR"/>
+		<info name="usage" value="docs/SpeedRider.md"/>
+		<info name="tunable" value="SR_LEAN int 15 frames to full lean"/>
+		<info name="tunable" value="SR_TRACE bool 0 [Testing] log every sub-message and button event"/>
+		<info name="tunable" value="SR_PREFIX_DIR str - [Testing] write each rebuilt zip prefix to this folder"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="speedrider"/>
 			<!-- /etc/X11/IGS: cd /sr/Game/bin_linux; ./SR  (-> ../../exec/SR, the ramfs GECA fills) -->
@@ -157,7 +167,8 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		<year>2009</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="PF-E2000-v1-e65"/>
-		<info name="usage" value="docs/PandaFamily.md; tunables PF_SCRIPT"/>
+		<info name="usage" value="docs/PandaFamily.md"/>
+		<info name="tunable" value="PF_SCRIPT str - [Testing] keys on a timetable, sec:key[+],... (coin coin2 a s d f h j k l test service)"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="pandafamily"/>
 			<!-- /etc/X11/IGS: cd /PF; ./PF  (-> /linux/PF, the ramfs GECA fills) -->
@@ -191,7 +202,11 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		<year>2008</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="SD2-E2000-v05-e61"/>
-		<info name="usage" value="docs/SpeedDriver2.md; tunables SD2_STEER, SD2_SCRIPT, SD2_AUTO, SD2_TEST_RANKIN"/>
+		<info name="usage" value="docs/SpeedDriver2.md"/>
+		<info name="tunable" value="SD2_STEER int 20 frames to full lock"/>
+		<info name="tunable" value="SD2_SCRIPT str - [Testing] keys on a timetable, sec:key[+],... or @screen+sec:key (coin start left right gas brake n2o view up down test)"/>
+		<info name="tunable" value="SD2_AUTO bool 0 [Testing] the game's autopilot drives"/>
+		<info name="tunable" value="SD2_TEST_RANKIN bool 0 [Testing] always offer the name entry"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="speeddriver2"/>
 			<feature name="data" value="/race/linux"/>
@@ -230,7 +245,11 @@ Format: see hash/e2100.xml and docs/IGS_LOADER.md, "Rom sets".
 		<year>2012</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="WeDo-e2000-v1-e64"/>
-		<info name="usage" value="docs/WeDanceOnline2.md; tunables WEDO_REGION, WEDO_SCRIPT"/>
+		<info name="usage" value="docs/WeDanceOnline2.md"/>
+		<info name="tunable" value="WEDO_REGION enum:1|2|3|4|5|6|0 1 region the chip reports: 1 China, 2 Hong Kong, 3 other, 4 USA, 5 Korea, 6 Thailand, 0 Taiwan"/>
+		<info name="tunable" value="WEDO_SCRIPT str - [Testing] keys on a timetable, sec:key[+],... (coin a up down left right arrows service test 1..9 star 0 hash)"/>
+		<info name="tunable" value="WEDO_SCRIPT_CLOCK enum:wall|frames wall [Testing] time WEDO_SCRIPT in wall-clock seconds or game frames"/>
+		<info name="online" value="wedance 10000"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="wedanceonline2"/>
 			<feature name="data" value="/WeDo/linux"/>

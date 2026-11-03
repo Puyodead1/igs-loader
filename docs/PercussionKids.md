@@ -56,7 +56,7 @@ game.
 
 ## Extracting
 
-`romtool/mkromset.py percussionkids_m105cn <image>` builds the rom set (see
+`igs-mkromset percussionkids_m105cn <image>` builds the rom set (see
 the size table in `IGS_LOADER.md`).
 
 | Path | What |
@@ -96,7 +96,7 @@ lists.
 
 Done:
 - [x] Rom set: `mount p1 /; mount p3 /pkids/linux; mount p2 /pkids/gamedata;
-      mount p5 /pkids/log`; logical partitions in `mkromset.py`.
+      mount p5 /pkids/log`; logical partitions in the set builder.
 - [x] uClibc on glibc: `build/uclibc` (`libc.so.0`, `libm.so.0`,
       `libdl.so.0`, `__uClibc_start_main`), run with the host's
       `ld-linux.so.2` (list feature `libc`); Windows: the same names.

@@ -42,7 +42,8 @@ plain folder.
 Inputs: a .img is checked against the entry's disk SHA-1 (--no-verify skips
 the hash, it reads the whole image); a .chd's header data SHA-1 is checked,
 then chdman extracthd writes a temporary .img next to the output.  chdman:
-$CHDMAN, then chdman= in igs-loader.ini, then PATH.
+$CHDMAN, then chdman= in igs-loader.ini ($IGS_INI names another file), then
+PATH.
 
 Output: -o, else the first rompath entry of igs-loader.ini, else
 <loader>/roms.  Temporary files live in <output>/.<id>.stage and go away
@@ -50,6 +51,9 @@ as soon as they are packed.
 
 Runs in WSL/Linux (needs 7z, unsquashfs, debugfs; python3-cryptography makes
 the E2100 root fs faster).
+
+This is the reference implementation.  igs-mkromset (mkromset/, C, Linux and
+Windows, no external tools) builds the same sets and is the one to use.
 """
 import argparse
 import hashlib
@@ -89,12 +93,23 @@ def host_path(p):
     return p
 
 
+def ini_path():
+    """igs-loader.ini, or $IGS_INI (relative: to the loader)."""
+    p = os.environ.get('IGS_INI')
+    return os.path.join(LOADER, host_path(p)) if p else os.path.join(LOADER, 'igs-loader.ini')
+
+
 def ini_value(key):
-    """A key=value setting from igs-loader.ini, or None."""
-    ini = os.path.join(LOADER, 'igs-loader.ini')
+    """A global key=value setting from igs-loader.ini (before the first [section]), or None."""
+    ini = ini_path()
     if os.path.exists(ini):
         for line in open(ini, encoding='utf-8', errors='replace'):
-            k, sep, v = line.strip().partition('=')
+            line = line.strip()
+            if line.startswith('['):
+                break
+            if line.startswith(('#', ';')):
+                continue
+            k, sep, v = line.partition('=')
             if sep and k.strip().lower() == key:
                 return v.strip()
     return None

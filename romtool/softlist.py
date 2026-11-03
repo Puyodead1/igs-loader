@@ -4,6 +4,7 @@
     sw = softlist.get('scratch_m101cn')
     sw.machine, sw.description, sw.cloneof, sw.feature('asset_mask'),
     sw.disk_name, sw.disk_sha1, sw.roms  [(cabinet path, size, sha1)]
+    sw.tunables  [Tunable: name, type, default, group, text]
 
 The lists are found in $IGS_HASHPATH (';'-separated directories) or in the
 loader repo's hash/.  Format: docs/IGS_LOADER.md, "Rom sets".
@@ -15,6 +16,30 @@ import xml.etree.ElementTree as ET
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+class Tunable:
+    """<info name="tunable" value="NAME type default [Group] text"/>: a game plugin's
+    environment variable; type int, hex, bool, str or enum:a|b|c; default '-' = unset."""
+
+    def __init__(self, name, type, default, group, text):
+        self.name, self.type, self.default, self.group, self.text = name, type, default, group, text
+
+    def choices(self):
+        return self.type[5:].split('|') if self.type.startswith('enum:') else None
+
+    def __repr__(self):
+        return 'Tunable(%s %s %s)' % (self.name, self.type, self.default)
+
+
+def parse_tunable(v):
+    f = v.split(None, 3)
+    if len(f) < 4:
+        raise ValueError('tunable %r is not "NAME type default text"' % v)
+    group, text = '', f[3]
+    if text.startswith('[') and ']' in text:
+        group, text = text[1:].split(']', 1)
+    return Tunable(f[0], f[1], f[2], group, text.strip())
+
+
 class Software:
     def __init__(self, machine, e):
         self.machine = machine
@@ -23,6 +48,7 @@ class Software:
         text = lambda tag: (e.findtext(tag) or '').strip()
         self.description, self.year, self.publisher = text('description'), text('year'), text('publisher')
         self.info = {i.get('name'): i.get('value') for i in e.iter('info')}
+        self.tunables = [parse_tunable(i.get('value')) for i in e.iter('info') if i.get('name') == 'tunable']
         self.features = {}
         for f in list(e.iter('sharedfeat')) + list(e.iter('feature')):
             self.features[f.get('name')] = f.get('value')

@@ -63,7 +63,7 @@ select.
   over); `SD2_AUTO=1` lets the game's autopilot drive (testing).
 ## Extracting
 
-`romtool/mkromset.py speeddriver2 <image>` builds the rom set;
+`igs-mkromset speeddriver2 <image>` builds the rom set;
 `romtool/igs_e2000_extract.py speeddriver2 <image> <work dir>` a full
 workspace.
 

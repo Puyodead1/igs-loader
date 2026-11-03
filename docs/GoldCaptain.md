@@ -51,7 +51,7 @@ fullscreen; the Windows loader keeps it windowed unless `IGS_FULLSCREEN=1`.
 
 ## Extracting
 
-For a rom set use `romtool/mkromset.py goldcaptain <image>` (see
+For a rom set use `igs-mkromset goldcaptain <image>` (see
 `IGS_LOADER.md`).  For a full workspace, with the kernel and loaders too:
 
 ```

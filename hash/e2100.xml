@@ -96,7 +96,11 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2012</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="MD105CN"/>
-		<info name="usage" value="docs/OceanParty.md; tunables OCEAN_BET_SECONDS (20), OCEAN_COIN (10), OCEAN_CREDITS (0)"/>
+		<info name="usage" value="docs/OceanParty.md"/>
+		<info name="tunable" value="OCEAN_BET_SECONDS int 20 length of the betting period, seconds"/>
+		<info name="tunable" value="OCEAN_COIN int 10 credits per coin"/>
+		<info name="tunable" value="OCEAN_CREDITS int 0 starting credits"/>
+		<info name="tunable" value="OCEAN_MODE int - [Testing] force the status game mode (0 idle, 1 swim, 2 transition, 3 round, 4 settings)"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="oceanparty"/>
 			<!-- cd /OceanParty; ./OceanParty  (-> ../OceanParty.bin/OceanParty) -->
@@ -121,7 +125,8 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2012</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M101CN"/>
-		<info name="usage" value="docs/Scratch.md; tunable SCRATCH_COIN (credits per coin, 100)"/>
+		<info name="usage" value="docs/Scratch.md"/>
+		<info name="tunable" value="SCRATCH_COIN int 100 credits per coin"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="scratch"/>
 			<!-- cd /Scratch; ./SWIN  (-> ../Scratch.bin/swin) -->
@@ -156,7 +161,15 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2016</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M100FA"/>
-		<info name="usage" value="docs/HeroOfRobots.md; tunables HERO_REGION (area byte, 0x24 USA), HERO_CARD_CREDIT (points on the emulated card, 100), HERO_NFC (experimental NFC tags: scan, dispense, points; off)"/>
+		<info name="usage" value="docs/HeroOfRobots.md"/>
+		<info name="tunable" value="HERO_REGION hex 0x24 area byte the chip and card report (0x24 USA)"/>
+		<info name="tunable" value="HERO_CARD_CREDIT int 100 points on the emulated card (and on a blank NFC tag)"/>
+		<info name="tunable" value="HERO_NFC enum:0|all|scan|dispense|points|scan,dispense|scan,points|dispense,points 0 [NFC] NFC tags for the QR cards and the points card (experimental)"/>
+		<info name="tunable" value="HERO_NFC_READER str ACR122 [NFC] PC/SC reader: part of its name"/>
+		<info name="tunable" value="HERO_NFC_WAIT int 30 [NFC] seconds a dispensed card waits for a tag"/>
+		<info name="tunable" value="HERO_NFC_CARD str - [NFC] dispense this card code instead of a random one"/>
+		<info name="tunable" value="IGS_NFC_FAKE str - [NFC] fake reader: a folder whose tag.bin is the tag on the reader"/>
+		<info name="tool" value="hero-nfc [NFC] card tool"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="heroofrobots"/>
 			<!-- cd /Robots/exe; ./child_linux  (-> ../../Robots.bin/child_linux) -->

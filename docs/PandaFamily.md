@@ -50,7 +50,7 @@ button start a game.
 
 ## Extracting
 
-`romtool/mkromset.py pandafamily_cn <image>` builds the rom set;
+`igs-mkromset pandafamily_cn <image>` builds the rom set;
 `romtool/igs_e2000_extract.py pandafamily_cn <image> <work dir>` a full
 workspace.
 
