@@ -186,6 +186,28 @@ Root directory: as in Harpoon, the mount record lives in the superblock.  Its
 children run from the first record to the start of the first child range
 (`0x150`–`0xAE0` here, `0x140`–`0x9B0` in Harpoon).
 
+## Variants: Fish Hunter 4
+
+Two more kernels, constants in `IGS_KEYS.md`; both walks consumed every
+record (3,923) and inflated every file.
+
+- **`Fish-OS` (profile `fish`, M101–M107CN) has no AES.**  The image is
+  cramfs with IGS checks: the superblock and every 24-byte record are
+  plaintext; field XORs hide only the size and the table offset.  Word 0 is
+  cramfs's `namelen` (bits 0–5, × 4), gid and uid; names are padded to 4
+  bytes; mode at `+0x10`; page tables are LE end offsets before stock zlib
+  pages.  The "Game Image v2" text is there all the same.
+- **`Fish4P-OS` #38 (profile `fish4p_m400`, M400CN)** is Harpoon's key and
+  constants with an earlier record: header `0x58` (mode `+0x54`), first
+  record `0x130`, fields at other blocks, magic in block `0xB8`.
+
+The extractors take a profile without a key as plaintext (`igs_rofs.py`
+`PLAIN`, `fs_rofs.c` `nl_mask`/`nl_unit`, C# `NameMask`/`NameUnit`).
+
+**A dump without its partition table** (Fish Hunter 4 M101CN starts 511
+bytes into the disk) is built with the list's `dump_skip` and
+`partitions` features (`IGS_LOADER.md`).
+
 ## Extractor
 
 `romtool\IgsRofsExtractor` is a standalone .NET 8 implementation of the rules

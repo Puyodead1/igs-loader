@@ -14,6 +14,7 @@ Status (2026-11-01), under WSLg:
 | --- | --- | --- |
 | Harpoon Lagoon M107US | E2100 | playable, 4 keyboard stations |
 | Harpoon Lagoon M001US-WA, M200US-WA | E2100 | playable (same plugin, variant `wa`); see `HarpoonLagoon.md`, Versions |
+| Fish Hunter 4 M101–M107CN, M400–M402CN | E2100 | plays: 4 keyboard stations, coins, catches, chance and bonus games, ticket payout, operator menu; trailing-sum batch transport, the IGS036's game logic rebuilt with invented odds (`FishHunter4.md`) |
 | Ocean Party md105cn | E2100 | playable, 1 keyboard player, re-implemented game logic |
 | Scratch m101cn | E2100 | playable, 1 keyboard player, register-table transport, made-up prizes, about 20 fps (`Scratch.md`) |
 | Hero of Robots m100fa | E2100 | plays a whole game: attract, coins, start, fights, card debit and dispense, game over; request/response transport, emulated smart card (RSA), dispenser and QR reader always ready, no card scanning; slow start-up from a Windows drive (`HeroOfRobots.md`) |
@@ -47,7 +48,7 @@ or in WSL:
 
 `<id>` is a software name from the software lists (`hash/*.xml`, see Rom
 sets): `harpoonlagoon_m107us`, `harpoonlagoon_m001uswa`,
-`harpoonlagoon_m200uswa`, `oceanparty_md105cn`, `scratch_m101cn`,
+`harpoonlagoon_m200uswa`, `fishhunter4_m107cn` (and its clones `fishhunter4_m101cn` … `m402cn`), `oceanparty_md105cn`, `scratch_m101cn`,
 `heroofrobots_m100fa`, `goldcaptain`, `piraterevenge_m101cn`, `gogoball2_dx`,
 `speedrider_m109cnc`, `pandafamily_cn`, `speeddriver2`, `wedanceonline2`,
 `percussionkids_m105cn`, `percussionmaster3_m107fa`.  The per-game controls are on each
@@ -229,7 +230,8 @@ snapshots=1
 | `preload` | extra libraries of the loader's to preload: `build/<name>.so` (WSL), `build\win\<name>.dll` (Windows; it exports `igs_soname`, the library it stands in for) |
 | `video_driver` / `audio_driver` | SDL drivers when the default (`wayland` / `pulseaudio`) does not apply |
 | `asset_mask` | the asset-cipher mask (exported to the machine as `IGS_ASSET_MASK`; also Scratch's executable mask) |
-| `rofs_profile` / `rofs_key` | E2100 root filesystem variant (`romtool/igs_rofs.py` profile) and its key literal |
+| `rofs_profile` / `rofs_key` | E2100 root filesystem variant (`romtool/igs_rofs.py` profile) and its key literal (none for the plaintext `fish`) |
+| `dump_skip` / `partitions` | a dump without its partition table: the disk bytes it lacks at the start (read as zeros), and the layout as `start+count` sectors for p1, p2… (Fish Hunter 4 M101CN) |
 | `geca_sector` … `trim_step`, `head_part`, `geca_part`, `geca_head`, `geca_file`, `piece_file`, `piece_mode`, `cut_kb`, `cut_step` | E2000 executable assembly (`romtool/igs_e2000_extract.py`) |
 | `exe_mask` | E2200: the FPGA-cipher mask of the launcher's key the executable is encrypted with (build step `poweron`) |
 | `libc` | `uclibc`: the executable is linked against uClibc 0.9.26 (E1000); `run.sh` runs it with the host's `ld-linux.so.2` and `build/uclibc` (`libc.so.0`, `libm.so.0`, `libdl.so.0` on glibc) |
@@ -318,6 +320,8 @@ on this machine:
 | `harpoonlagoon_m107us` | 256 MB | 0.76 GB | 4 min |
 | `harpoonlagoon_m001uswa` | 256 MB | 0.76 GB | 4 min |
 | `harpoonlagoon_m200uswa` | 256 MB | 0.76 GB | 4 min |
+| `fishhunter4_m101cn` … `m105cn` | 114–123 MB | 0.69 GB | 2 min (`igs-mkromset`) |
+| `fishhunter4_m107cn`, `m400cn` … `m402cn` | 135 MB | 0.80 GB | 2.5 min (`igs-mkromset`) |
 | `oceanparty_md105cn` | 252 MB | 0.82 GB | 4.5 min |
 | `scratch_m101cn` | 122 MB | 0.58 GB | 5 min |
 | `heroofrobots_m100fa` | 2,083 MB | 5.8 GB | 44 min |
@@ -411,6 +415,7 @@ tools/
     machines/e1000/            e1000.h e1000.c
     machines/e2200/            e2200.c (machines/e2100 under its own name)
     games/harpoonlagoon/       harpoonlagoon.c
+    games/fishhunter4/         fishhunter4.c
     games/oceanparty/          oceanparty.c
     games/scratch/             scratch.c
     games/heroofrobots/        heroofrobots.c, libcasmcard.c (reader + card), card.h,
@@ -436,8 +441,8 @@ symbols.
 | Layer | Owns | Today |
 | --- | --- | --- |
 | **core** (`igs_core.so`, the `LD_PRELOAD` library) | libc/SDL interposition, routing device files to the machine, MMIO traps, libc fixes, frame pacing, audio, the overlay renderer | the only Linux/SDL/GL-specific code |
-| **machine** (`$IGS_MACHINE`) | the board: device files, registers, DMA, the protection transport | `e2100`: `/dev/pccard0`, BARs, DMA, the asset cipher (mask from the software list), the ASIC handshake, and three runtime transports: batch framing (Harpoon, Ocean Party), the register table (Scratch) and request/response (Hero of Robots), chosen by the game plugin's `transport`; serial ports with a peripheral the game plugin answers for.  `e2000`: the PLX PCI9030 card (`/dev/plx/*`), the IGS036 shared-RAM transport with RC4-wrapped keys, the IGS027A packet transport, the IGS036 message or packet transport (the game plugin's `transport`), `/dev/roio`, `/dev/pccard0`, the kernel's `/dev/tdcr` cipher.  `e1000`: the Geode GX2 (`/dev/mem`: display controller, 2D engine, frame buffer; PCI and VSA port I/O; `/dev/cpu/0/msr`) and the IGS027A command transport on `/dev/pccard0`.  `e2200`: `e2100` under its own name; the game plugin may pick the asset-cipher mask by key (`asset_mask`) |
-| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs), `piraterevenge` (the same commands plus coin counters), `gogoball2` (IGS027A packets: stores, settings, light curtain, tickets, ball stopper, game flow), `speedrider` (IGS036 messages: inputs, coins, NVRAM, zip prefixes, UI, game modes, AI riders), `pandafamily` (IGS036 packets: inputs, coins, tickets, settings, action groups), `speeddriver2` (IGS036 messages, Speed Driver 2 layout: game flow, inputs, coins, texture and sound pages, the `data.hdr` prefix), `wedanceonline2` (IGS027A packets: inputs, coins, system status, settings; the cabinet's `/proc/meminfo`), `percussionkids` (the IGS027A's command lists: the whole game flow, the song engine and judging, the operator menu), `percussionmaster3` (IGS036 request/response: channel, state table and screen flow, the drum I/O board, chart keys and cut bytes) |
+| **machine** (`$IGS_MACHINE`) | the board: device files, registers, DMA, the protection transport | `e2100`: `/dev/pccard0`, BARs, DMA, the asset cipher (mask from the software list), the ASIC handshake, and three runtime transports: batch framing (Harpoon, Ocean Party; Fish Hunter 4's trailing-sum layout and older loader handshake as game-plugin flags), the register table (Scratch) and request/response (Hero of Robots), chosen by the game plugin's `transport`; serial ports with a peripheral the game plugin answers for.  `e2000`: the PLX PCI9030 card (`/dev/plx/*`), the IGS036 shared-RAM transport with RC4-wrapped keys, the IGS027A packet transport, the IGS036 message or packet transport (the game plugin's `transport`), `/dev/roio`, `/dev/pccard0`, the kernel's `/dev/tdcr` cipher.  `e1000`: the Geode GX2 (`/dev/mem`: display controller, 2D engine, frame buffer; PCI and VSA port I/O; `/dev/cpu/0/msr`) and the IGS027A command transport on `/dev/pccard0`.  `e2200`: `e2100` under its own name; the game plugin may pick the asset-cipher mask by key (`asset_mask`) |
+| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `fishhunter4` (trailing-sum batches, RC4 or no channel cipher: catches, credits, chance and bonus games, settings, records, payout), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs), `piraterevenge` (the same commands plus coin counters), `gogoball2` (IGS027A packets: stores, settings, light curtain, tickets, ball stopper, game flow), `speedrider` (IGS036 messages: inputs, coins, NVRAM, zip prefixes, UI, game modes, AI riders), `pandafamily` (IGS036 packets: inputs, coins, tickets, settings, action groups), `speeddriver2` (IGS036 messages, Speed Driver 2 layout: game flow, inputs, coins, texture and sound pages, the `data.hdr` prefix), `wedanceonline2` (IGS027A packets: inputs, coins, system status, settings; the cabinet's `/proc/meminfo`), `percussionkids` (the IGS027A's command lists: the whole game flow, the song engine and judging, the operator menu), `percussionmaster3` (IGS036 request/response: channel, state table and screen flow, the drum I/O board, chart keys and cut bytes) |
 
 **Interfaces:**
 - **Core ↔ machine:** `core/igs.h`.
@@ -629,6 +634,7 @@ Status (2026-11-01, RTX 3060, Windows 11):
 | --- | --- |
 | Harpoon Lagoon M107US | attract and play, picture, sound, keyboard; 60 fps |
 | Harpoon Lagoon M001US-WA, M200US-WA | M001US-WA runs to attract from its `.7z` set (2026-10-30); M200US-WA links cleanly (`--check`) |
+| Fish Hunter 4 (all nine) | attract, coins, catches, chance games, bonus game, payout, operator menu; sound; 60 fps |
 | Ocean Party md105cn | attract, coins, rounds, overlay; sound |
 | Scratch m101cn | attract and coins at 60 fps; `libmikmod.so.2` missing (SDL_mixer's MOD support only) |
 | Gold Captain | attract after about 55 s, coins, captain select, stage; sound through `/dev/dsp`; windowed (the game asks for fullscreen) |

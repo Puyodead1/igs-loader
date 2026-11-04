@@ -127,7 +127,24 @@ struct e2100_game {
      * (E2200: one mask per chart key), or NULL for $IGS_ASSET_MASK
      */
     const uint8_t *(*asset_mask)(const uint8_t *key);
+
+    /*
+     * Batch transport: the body's layout.  E2100_LAYOUT_RUNNING (0):
+     * [running checksum, payload, headers].  E2100_LAYOUT_TRAILING (Fish
+     * Hunter 4, "e2k1" ShareRam): [payload, headers, sum of those], no
+     * running sum; the cipher covers all of it.
+     */
+    int layout;
+    /*
+     * Boot handshake: E2100_HS_SESSION (0), the DONE word carries noise;
+     * E2100_HS_NOSUM: the older P2A loader compares the DONE word with the
+     * checksum of its upload, so it carries 0 (nothing was uploaded).
+     */
+    int handshake;
 };
+
+enum { E2100_LAYOUT_RUNNING, E2100_LAYOUT_TRAILING };
+enum { E2100_HS_SESSION, E2100_HS_NOSUM };
 
 /* exported by a game plugin .so */
 #define E2100_GAME_ENTRY "e2100_game_entry"

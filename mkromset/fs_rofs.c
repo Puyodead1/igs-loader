@@ -27,6 +27,9 @@ struct profile {
     uint32_t first, hsize, modeoff;
     struct field namelen, size, table;
     int enc_names, enc_table, blanked, pt_word;
+    /* plaintext profiles (key NULL): name length = (field & mask) * unit,
+       names padded to 4 */
+    uint32_t nl_mask, nl_unit;
 };
 
 static const struct profile profiles[] = {
@@ -49,6 +52,15 @@ static const struct profile profiles[] = {
        the init constants - 0xED2E; page ends are word 1. */
     { "pmaster3", "E2200-PMaster-V3", 0xD8, 1, 0x150, 0x78, 0x74,
       { 0x20, 1, 0x498C027F }, { 0x50, 3, 0xCD83B702 }, { 0x40, 0, 0xEC285CDA }, 1, 1, 1, 1 },
+    /* Fish Hunter 4 M400CN (Fish4P-OS build #38).  Harpoon's key and
+       constants, an earlier record layout: header 0x58, mode at +0x54. */
+    { "fish4p_m400", "Hunter4PFishV1.0", 0xB8, 1, 0x130, 0x58, 0x54,
+      { 0x10, 1, 0x3A9A44A4 }, { 0x30, 1, 0x3CED596B }, { 0x20, 2, 0x9F3EE741 }, 0, 0, 0, 0 },
+    /* Fish Hunter 4 / 6 (Fish-OS).  No AES: a cramfs-like plaintext stream,
+       24-byte headers, names padded to 4.  XORs are the init constants -
+       0x2E9B. */
+    { "fish", NULL, 0x78, 0, 0xC0, 0x18, 0x10,
+      { 0x00, 0, 0 }, { 0x0C, 0, 0xBE5BE76E }, { 0x14, 0, 0xED8D65C8 }, 0, 0, 0, 0, 0x3F, 4 },
 };
 
 #define NPROF ((int)(sizeof(profiles) / sizeof(profiles[0])))
@@ -117,6 +129,12 @@ static int word_at(struct rofs *f, uint32_t off, int word, uint32_t *out)
 {
     uint8_t b[16];
 
+    if (!f->p->key) {
+        if ((uint64_t)off + 4 * word + 4 > f->n)
+            return -1;
+        *out = rd32(f->d + off + 4 * word);
+        return 0;
+    }
     if ((uint64_t)off + 16 > f->n)
         return -1;
     memcpy(b, f->d + off, 16);
@@ -137,6 +155,12 @@ static int field_at(struct rofs *f, const struct field *fl, uint32_t off, uint32
 
 static uint32_t align16(uint32_t v) { return (v + 15) & ~15u; }
 
+/* a name's padded length: 16, or 4 in the plaintext profiles */
+static uint32_t name_align(const struct rofs *f, uint32_t v)
+{
+    return f->p->key ? align16(v) : (v + 3) & ~3u;
+}
+
 /* 0, or -1 where igs_rofs.py's _scan stops */
 static int record(struct rofs *f, uint32_t off, struct rec *r)
 {
@@ -146,10 +170,10 @@ static int record(struct rofs *f, uint32_t off, struct rec *r)
 
     if (field_at(f, &f->p->namelen, off, &v))
         return -1;
-    r->namelen = v & 0xFF;
+    r->namelen = f->p->key ? v & 0xFF : (v & f->p->nl_mask) * f->p->nl_unit;
     start = off + f->p->hsize;
-    al = align16(r->namelen);
-    if (!r->namelen || (uint64_t)start + al > f->n)
+    al = name_align(f, r->namelen);
+    if (!r->namelen || r->namelen > 255 || (uint64_t)start + al > f->n)
         return -1;
     memcpy(raw, f->d + start, al);
     if (f->p->enc_names)
@@ -207,7 +231,7 @@ static void scan(struct rofs *f)
             f->r = realloc(f->r, f->cap * sizeof(*f->r));
         }
         f->r[f->nr++] = r;
-        off += f->p->hsize + align16(r.namelen);
+        off += f->p->hsize + name_align(f, r.namelen);
     }
     f->meta_end = off;
 }
@@ -392,7 +416,7 @@ static int range(struct rofs *f, struct mkr_node *dir, uint32_t start, uint32_t 
             return -1;
         if ((r->mode & 0xF000) == 0x4000 && r->size && range(f, sub, r->table, r->size, depth + 1))
             return -1;
-        off += f->p->hsize + align16(r->namelen);
+        off += f->p->hsize + name_align(f, r->namelen);
     }
     return 0;
 }
@@ -426,7 +450,8 @@ int fs_rofs(struct mkr_job *j, uint64_t off, uint64_t size, struct mkr_node *dir
         if (profile && strcmp(profile, profiles[i].name))
             continue;
         f.p = &profiles[i];
-        set_key(&f, f.p->key);
+        if (f.p->key)
+            set_key(&f, f.p->key);
         if (!word_at(&f, f.p->mblock, f.p->mword, &magic) && magic == ROFS_MAGIC)
             break;
         f.p = NULL;
@@ -436,7 +461,7 @@ int fs_rofs(struct mkr_job *j, uint64_t off, uint64_t size, struct mkr_node *dir
             for (i = 0; i < NPROF && strcmp(profile, profiles[i].name); i++)
                 ;
             if (i == NPROF)
-                mkr_fail(j, "unknown ROFS profile '%s' (known: fish4p, oceanparty, heroofrobots, scratch, pmaster3)",
+                mkr_fail(j, "unknown ROFS profile '%s' (known: fish4p, oceanparty, heroofrobots, scratch, pmaster3, fish4p_m400, fish)",
                          profile);
         }
         mkr_fail(j, "not an IGS ROFS v2 image for any known profile (no key decodes the superblock magic)");

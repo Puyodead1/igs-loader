@@ -33,6 +33,10 @@ cabinet has it at run time.  The entry's "build" feature says how, as
                           header, FPGA-cipher decrypt with exe_mask, keep the
                           size from the 12-byte trailer; SRC kept as dumped
 
+A dump without its partition table names the layout in the entry's
+`partitions` feature (`start+count` sectors for p1, p2...) and the disk
+bytes it lacks at the start in `dump_skip` (Fish Hunter 4 M101CN).
+
 Absolute symlinks are made relative to the set root, so the tree works
 wherever it is extracted.  Then the files the entry lists in <dataarea
 name="files"> are checked, and the tree is packed: 7z (default; 7z a -mx9,
@@ -200,7 +204,14 @@ def wslpath(p):
 class Builder:
     def __init__(self, sw, image, stage):
         self.sw, self.image, self.stage = sw, image, stage
-        self.parts = partitions(image)
+        # a dump without its partition table: the entry gives the layout
+        # ("start+count" sectors for p1, p2...) and the bytes the dump lacks
+        self.skip = int(sw.feature('dump_skip', '0'), 0)
+        if sw.feature('partitions'):
+            self.parts = {i + 1: tuple(int(x, 0) for x in p.split('+'))
+                          for i, p in enumerate(sw.feature('partitions').split())}
+        else:
+            self.parts = partitions(image)
 
     def path(self, cab):
         return os.path.join(self.stage, cab.lstrip('/'))
@@ -211,7 +222,9 @@ class Builder:
         start, count = self.parts[int(name[1])]
         if not count:
             sys.exit('partition %s is empty' % name)
-        return start * 512, count * 512
+        if start * 512 < self.skip:
+            sys.exit('partition %s starts in the bytes the dump lacks' % name)
+        return start * 512 - self.skip, count * 512
 
     def run(self, steps):
         for step in [s.split() for s in steps.split(';') if s.strip()]:

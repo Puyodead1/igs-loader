@@ -14,6 +14,15 @@ data is included.
 | `harpoonlagoon_m107us` | Harpoon Lagoon (M107US) | E2100 | ✓ | ✓ |
 | `harpoonlagoon_m001uswa` | Harpoon Lagoon (M001US-WA) | E2100 | ✓ | ✓ |
 | `harpoonlagoon_m200uswa` | Harpoon Lagoon (M200US-WA) | E2100 | ✓ | ✓ |
+| `fishhunter4_m107cn` | Fish Hunter 4 (M107CN) | E2100 | ✓ | ✓ |
+| `fishhunter4_m101cn` | Fish Hunter 4 (M101CN) | E2100 | ✓ | ✓ |
+| `fishhunter4_m102cn` | Fish Hunter 4 (M102CN) | E2100 | ✓ | ✓ |
+| `fishhunter4_m103cn` | Fish Hunter 4 (M103CN) | E2100 | ✓ | ✓ |
+| `fishhunter4_m104cn` | Fish Hunter 4 (M104CN) | E2100 | ✓ | ✓ |
+| `fishhunter4_m105cn` | Fish Hunter 4 (M105CN) | E2100 | ✓ | ✓ |
+| `fishhunter4_m400cn` | Fish Hunter 4 (M400CN) | E2100 | ✓ | ✓ |
+| `fishhunter4_m401cn` | Fish Hunter 4 (M401CN) | E2100 | ✓ | ✓ |
+| `fishhunter4_m402cn` | Fish Hunter 4 (M402CN) | E2100 | ✓ | ✓ |
 | `oceanparty_md105cn` | Ocean Party (MD105CN) | E2100 | ✓ | ✓ |
 | `scratch_m101cn` | Scratch (M101CN) | E2100 | ✓ | ✓ |
 | `heroofrobots_m100fa` | Hero of Robots (M100FA) | E2100 | ✓ | ✓ |
@@ -28,7 +37,7 @@ data is included.
 | `percussionmaster3_m107fa` | Percussion Master 3 (M107FA) (offline; online with `IGS_NET`) | E2200 | ✓ | ✓ |
 
 Where the protection chip runs game logic whose code has not been dumped
-(Ocean Party's odds, Scratch's prizes, the E2000 games' weapon tables and
+(Fish Hunter 4's catches, chance games and payouts, Ocean Party's odds, Scratch's prizes, the E2000 games' weapon tables and
 game flow, Speed Rider's AI riders and lost archive bytes, Speed Driver 2's
 screens and AI throttle, all of Percussion Kids' game flow and judging,
 Percussion Master 3's screen flow), the plugin reconstructs or invents it,
@@ -243,7 +252,7 @@ Controls and per-game settings are on the [wiki](https://github.com/Puyodead1/ig
 | [IGS_ROFS_REVERSE_ENGINEERING.md](docs/IGS_ROFS_REVERSE_ENGINEERING.md) | the disk formats: E2100 and E2200 `igs_rofs`, E2000 ROFS and IGS_SHFS, boot chains |
 | [IGS_KEYS.md](docs/IGS_KEYS.md) | every key, mask and constant per game |
 | [PercussionMaster3_Online.md](docs/PercussionMaster3_Online.md) | Percussion Master 3's network: servers, framing, registration, commands, profile, boards, the online screen flow |
-| [HarpoonLagoon.md](docs/HarpoonLagoon.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md), [PirateRevenge.md](docs/PirateRevenge.md), [GoGoBall2.md](docs/GoGoBall2.md), [SpeedRider.md](docs/SpeedRider.md), [PandaFamily.md](docs/PandaFamily.md), [SpeedDriver2.md](docs/SpeedDriver2.md), [WeDanceOnline2.md](docs/WeDanceOnline2.md), [PercussionKids.md](docs/PercussionKids.md), [PercussionMaster3.md](docs/PercussionMaster3.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
+| [HarpoonLagoon.md](docs/HarpoonLagoon.md), [FishHunter4.md](docs/FishHunter4.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md), [PirateRevenge.md](docs/PirateRevenge.md), [GoGoBall2.md](docs/GoGoBall2.md), [SpeedRider.md](docs/SpeedRider.md), [PandaFamily.md](docs/PandaFamily.md), [SpeedDriver2.md](docs/SpeedDriver2.md), [WeDanceOnline2.md](docs/WeDanceOnline2.md), [PercussionKids.md](docs/PercussionKids.md), [PercussionMaster3.md](docs/PercussionMaster3.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
 
 ## Repository layout
 

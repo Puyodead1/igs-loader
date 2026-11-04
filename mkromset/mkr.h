@@ -49,6 +49,7 @@ struct mkr_img {
     void *fh;                   /* raw: a HANDLE (Windows) or an fd cast */
     struct mkr_chd *chd;
     uint64_t size;
+    uint64_t skip;              /* the dump lacks the disk's first skip bytes (read as zeros) */
 };
 
 /* ---- the job ---------------------------------------------------------------------------- */

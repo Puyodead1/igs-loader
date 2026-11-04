@@ -189,7 +189,24 @@ static long long chd_pread(struct mkr_chd *c, uint64_t size, uint64_t off, void 
 
 static long long img_pread(struct mkr_img *m, uint64_t off, void *buf, size_t n)
 {
-    return m->chd ? chd_pread(m->chd, m->size, off, buf, n) : raw_pread(m->fh, off, buf, n);
+    size_t z = 0;
+    long long got;
+
+    /* disk offsets: the first skip bytes are not in the dump */
+    if (m->skip) {
+        if (off < m->skip) {
+            z = m->skip - off < n ? (size_t)(m->skip - off) : n;
+            memset(buf, 0, z);
+            buf = (uint8_t *)buf + z;
+            n -= z;
+            off = m->skip;
+        }
+        off -= m->skip;
+        if (!n)
+            return (long long)z;
+    }
+    got = m->chd ? chd_pread(m->chd, m->size, off, buf, n) : raw_pread(m->fh, off, buf, n);
+    return got < 0 ? got : got + (long long)z;
 }
 
 int img_read(struct mkr_job *j, struct mkr_img *m, uint64_t off, void *buf, size_t n)
@@ -228,9 +245,34 @@ int img_chd_sha1(struct mkr_job *j, const char *path, char hex[41])
  */
 int img_partitions(struct mkr_job *j)
 {
+    const char *list = mkr_feature(j, "partitions", NULL), *skip = mkr_feature(j, "dump_skip", NULL);
     uint8_t mbr[512], b[512];
     int i;
 
+    /* a dump without its partition table: the entry gives the layout,
+       "start+count" in sectors for p1, p2..., and the bytes the dump lacks */
+    if (skip)
+        j->img.skip = strtoull(skip, NULL, 0);
+    if (list) {
+        const char *s = list;
+        char *e;
+
+        for (i = 1; i < 65 && *s; i++) {
+            while (*s == ' ')
+                s++;
+            if (!*s)
+                break;
+            j->pstart[i] = strtoull(s, &e, 0);
+            if (*e != '+')
+                return mkr_fail(j, "bad partitions feature: %s", list);
+            j->pcount[i] = strtoull(e + 1, &e, 0);
+            if (*e && *e != ' ')
+                return mkr_fail(j, "bad partitions feature: %s", list);
+            j->phave[i] = 1;
+            s = e;
+        }
+        return 0;
+    }
     if (img_read(j, &j->img, 0, mbr, 512) || mbr[510] != 0x55 || mbr[511] != 0xAA) {
         j->err[0] = 0;
         return mkr_fail(j, "%s: no MBR partition table", j->o->image);

@@ -210,6 +210,26 @@ static void receive_batch(void)
     for (i = 0; i < total; i++)
         words[i] = bar0_ld(i);
     game->decrypt_from_game(words, total);
+    if (game->layout == E2100_LAYOUT_TRAILING) {
+        /* [payload, headers, sum of both] */
+        for (i = 0; i + 1 < total; i++)
+            sum += words[i];
+        if (words[total - 1] != sum)
+            LOG("rx checksum mismatch: got 0x%08x want 0x%08x", words[total - 1], sum);
+        for (i = 0; i < nmsg; i++) {
+            uint32_t mh = words[payload + i], len = mh >> 7;
+
+            if (pos + len > payload) {
+                LOG("rx message %u overruns payload", i);
+                break;
+            }
+            game->message(&s.ch, mh & 0x7f, len, &words[pos]);
+            pos += len;
+        }
+        if (game->batch_done)
+            game->batch_done(&s.ch);
+        return;
+    }
     for (i = 1; i < total; i++)
         sum += words[i];
     if (words[0] != s.running_sum + sum)
@@ -238,6 +258,17 @@ static void send_batch(const struct e2100_batch *b)
     bar1_set_reg(s.ch.rx_idx, (b->npayload << 7) | b->nhdrs);
     if (b->npayload == 0 && b->nhdrs == 0)
         return;
+    if (game->layout == E2100_LAYOUT_TRAILING) {
+        memcpy(w, b->payload, b->npayload * 4);
+        memcpy(w + b->npayload, b->hdrs, b->nhdrs * 4);
+        for (i = 0; i + 1 < n; i++)
+            sum += w[i];
+        w[n - 1] = sum;
+        game->encrypt_to_game(w, n);
+        for (i = 0; i < n; i++)
+            bar0_st(i, w[i]);
+        return;
+    }
     memcpy(w + 1, b->payload, b->npayload * 4);
     memcpy(w + 1 + b->npayload, b->hdrs, b->nhdrs * 4);
     for (i = 1; i < n; i++)
@@ -431,7 +462,9 @@ static void asic_notify(void)
             LOG("unexpected handshake reply 0x%08x", cmd ^ k);
         /* skip the firmware upload: report done straight away */
         s.asic_state = ASIC_DONE_SENT;
-        asic_post(1, 1, ASIC_CMD_DONE ^ k, (uint32_t)rand() ^ k, ASIC_REPLY_DELAY_MS);
+        /* the older P2A loader checks word 1 against its upload's checksum */
+        asic_post(1, 1, ASIC_CMD_DONE ^ k, game->handshake == E2100_HS_NOSUM ? k : (uint32_t)rand() ^ k,
+                  ASIC_REPLY_DELAY_MS);
         break;
     case ASIC_DONE_SENT:
         if ((cmd ^ k) != HOST_REPLY_DONE)

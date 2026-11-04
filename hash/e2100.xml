@@ -91,6 +91,281 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		</part>
 	</software>
 
+	<software name="fishhunter4_m107cn">
+		<description>Fish Hunter 4 (M107CN)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M107CN"/>
+		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 tiny, 3 small, 4 big bomb, 5 bonus"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter4"/>
+			<!-- Fish-OS: the older P2A loader, RC4 channel, the 4P build's settings -->
+			<feature name="variant" value="cnrc4"/>
+			<!-- /etc/X11/IGS: cd /Fish; ./fish  (-> ../Fish.bin/fish) -->
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="fish"/>
+			<!-- Fish-OS: plaintext igs_rofs -->
+			<feature name="rofs_profile" value="fish"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter4_m107cn" sha1="ee433fc72b2ae331b4b700829e78700f0c543d41"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2534353" sha1="ac437c6d4db472d2ed27aba7f413d8ff51f08116"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="cc64e1f0d85c683f3a7e83bd3dc84f9cef3b44c6"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunter4_m101cn" cloneof="fishhunter4_m107cn">
+		<description>Fish Hunter 4 (M101CN)</description>
+		<year>2010</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M101CN"/>
+		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 tiny, 3 small, 4 big bomb, 5 bonus"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter4"/>
+			<!-- Fish-OS: no channel cipher, the older P2A loader -->
+			<feature name="variant" value="cn"/>
+			<!-- /etc/X11/IGS: cd /Fish; ./fish  (-> ../Fish.bin/fish) -->
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="fish"/>
+			<!-- Fish-OS: plaintext igs_rofs -->
+			<feature name="rofs_profile" value="fish"/>
+			<!-- the dump starts 511 bytes into the disk: no partition table; the layout is the other M10x dumps' -->
+			<feature name="dump_skip" value="511"/>
+			<feature name="partitions" value="63+64197 64260+385560 530145+3180870 449820+80325"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter4_m101cn" sha1="9e9a8b3090ddbcf67ca17b5bc6178e040d6b239f"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2502372" sha1="e9c8097ad1d393ef076fe6eedf7afa970f2b9468"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="f67aac43e69fc9cf1cccafb6a31c7212bd519c08"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunter4_m102cn" cloneof="fishhunter4_m107cn">
+		<description>Fish Hunter 4 (M102CN)</description>
+		<year>2010</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M102CN"/>
+		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 tiny, 3 small, 4 big bomb, 5 bonus"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter4"/>
+			<!-- Fish-OS: no channel cipher, the older P2A loader -->
+			<feature name="variant" value="cn"/>
+			<!-- /etc/X11/IGS: cd /Fish; ./fish  (-> ../Fish.bin/fish) -->
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="fish"/>
+			<!-- Fish-OS: plaintext igs_rofs -->
+			<feature name="rofs_profile" value="fish"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter4_m102cn" sha1="cf1839ef456544dbf5ed8e5562203ee7725087fe"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2509833" sha1="d3cd8c1a984d995a1407eaff2506b8b72fda2b62"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="67de0b3ea262a6b5b52c0fc72403c072940e8dda"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunter4_m103cn" cloneof="fishhunter4_m107cn">
+		<description>Fish Hunter 4 (M103CN)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M103CN"/>
+		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 tiny, 3 small, 4 big bomb, 5 bonus"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter4"/>
+			<!-- Fish-OS: no channel cipher, the older P2A loader -->
+			<feature name="variant" value="cn"/>
+			<!-- /etc/X11/IGS: cd /Fish; ./fish  (-> ../Fish.bin/fish) -->
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="fish"/>
+			<!-- Fish-OS: plaintext igs_rofs -->
+			<feature name="rofs_profile" value="fish"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter4_m103cn" sha1="5fb55b932db7744dd7e86b0fca173194a0e66ec2"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2517322" sha1="2048b21942d66adc3914a43dc6ec91bd1869e9ef"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="9b6c23219e4153cc41ddbba6e29a4b76d422378d"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunter4_m104cn" cloneof="fishhunter4_m107cn">
+		<description>Fish Hunter 4 (M104CN)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M104CN"/>
+		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 tiny, 3 small, 4 big bomb, 5 bonus"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter4"/>
+			<!-- Fish-OS: no channel cipher, the older P2A loader -->
+			<feature name="variant" value="cn"/>
+			<!-- /etc/X11/IGS: cd /Fish; ./fish  (-> ../Fish.bin/fish) -->
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="fish"/>
+			<!-- Fish-OS: plaintext igs_rofs -->
+			<feature name="rofs_profile" value="fish"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter4_m104cn" sha1="bef04efd0a68de57d2e8596fe8859a73367c18a4"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2519774" sha1="3315ddc8ecc77d00c5e849bb74b33523c3a203bd"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="882b648ca6a6e59ce0131bde2d3521a0cb9190c3"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunter4_m105cn" cloneof="fishhunter4_m107cn">
+		<description>Fish Hunter 4 (M105CN)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M105CN"/>
+		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 tiny, 3 small, 4 big bomb, 5 bonus"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter4"/>
+			<!-- Fish-OS: no channel cipher, the older P2A loader -->
+			<feature name="variant" value="cn"/>
+			<!-- /etc/X11/IGS: cd /Fish; ./fish  (-> ../Fish.bin/fish) -->
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="fish"/>
+			<!-- Fish-OS: plaintext igs_rofs -->
+			<feature name="rofs_profile" value="fish"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter4_m105cn" sha1="632308a9dba1e4df95e0aaec0e3c1212c2ef271e"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2532492" sha1="4cd2b227950b0d07122ff1c45dea8a62b9e217a4"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="729dc9a67821b39fca146d25fdf10ed354675195"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunter4_m400cn" cloneof="fishhunter4_m107cn">
+		<description>Fish Hunter 4 (M400CN)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M400CN"/>
+		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 tiny, 3 small, 4 big bomb, 5 bonus"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter4"/>
+			<!-- FishHunter4P: RC4 channel -->
+			<feature name="variant" value="4p"/>
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="FH"/>
+			<!-- Fish4P-OS build #38: Harpoon's key, an earlier record layout -->
+			<feature name="rofs_profile" value="fish4p_m400"/>
+			<feature name="rofs_key" value="Hunter4PFishV1.0"/>
+			<feature name="asset_mask" value="eea8543c6a16835d0900d7739f6bf77f"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter4_m400cn" sha1="89e2aec8cb7aa1713db64ce3fe39b897c4911348"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2682280" sha1="478dcc9e25cc4e6e7bae7e5475561e4ae491dd32"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="688df6ae7197ba3e2fa37217cc93f8154122788f"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunter4_m401cn" cloneof="fishhunter4_m107cn">
+		<description>Fish Hunter 4 (M401CN)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M401CN"/>
+		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 tiny, 3 small, 4 big bomb, 5 bonus"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter4"/>
+			<!-- FishHunter4P: RC4 channel -->
+			<feature name="variant" value="4p"/>
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="FH"/>
+			<!-- Harpoon Lagoon's kernel (Fish4P-OS #3) -->
+			<feature name="rofs_profile" value="fish4p"/>
+			<feature name="rofs_key" value="Hunter4PFishV1.0"/>
+			<feature name="asset_mask" value="eea8543c6a16835d0900d7739f6bf77f"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter4_m401cn" sha1="386e088a837670cc5f6cfdf139171e50bfce384c"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2682280" sha1="77128d4452b11aa8e1787b9d13cd8cf05f4659d7"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="0a45240e1a8c414aab56fec3991af99b028ecb49"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunter4_m402cn" cloneof="fishhunter4_m107cn">
+		<description>Fish Hunter 4 (M402CN)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M402CN"/>
+		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 tiny, 3 small, 4 big bomb, 5 bonus"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter4"/>
+			<!-- FishHunter4P: RC4 channel -->
+			<feature name="variant" value="4p"/>
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="FH"/>
+			<feature name="rofs_profile" value="fish4p"/>
+			<feature name="rofs_key" value="Hunter4PFishV1.0"/>
+			<feature name="asset_mask" value="eea8543c6a16835d0900d7739f6bf77f"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter4_m402cn" sha1="fdacacbe1b65b5a3142a473353d00646c64e4fd3"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2683080" sha1="f28842a916a02ccee51311db87ed20e921a33ab2"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="870ed222d295539fe5b436b10224caf27f8f6ca4"/>
+			</dataarea>
+		</part>
+	</software>
+
 	<software name="oceanparty_md105cn">
 		<description>Ocean Party (MD105CN)</description>
 		<year>2012</year>

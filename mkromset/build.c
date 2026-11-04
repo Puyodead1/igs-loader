@@ -17,8 +17,9 @@
  *   poweron SRC DST       E2200 launcher decrypt: skip a 4-byte key-id header,
  *                         decrypt with exe_mask, keep the trailer's size
  *
- * then absolute symlinks become relative, the list's files are checked and
- * the tree is packed.
+ * A dump without its partition table names its layout in the features
+ * `partitions` and `dump_skip` (image.c).  Then absolute symlinks become
+ * relative, the list's files are checked and the tree is packed.
  */
 #include <ctype.h>
 #include <errno.h>

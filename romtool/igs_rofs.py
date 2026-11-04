@@ -6,7 +6,8 @@ docs/IGS_ROFS_REVERSE_ENGINEERING.md, keys and constants in docs/IGS_KEYS.md.
 
 Every per-kernel profile shares the AES-128 key transform, the record stream
 and the per-page zlib layout; they differ in constants, field positions,
-name encryption and the page-table encoding.  Unlike the C# tool this one
+name encryption and the page-table encoding.  A profile without a key
+(Fish-OS) is plaintext: fields read straight from the image.  Unlike the C# tool this one
 keeps the file modes and does not write IGS_ROFS_SPECIAL_NODES.txt (device
 nodes and other special records are only counted).
 
@@ -51,6 +52,23 @@ PROFILES = {
     'pmaster3': ('E2200-PMaster-V3', 0xD8, 1, 0x150, 0x78, 0x74,
                  (0x20, 1, 0x498C027F), (0x50, 3, 0xCD83B702), (0x40, 0, 0xEC285CDA),
                  True, True, True, 1),
+    # Fish Hunter 4 M400CN (Fish4P-OS build #38).  Harpoon's key and
+    # constants, an earlier record layout: header 0x58, mode at +0x54.
+    'fish4p_m400': ('Hunter4PFishV1.0', 0xB8, 1, 0x130, 0x58, 0x54,
+                    (0x10, 1, 0x3A9A44A4), (0x30, 1, 0x3CED596B), (0x20, 2, 0x9F3EE741),
+                    False, False, False, 0),
+    # Fish Hunter 4 / 6 (Fish-OS).  No AES: a cramfs-like plaintext stream,
+    # 24-byte headers, names padded to 4 (PLAIN below).  XORs are the init
+    # constants - 0x2E9B.
+    'fish': (None, 0x78, 0, 0xC0, 0x18, 0x10,
+             (0x00, 0, 0), (0x0C, 0, 0xBE5BE76E), (0x14, 0, 0xED8D65C8),
+             False, False, False, 0),
+}
+
+# plaintext profiles: (name length mask, unit, name alignment); the name
+# length is (field & mask) * unit and already a multiple of the alignment
+PLAIN = {
+    'fish': (0x3F, 4, 4),
 }
 
 
@@ -180,21 +198,30 @@ class Rofs:
         (key, mblock, mword, self.first, self.hsize, self.modeoff, self.f_namelen, self.f_size,
          self.f_table, self.enc_names, self.enc_table, self.blanked, self.pt_word) = PROFILES[name]
         self.data, self.profile = data, name
-        self.aes = Aes(effective_key(key))
+        self.aes = Aes(effective_key(key)) if key else None
+        self.plain = PLAIN.get(name)
         self.magic = self._word(mblock, mword)
 
     def _word(self, off, word):
+        if not self.aes:
+            return struct.unpack_from('<I', self.data, off + 4 * word)[0]
         return struct.unpack_from('<I', self.aes.ecb(self.data[off:off + 16]), word * 4)[0]
+
+    def _align(self, n):
+        return (n + 3) & ~3 if self.plain else _align16(n)
 
     def _field(self, f, off):
         return self._word(off + f[0], f[1]) ^ f[2]
 
     def _record(self, off):
-        namelen = self._field(self.f_namelen, off) & 0xFF
+        if self.plain:
+            namelen = (self._field(self.f_namelen, off) & self.plain[0]) * self.plain[1]
+        else:
+            namelen = self._field(self.f_namelen, off) & 0xFF
         start = off + self.hsize
-        if not 0 < namelen <= 255 or start + _align16(namelen) > len(self.data):
+        if not 0 < namelen <= 255 or start + self._align(namelen) > len(self.data):
             raise ValueError('bad name length')
-        raw = self.data[start:start + _align16(namelen)]
+        raw = self.data[start:start + self._align(namelen)]
         if self.enc_names:
             raw = self.aes.cbc0(raw)
         name = ''.join(chr(b) if b < 0x80 else '?' for b in raw[:namelen]).rstrip('\0')
@@ -213,7 +240,7 @@ class Rofs:
             if not r['name'] or any(ord(c) < 32 or 0x7F <= ord(c) <= 0x9F for c in r['name']):
                 break
             self.records.append(r)
-            off += self.hsize + _align16(r['namelen'])
+            off += self.hsize + self._align(r['namelen'])
         self.meta_end = off
         self.by_off = {r['off']: r for r in self.records}
 
@@ -264,7 +291,7 @@ class Rofs:
                 yield p, r
                 if r['mode'] & 0xF000 == 0x4000 and r['size']:
                     yield from rng(p, r['table'], r['size'])
-                off += self.hsize + _align16(r['namelen'])
+                off += self.hsize + self._align(r['namelen'])
 
         yield from rng('', self.first, root_end - self.first)
         if len(used) != len(self.records):

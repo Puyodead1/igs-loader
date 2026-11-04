@@ -16,7 +16,8 @@ entry per game id).
 | ROFS key literal | `Hunter4PFishV1.0` | `PartyOcean6PV1.0` |
 | ROFS profile (extractor) | `fish4p` | `oceanparty` |
 
-Scratch m101cn (`SwinV1.00Scratch`, profile `scratch`) and Hero of Robots
+Fish Hunter 4 (profiles `fish`, plaintext, and `fish4p_m400`), Scratch
+m101cn (`SwinV1.00Scratch`, profile `scratch`) and Hero of Robots
 m100fa (`RobotsHeroOfV1.0`, profile `heroofrobots`) are listed under ROFS
 below; their runtime protocols are in `Scratch.md` and `HeroOfRobots.md`,
 the Hero channel and smart-card keys under Runtime channel.
@@ -157,6 +158,67 @@ Details: `IGS_ROFS_REVERSE_ENGINEERING.md`.
   0x7BD4BD07`, `dec(0x50)[1] ^ C3 == 0x14532EAB`, `dec(0x60)[1] ^ C2 ==
   0xAA55EB48`.
 - Names are plaintext with junk padding; the page table and data are plain.
+
+### Fish Hunter 4 M101–M107CN (`Fish-OS`, plaintext)
+
+Kernel addresses are in the decompressed payload loaded at `0xC0FFF000`
+(its first page precedes `_text`; Harpoon's addresses above use
+`0xC1000000`).
+
+- **No AES and no key literal:** a cramfs-like record stream in plaintext
+  (profile `fish`).
+- **Init constants** (stored at `0xC1C6090C`, globals `0xC1CA88C0..D0`):
+  C0 `0xED8D9463`, C1 `0xBE5C1609`, C2 `0x1BF9B3AC`, C3 `0xB1AC58E4`, C4
+  `0xA5FF764F`.
+- **Delta:** `0x2E9B`.
+- **Record** (24 bytes + name padded to 4): word 0 = name length / 4 (bits
+  0–5), gid (6–13), uid (14–29); word 1 ^ C2 == `0xAA55EB48`; word 2 ^ C1 ==
+  `0xA5A5A5A5`; size = word 3 ^ `0xBE5BE76E` (C1 − delta), 28 bits; mode at
+  `+0x10`; table = (word 5 ^ `0xED8D65C8` (C0 − delta)) × 4, 26 bits; the
+  root record alone uses `0x1BF98511` (C2 − delta).
+- **Superblock:** magic `0xD4AA2684` in plain at `0x78`; `sb[0x44] ^ C0 ==
+  0x53D1826A`, `sb[0x40] ^ 0x8426AAD4 == 0x69AB3EB7`, `sb[0x60] ^ C3 ==
+  0x14532EAB`; root record at `0x58`, first record `0xC0`, root offset
+  `0xC0` or `0x2C0`.
+- **Data:** stock cramfs: `ceil(size / 4096)` LE end offsets, one zlib
+  stream per page.
+- **Functions:** mount `0xC101F527`, iget `0xC101F186`, record offset
+  `0xC101F0F0`, lookup `0xC101FA1F`, readpage `0xC101FB99`, inflate
+  `0xC101FCE8`.
+
+### Fish Hunter 4 M400CN (`Fish4P-OS` build #38)
+
+- **Key literal:** `Hunter4PFishV1.0` (VA `0xC18CFFA3`, payload at
+  `0xC0FFF000`); Harpoon's init constants (`0xC1C64926`) and delta
+  `0x3CE8`.
+- **Record:** header `0x58`, uid `+0x50`, gid `+0x52`, mode `+0x54`; name
+  length `dec(R+0x10)[1] ^ 0x3A9A44A4` (C2 − delta), size `dec(R+0x30)[1] ^
+  0x3CED596B` (C0 − delta), table `dec(R+0x20)[2] ^ 0x9F3EE741` (C1 −
+  delta; C4 + delta for the root).
+- **Record checks:** `dec(R)[2] ^ C1 == 0xA5A5A5A5`, `dec(R+0x40)[0] ^ C2 ==
+  0xAA55EB48`.
+- **Superblock:** magic `dec(0xB8)[1]`; `dec(0x98)[2] ^ C0 == 0xA3D2B27A`,
+  `dec(0xC8)[2] ^ 0x8426AAD4 == 0xB8CB3C87`, `dec(0x40)[2] ^ C3 ==
+  0x14532EAB`, `dec(0x80)[0] ^ C2 == 0xAA55EB48`; root record at `0x40`,
+  first record `0x130`.
+- **Functions:** mount `0xC101F58E`, iget `0xC101F1DA`, record offset
+  `0xC101F121`, lookup `0xC101FB60`.
+
+M401CN and M402CN use Harpoon's kernel (`Fish4P-OS` #3, profile `fish4p`).
+
+### Fish Hunter 4 runtime (all versions)
+
+| Item | Value | Where |
+| --- | --- | --- |
+| Channel cipher | none (M101–M105CN); RC4 per direction (M107CN, M400–M402CN): 4-byte LE key, standard KSA and PRGA, keystream over LE words, set once | M102 `vPcShareRam_ResetRc4Key` `0x80633B0` (unused), `RC4_vSetKey` `0x80645E0`, `RC4_vDataCodec` `0x80646C0`; M401 `sub_8063390`, `sub_8064630`, `sub_8064710` |
+| RC4 keys | `0x82675251` (chip → game), `0x80678267` (game → chip) | same |
+| Body | `[payload, headers, sum]`, header register 0 = `count \| payload << 7` | M102 `_vSendTo36` `0x8063AA0`, `_uipRecvFrom36` `0x8063B60` |
+| Boot (CN) | P2A loader: start `0x08080808`, ready `0xF0F0F0F0` → `0x0A0A0A0A`, DONE `0x90909090` word 1 = upload checksum, reply `0x0C0C0C0C`; reset reply `(w0, w0 ^ CRC)` | M102 `P2A_LoaderAdv_iLoadData` `0x80860E0`, `P2A_Loader_iReset` `0x8086760` |
+| Boot (4P) | firmware upload key `Open pccard0 !!!` | M401 `sub_808BB70` |
+| Asset cipher | none on the CN builds (plain WAVs); the 4P builds keep Harpoon's mask in the list | |
+| Fish values | 1, 2, 4, 3, 20, 50, 70, 30, 40, 10, 5, 100, 10, 100 per kind (word +10 of 36-byte rows) | M102 `0x8245340`, M401 `0x82C8E20` |
+| Key-in / key-out rates | 10, 20, 50, 100, 200, 500 / 1, 10, 20, 50, 100, 200, 500 | M102 `KeyInRate` `0x8208C94`, `KeyOutRate` `0x8208CAC` |
+| Station keys | `Player_KeySeq`: station p bits `8p+3, 8p+2, 8p, 8p+1, 8p+5, 8p+4` (left, right, up, down, fire, bet); Test bit 78 | M102 `0x82078C0` |
 
 ## E2000: Gold Captain (`GoldCaptain-OS-e65`, Linux 2.4.31)
 

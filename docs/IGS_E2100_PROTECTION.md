@@ -310,6 +310,26 @@ The game switches to the announced key after sending the batch.
 is playable through a re-implemented controller in the shim (betting,
 results, payouts).
 
+## Fish Hunter 4: trailing-sum batches
+
+Fish Hunter 4 (2010–2011, the "e2k1" ShareRam of `shareram_e2k1/pcshareram.c`)
+keeps the batch messages (`type | length << 7`) with another body:
+- **Register:** BAR1 register 0 holds `count | payload << 7` in both
+  directions; no index rotation.
+- **Body:** `[payload, headers, sum of both]`; no running checksum.  The
+  game sends a batch and rings, the ASIC answers one batch.
+- **Cipher:** none (M101–M105CN) or RC4 per direction over the whole body
+  (M107CN and the 4P build), keys `0x82675251` / `0x80678267` (Harpoon
+  Lagoon XORs with the same two words).
+- **Boot:** the CN builds' P2A loader sends `0x08080808`, answers "ready"
+  (`0xF0F0F0F0`) with `0x0A0A0A0A`, and on DONE (`0x90909090`) compares
+  word 1 with the checksum of its upload: with nothing uploaded, 0.  No
+  session keys (word 2 of the mailbox stays 0).
+
+**Loader:** the game plugin's `layout = E2100_LAYOUT_TRAILING` and
+`handshake = E2100_HS_NOSUM` in `e2100.c`; the messages are in
+`FishHunter4.md`.
+
 ## Scratch: the register-table transport
 
 Scratch (2012) keeps the boot handshake but replaces the batches with a

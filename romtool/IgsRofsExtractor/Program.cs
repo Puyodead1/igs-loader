@@ -42,7 +42,7 @@ if (outputDirectory is not null)
 /// </summary>
 sealed record RofsProfile(
     string Name,
-    string Key,
+    string? Key,
     int MagicBlock, int MagicWord,
     int FirstRecord, int HeaderSize, int ModeOffset,
     (int Block, int Word, uint Xor) NameLength,
@@ -51,7 +51,8 @@ sealed record RofsProfile(
     bool EncryptedNames,
     bool EncryptedPageTable,
     bool BlankedZlibHeader,
-    int PageTableWord = 0)
+    int PageTableWord = 0,
+    uint NameMask = 0xFF, int NameUnit = 1)
 {
     public static readonly RofsProfile[] All =
     [
@@ -106,6 +107,26 @@ sealed record RofsProfile(
             Table: (0x40, 0, 0xEC285CDA),
             EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
             PageTableWord: 1),
+        // Fish Hunter 4 M400CN (Fish4P-OS build #38).  Harpoon's key and
+        // constants, an earlier record layout: header 0x58, mode at +0x54.
+        new("fish4p_m400", "Hunter4PFishV1.0",
+            MagicBlock: 0xB8, MagicWord: 1,
+            FirstRecord: 0x130, HeaderSize: 0x58, ModeOffset: 0x54,
+            NameLength: (0x10, 1, 0x3A9A44A4),
+            Size: (0x30, 1, 0x3CED596B),
+            Table: (0x20, 2, 0x9F3EE741),
+            EncryptedNames: false, EncryptedPageTable: false, BlankedZlibHeader: false),
+        // Fish Hunter 4 / 6 (Fish-OS).  No AES (Key null): a cramfs-like
+        // plaintext stream, 24-byte headers, name length (word 0 & 0x3F) * 4,
+        // names padded to 4.  XORs are the init constants - 0x2E9B.
+        new("fish", null,
+            MagicBlock: 0x78, MagicWord: 0,
+            FirstRecord: 0xC0, HeaderSize: 0x18, ModeOffset: 0x10,
+            NameLength: (0x00, 0, 0),
+            Size: (0x0C, 0, 0xBE5BE76E),
+            Table: (0x14, 0, 0xED8D65C8),
+            EncryptedNames: false, EncryptedPageTable: false, BlankedZlibHeader: false,
+            NameMask: 0x3F, NameUnit: 4),
     ];
 }
 
@@ -144,7 +165,7 @@ sealed class RofsImage
         _image = image;
         Profile = profile;
         // The driver transforms the key literal before its normal AES-128 expansion.
-        var source = System.Text.Encoding.ASCII.GetBytes(profile.Key);
+        var source = System.Text.Encoding.ASCII.GetBytes(profile.Key ?? "plaintext-image!");
         var key = new byte[16];
         BinaryPrimitives.WriteUInt32BigEndian(key.AsSpan(0, 4), BinaryPrimitives.ReadUInt32BigEndian(source.AsSpan(0, 4)) >> 2);
         BinaryPrimitives.WriteUInt32BigEndian(key.AsSpan(4, 4), BinaryPrimitives.ReadUInt32BigEndian(source.AsSpan(4, 4)) >> 1);
@@ -169,7 +190,7 @@ sealed class RofsImage
             catch { break; }
             if (record.Name.Length == 0 || record.Name.Any(char.IsControl)) break;
             Records.Add(record);
-            offset += Profile.HeaderSize + Align16(record.NameLength);
+            offset += Profile.HeaderSize + AlignName(record.NameLength);
         }
         MetadataEnd = offset;
     }
@@ -179,11 +200,11 @@ sealed class RofsImage
 
     private Record DecodeRecord(int offset)
     {
-        var nameLength = (int)(Field(Profile.NameLength, offset) & 0xFF);
+        var nameLength = (int)(Field(Profile.NameLength, offset) & Profile.NameMask) * Profile.NameUnit;
         var nameStart = offset + Profile.HeaderSize;
-        if (nameLength is <= 0 or > 255 || nameStart + Align16(nameLength) > _image.Length)
+        if (nameLength is <= 0 or > 255 || nameStart + AlignName(nameLength) > _image.Length)
             throw new InvalidDataException("Invalid record name length.");
-        var nameBytes = _image.AsSpan(nameStart, Align16(nameLength)).ToArray();
+        var nameBytes = _image.AsSpan(nameStart, AlignName(nameLength)).ToArray();
         if (Profile.EncryptedNames)
             nameBytes = _aes.DecryptCbc(nameBytes, new byte[16], PaddingMode.None);
         var name = System.Text.Encoding.ASCII.GetString(nameBytes, 0, nameLength).TrimEnd('\0');
@@ -244,7 +265,7 @@ sealed class RofsImage
             {
                 nodes.Add($"mode={record.Mode:X4} metadata=0x{record.Offset:X} path={path}");
             }
-            offset += Profile.HeaderSize + Align16(record.NameLength);
+            offset += Profile.HeaderSize + AlignName(record.NameLength);
         }
     }
 
@@ -297,7 +318,10 @@ sealed class RofsImage
     }
 
     private uint ReadImageWord(int offset) => BinaryPrimitives.ReadUInt32LittleEndian(_image.AsSpan(offset, 4));
-    private byte[] DecryptBlock(int offset) => _decryptor.TransformFinalBlock(_image, offset, 16);
+    private byte[] DecryptBlock(int offset) => Profile.Key is null
+        ? _image.AsSpan(offset, 16).ToArray()
+        : _decryptor.TransformFinalBlock(_image, offset, 16);
+    private int AlignName(int value) => Profile.Key is null ? (value + 3) & ~3 : Align16(value);
     private static uint Word(byte[] block, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(block.AsSpan(offset, 4));
     private static int Align16(int value) => (value + 15) & ~15;
     private static string Sanitize(string value)
