@@ -12,8 +12,9 @@ cabinet has it at run time.  The entry's "build" feature says how, as
 
     root p2               p2 is the root fs (E2100 igs_rofs with the entry's
                           rofs_profile; E2000 plaintext ROFS)
-    decrypt SRC DST SIZE  FPGA-cipher decrypt SRC to DST with asset_mask,
-                          keep SIZE bytes (Scratch's /bin/unrar step)
+    decrypt SRC DST SIZE  FPGA-cipher decrypt SRC to DST with exe_mask (or
+                          asset_mask when the entry has none), keep SIZE
+                          bytes (Scratch's /bin/unrar step)
     copy SRC DST          copy a file inside the tree
     assemble DST          E2000: rebuild the split executable at DST
                           (geca_sector, head_sector, pieces, trim_kb, trim_step,
@@ -248,7 +249,8 @@ class Builder:
             igs_rofs.extract(data, self.stage, self.sw.feature('rofs_profile'))
 
     def step_decrypt(self, op, src, dst, size):
-        igs_fpga_decrypt.MASK = bytes.fromhex(self.sw.feature('asset_mask'))
+        mask = self.sw.feature('exe_mask') or self.sw.feature('asset_mask')
+        igs_fpga_decrypt.MASK = bytes.fromhex(mask)
         with open(self.path(src), 'rb') as f:
             out = igs_fpga_decrypt.decrypt(f.read())[:int(size)]
         self.write(dst, out)

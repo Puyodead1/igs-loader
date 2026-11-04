@@ -5,7 +5,8 @@
  *
  *   root p2               the root fs (E2100/E2200 igs_rofs with the entry's
  *                         rofs_profile; E2000 plaintext ROFS)
- *   decrypt SRC DST SIZE  FPGA-cipher decrypt SRC to DST with asset_mask
+ *   decrypt SRC DST SIZE  FPGA-cipher decrypt SRC to DST with exe_mask (or
+ *                         asset_mask when the entry has none)
  *   copy SRC DST          copy a file inside the tree
  *   assemble DST          E2000: rebuild the split executable at DST
  *   mount pN DIR          partition N replaces DIR's contents: SquashFS 4,
@@ -491,7 +492,7 @@ static int step_decrypt(struct mkr_job *j, char **a)
 
     if (e == a[2] || *e)
         return mkr_fail(j, "decrypt: bad size %s", a[2]);
-    if (hex_mask(j, "asset_mask", mask) || load(j, a[0], &d, &n))
+    if (hex_mask(j, mkr_feature(j, "exe_mask", NULL) ? "exe_mask" : "asset_mask", mask) || load(j, a[0], &d, &n))
         return -1;
     memset(d + n, 0, 16);
     n = (n + 15) & ~(size_t)15;

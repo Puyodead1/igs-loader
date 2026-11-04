@@ -204,6 +204,19 @@ record (3,923) and inflated every file.
 The extractors take a profile without a key as plaintext (`igs_rofs.py`
 `PLAIN`, `fs_rofs.c` `nl_mask`/`nl_unit`, C# `NameMask`/`NameUnit`).
 
+## Variant: Fish Hunter 6 M607CN
+
+**`Fish6Pv2-OS` (profile `fish6pv2`)** is Ocean Party's design with its own
+key (`Fish6PHunterV2.0`) and positions: header `0x78`, mode `+0x72`, names
+AES-CBC with junk padding, page-table entries one AES block each (end in
+word 3), zlib headers blanked.  The walk consumed every record (3,856)
+and inflated every file.  Fish Hunter 6 M601FA–M606CN use `Fish-OS`
+(profile `fish`).
+
+The executable on it is FPGA-cipher encrypted; the kernel decrypts it into
+a tmpfs at boot (`/usr/bin/info`, as Scratch's `/bin/unrar`), which the sets
+mirror with the build step `decrypt` and the list's `exe_mask`.
+
 **A dump without its partition table** (Fish Hunter 4 M101CN starts 511
 bytes into the disk) is built with the list's `dump_skip` and
 `partitions` features (`IGS_LOADER.md`).

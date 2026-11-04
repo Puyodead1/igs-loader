@@ -127,6 +127,16 @@ sealed record RofsProfile(
             Table: (0x14, 0, 0xED8D65C8),
             EncryptedNames: false, EncryptedPageTable: false, BlankedZlibHeader: false,
             NameMask: 0x3F, NameUnit: 4),
+        // Fish Hunter 6 M607CN (Fish6Pv2-OS).  Ocean Party's design; XORs
+        // are the init constants +/- 0xC7; page ends are word 3.
+        new("fish6pv2", "Fish6PHunterV2.0",
+            MagicBlock: 0xD0, MagicWord: 1,
+            FirstRecord: 0x150, HeaderSize: 0x78, ModeOffset: 0x72,
+            NameLength: (0x00, 0, 0x683CD4AC),
+            Size: (0x30, 0, 0x67CC9C41),
+            Table: (0x50, 3, 0xC2693974),
+            EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
+            PageTableWord: 3),
     ];
 }
 

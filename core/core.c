@@ -37,6 +37,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <malloc.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -2303,6 +2304,33 @@ int Mix_OpenAudio(int freq, uint16_t format, int channels, int chunksize)
     LOG("audio open %d Hz fmt 0x%x ch %d chunk %d driver %s -> %d",
         freq, format, channels, chunksize, name, r);
     return r;
+}
+
+/*
+ * A heap RIFF image wrapped with a size that cannot be its own (negative,
+ * or far past its RIFF length) gets its allocation's size: Fish Hunter 6
+ * M607CN's sound loader (0x8062E10) passes a stale stack word as the size,
+ * read before its decrypt call stores it.  The cabinet's SDL 1.2 and the
+ * Windows loader's reader stop at the data; the host mixer does not.
+ */
+void *SDL_RWFromMem(void *mem, int size)
+{
+    REAL(void *, SDL_RWFromMem, (void *, int));
+    const uint8_t *p = mem;
+
+    if (p && !memcmp(p, "RIFF", 4)) {
+        uint32_t len = 8 + ((uint32_t)p[4] | (uint32_t)p[5] << 8 | (uint32_t)p[6] << 16 | (uint32_t)p[7] << 24);
+
+        if (size < 12 || (uint32_t)size > len + 0x10000u) {
+            size_t n = malloc_usable_size(mem);
+
+            if (n >= 12 && n <= 0x7FFFFFFF) {
+                LOG("RIFF at %p: size %d -> %zu (its allocation)", mem, size, n);
+                size = (int)n;
+            }
+        }
+    }
+    return real_SDL_RWFromMem(mem, size);
 }
 
 void *Mix_LoadWAV_RW(void *src, int freesrc)

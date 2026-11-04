@@ -330,6 +330,19 @@ keeps the batch messages (`type | length << 7`) with another body:
 `handshake = E2100_HS_NOSUM` in `e2100.c`; the messages are in
 `FishHunter4.md`.
 
+## Fish Hunter 6
+
+M601FA–M606CN keep Fish Hunter 4 M107CN's channel.  M607CN
+(`shareram_e2k1v1.0.5`) moves the same messages onto Harpoon Lagoon's
+framing: `[running sum, payload, headers]`, each word XORed with a key per
+direction (`0x82675251` / `0x80678267` at start), the game announcing its
+next header register and key in message 5 (words 11, 12), the ASIC its
+register in message 6 word 12 and its next key in message 42.  Its loader
+(`P2A_LoaderAdv_iLoadDataPointer`, image embedded, key `PC Card 0 Opened`)
+reads the mailbox without a session XOR and, like the CN loader, compares
+DONE's word 1 with its upload's CRC (`E2100_HS_NOSUM`).  Messages:
+`FishHunter6.md`.
+
 ## Scratch: the register-table transport
 
 Scratch (2012) keeps the boot handshake but replaces the batches with a

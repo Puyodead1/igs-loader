@@ -366,6 +366,175 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		</part>
 	</software>
 
+	<software name="fishhunter6_m606cn">
+		<description>Fish Hunter 6 (M606CN)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M606CN"/>
+		<info name="usage" value="docs/FishHunter6.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 lucky wheel, 3 fish-hunt task, 4 depth bomb, 5 super golden fish"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter6"/>
+			<!-- Fish-OS: Fish Hunter 4 M107CN's channel: the older P2A loader, RC4, word counts -->
+			<feature name="variant" value="cn2"/>
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="fish"/>
+			<feature name="rofs_profile" value="fish"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter6_m606cn" sha1="6998ac3b6c4c27e4994e9d1b0fded7263e094b1c"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2534353" sha1="f7a7c14c56ccdc00a56e055e225df73125e8d34f"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="c52fa9223691105b0f6aa8480e449e77d77b80be"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunter6_m601fa" cloneof="fishhunter6_m606cn">
+		<description>Fish Hunter 6 (M601FA)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M601FA"/>
+		<info name="usage" value="docs/FishHunter6.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 lucky wheel, 3 fish-hunt task, 4 depth bomb, 5 super golden fish"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter6"/>
+			<feature name="variant" value="cn"/>
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="fish"/>
+			<feature name="rofs_profile" value="fish"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter6_m601fa" sha1="328464aebc228411e87b20ddec06d3d6746fb488"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2534286" sha1="38b7f6d7b57fa07cf9b291b52fa5ab8232b30b67"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="e6d20479066d3367310500ec4bd8626832f345cb"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunter6_m602cn" cloneof="fishhunter6_m606cn">
+		<description>Fish Hunter 6 (M602CN)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M602CN"/>
+		<info name="usage" value="docs/FishHunter6.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 lucky wheel, 3 fish-hunt task, 4 depth bomb, 5 super golden fish"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter6"/>
+			<feature name="variant" value="cn"/>
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="fish"/>
+			<feature name="rofs_profile" value="fish"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter6_m602cn" sha1="0d31ee11f1a034b33ed1fd1c6044317b0b95ae9b"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2534410" sha1="42dedd122ae35570688350f026f23c10d1e888a2"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="7cb923a81b699ccae7d312a7c435f34bcaa6fb4a"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunter6_m603cn" cloneof="fishhunter6_m606cn">
+		<description>Fish Hunter 6 (M603CN)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M603CN"/>
+		<info name="usage" value="docs/FishHunter6.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 lucky wheel, 3 fish-hunt task, 4 depth bomb, 5 super golden fish"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter6"/>
+			<feature name="variant" value="cn"/>
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="fish"/>
+			<feature name="rofs_profile" value="fish"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter6_m603cn" sha1="8cc2295cc53042c9683a569bde53164cb41d4cbd"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2534286" sha1="ca4d99a569cc2cfb200c4f1980078b0a1f702441"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="3e53102a9866e3545c512ab1f0777c5e172a15e9"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunter6_m604cn" cloneof="fishhunter6_m606cn">
+		<description>Fish Hunter 6 (M604CN)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M604CN"/>
+		<info name="usage" value="docs/FishHunter6.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 lucky wheel, 3 fish-hunt task, 4 depth bomb, 5 super golden fish"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter6"/>
+			<feature name="variant" value="cn"/>
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="fish"/>
+			<feature name="rofs_profile" value="fish"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter6_m604cn" sha1="399f6e209f5a7f69ebcae46871e8f98d100b9727"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2534286" sha1="a439f2c39bc4586cedb7ed3ca2a6577520f0df55"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="61654782593a38d00a3fd427c229823c8dc3725b"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunter6_m607cn" cloneof="fishhunter6_m606cn">
+		<description>Fish Hunter 6 (M607CN)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M607CN"/>
+		<info name="usage" value="docs/FishHunter6.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 lucky wheel, 3 fish-hunt task, 4 depth bomb, 5 super golden fish"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter6"/>
+			<!-- Fish6Pv2-OS: Harpoon Lagoon's channel, six stations -->
+			<feature name="variant" value="6p"/>
+			<feature name="data" value="/Fish6P"/>
+			<feature name="binary" value="FH6P"/>
+			<feature name="rofs_profile" value="fish6pv2"/>
+			<feature name="rofs_key" value="Fish6PHunterV2.0"/>
+			<!-- the kernel runs /usr/bin/info /Fish6P/fish /Fish6P.bin/fish Hello-Fish6PV2.0 -->
+			<feature name="exe_mask" value="daf30972a1f28a9577c4d09897983890"/>
+			<feature name="asset_mask" value="567c8f1f6245c7a43f62a3a2996d3d3b"/>
+			<!-- p3's asic36.bin links to ../Fish6P.bin/asic36.bin; the game's path scan stats every entry -->
+			<feature name="build" value="root p2; decrypt /Fish6P/fish /Fish6P.bin/fish 2698336; copy /Fish6P/asic36.bin /Fish6P.bin/asic36.bin; mount p3 /Fish6P"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunter6_m607cn" sha1="51239bf182b479564a6947d868121f5cc4daad52"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish6P.bin/fish" size="2698336" sha1="be6721dbd765125d350c7b5776f8f2b092d874e1"/>
+				<rom name="/Fish6P/asic36.bin" size="524288" sha1="321d441d311a2a6886e2a04077d8815023d8a0a3"/>
+			</dataarea>
+		</part>
+	</software>
+
 	<software name="oceanparty_md105cn">
 		<description>Ocean Party (MD105CN)</description>
 		<year>2012</year>

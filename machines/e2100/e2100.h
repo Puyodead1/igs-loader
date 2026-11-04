@@ -19,7 +19,7 @@
 #include "../../core/igs.h"
 
 #define E2100_API_VERSION 1
-#define E2100_BATCH_MAX   256              /* payload words per ASIC batch */
+#define E2100_BATCH_MAX   512              /* payload words per ASIC batch */
 
 struct e2100_batch {
     uint32_t payload[E2100_BATCH_MAX], hdrs[16];

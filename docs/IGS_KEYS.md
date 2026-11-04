@@ -16,7 +16,8 @@ entry per game id).
 | ROFS key literal | `Hunter4PFishV1.0` | `PartyOcean6PV1.0` |
 | ROFS profile (extractor) | `fish4p` | `oceanparty` |
 
-Fish Hunter 4 (profiles `fish`, plaintext, and `fish4p_m400`), Scratch
+Fish Hunter 4 (profiles `fish`, plaintext, and `fish4p_m400`), Fish
+Hunter 6 (`fish`, and `Fish6PHunterV2.0`, profile `fish6pv2`), Scratch
 m101cn (`SwinV1.00Scratch`, profile `scratch`) and Hero of Robots
 m100fa (`RobotsHeroOfV1.0`, profile `heroofrobots`) are listed under ROFS
 below; their runtime protocols are in `Scratch.md` and `HeroOfRobots.md`,
@@ -219,6 +220,58 @@ M401CN and M402CN use Harpoon's kernel (`Fish4P-OS` #3, profile `fish4p`).
 | Fish values | 1, 2, 4, 3, 20, 50, 70, 30, 40, 10, 5, 100, 10, 100 per kind (word +10 of 36-byte rows) | M102 `0x8245340`, M401 `0x82C8E20` |
 | Key-in / key-out rates | 10, 20, 50, 100, 200, 500 / 1, 10, 20, 50, 100, 200, 500 | M102 `KeyInRate` `0x8208C94`, `KeyOutRate` `0x8208CAC` |
 | Station keys | `Player_KeySeq`: station p bits `8p+3, 8p+2, 8p, 8p+1, 8p+5, 8p+4` (left, right, up, down, fire, bet); Test bit 78 | M102 `0x82078C0` |
+
+### Fish Hunter 6 M601FA–M606CN (`Fish-OS`)
+
+Fish Hunter 4's `Fish-OS` profile `fish` (constants above) and M107CN's
+runtime (RC4 keys `0x82675251` / `0x80678267`, set once, `[payload,
+headers, sum]`).  No asset cipher.
+
+### Fish Hunter 6 M607CN (`Fish6Pv2-OS`)
+
+Addresses in the decompressed payload loaded at `0xC0FFF000`.
+
+- **Key literal:** `Fish6PHunterV2.0` (VA `0xC18D2649`).  Effective AES
+  key: `11 9A 5C DA 1B 28 24 3A 6E 74 65 72 AC 64 5C 60`.
+- **Init constants** (`0xC1C72920`, stored at `0xC1CBACEC..F4`): C_EC
+  `0x67CC9D08`, C_F0 `0xC26938AD`, C_F4 `0x683CD3E5`.
+- **Delta:** `0xC7`.
+- **Record** (header `0x78`, mode `+0x72`, uid `+0x70`, gid `+0x74`; names
+  AES-CBC, zero IV, junk padding): name length `dec(R)[0] ^ 0x683CD4AC`
+  (C_F4 + delta), size `dec(R+0x30)[0] ^ 0x67CC9C41` (C_EC − delta), 28
+  bits; table `(dec(R+0x50)[3] ^ 0xC2693974) × 4` (C_F0 + delta), 26 bits.
+- **Record checks:** `dec(R+0x20)[1] ^ C_EC == 0xA5A5A5A5`,
+  `dec(R+0x60)[3] ^ C_F0 == 0xAA55EB48`.
+- **Superblock:** magic `dec(0xD0)[1]`; first record `0x150`.
+- **Data:** page table of 16-byte AES blocks, page end in word 3; zlib
+  header blanked (`78 9C` restored by the kernel).
+- **Functions:** iget `0xC101F421`, inode number = table `0xC101F368`, file
+  check `0xC101F279`, readdir `0xC101FC0F`, lookup `0xC101FE2B`, readpage
+  `0xC102007A`, block read `0xC101F666`, block decrypt `0xC101F248`, inflate
+  `0xC1020214`.
+- **Executable layer:** `/Fish6P/fish` is FPGA-cipher encrypted.  At boot
+  the kernel (`0xC100133A`) mounts a tmpfs at `/Fish6P.bin` and runs
+  `/usr/bin/info /Fish6P/fish /Fish6P.bin/fish Hello-Fish6PV2.0` (argv table
+  `0xC16ED100`): key string to the FPGA (`0x6607`, `0x40106606`, `0x6608`),
+  derived key back with `0x80106605`, `0xC0106610` over 64 KiB chunks.
+  Mask for that key `daf30972a1f28a9577c4d09897983890` (feature
+  `exe_mask`), recovered from the ELF `e_ident`; the output keeps the
+  file's 2,698,336 bytes.
+- **Asset mask** `567c8f1f6245c7a43f62a3a2996d3d3b` (sound and action
+  files), from the WAV headers (45/45 decode `RIFF`, `WAVEfmt `, PCM,
+  `data`).
+- **ASIC firmware:** embedded (`0x824BBE0`, `0x80000` bytes), upload key
+  `PC Card 0 Opened` (`sub_808BB30`).
+
+| Item | Value | Where |
+| --- | --- | --- |
+| Channel cipher | each word XOR a 32-bit key per direction (the "RC4" context holds one key word) | key set `sub_80674F0`, codec `sub_8067550` |
+| Keys | `0x82675251` (chip → game), `0x80678267` (game → chip) | `sub_8065350` |
+| Re-keying | game → chip: message 5 words 11 / 12 (next header register 0..63, next key); chip → game: message 42 word 0 (taken once), message 6 word 12 (register) | `sub_8063BF0`, `sub_8064620` |
+| Body | `[running sum, payload, headers]`, the sum shared by both directions | `sub_8064340`, `sub_8064480` |
+| Asset key | message 43, 16 bytes, to the FPGA (`sub_8065590`) | `sub_8069040` |
+| Fish values | as Fish Hunter 4; 13 kinds in the catch messages | `0x82CC060` |
+| Station keys | `Player_KeySeq` as M102, six stations | `0x820E1E0` |
 
 ## E2000: Gold Captain (`GoldCaptain-OS-e65`, Linux 2.4.31)
 
@@ -459,6 +512,8 @@ Details: `IGS_SOUND_CRYPTO.md`.
 | Ocean Party | `9528df6122f17c6ec8a249c24b63db9a` | most common block in the WAVs = encrypted silence (zo); mask = zo ⊕ E_harpoon(0) ⊕ MASK_harpoon. Checked on 85/85 WAVs and 26/26 `ACT_ZL3D` banks |
 | Hero of Robots (`media/osmbin/*.osmenc`) | `4626ed14dc0ee8baed434037f7574619` | the key arrives in ASIC message 0; mask checked on `BB_Light.osmenc` (decrypts to a boost text archive with a valid length trailer), and the game loads its assets with it in the loader |
 | Scratch (`swin`, key `Hello-ScratchWin`) | `e4be1b4e7f081654fa6b81698b039a06` | first block = ELF `e_ident`; the whole file then parses as an i386 ELF. Scratch's assets themselves are not encrypted |
+| Fish Hunter 6 M607CN (`fish`, key `Hello-Fish6PV2.0`) | `daf30972a1f28a9577c4d09897983890` | first block = ELF `e_ident`; the file parses as an i386 ELF |
+| Fish Hunter 6 M607CN (assets) | `567c8f1f6245c7a43f62a3a2996d3d3b` | WAV headers (`RIFF`, size, `WAVEfmt `, PCM, `data`): 45/45; the game loads its sounds and animations with it |
 
 ## ASIC handshake and firmware
 
@@ -479,6 +534,8 @@ does):
   `pccard0 Open OK!` (`sub_814E620`).  `asic36.bin` is read and ignored.
 - **Hero of Robots:** embedded as `A36ROM` (`0x9D45D80`, `0x80000` bytes),
   key `StartHeroOfRobot` (`P2A_LoaderAdv_iLoadDataPointer`).
+- **Fish Hunter 6 M607CN:** embedded (`0x824BBE0`, `0x80000` bytes), key
+  `PC Card 0 Opened` (`sub_808BB30`); the M60x builds read `asic36.bin`.
 
 **Dummy crypto check:** Harpoon runs a 64 KB crypto ioctl with the key
 `298yvan42o 89phq24rl;` before reporting done.

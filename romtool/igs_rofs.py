@@ -63,6 +63,11 @@ PROFILES = {
     'fish': (None, 0x78, 0, 0xC0, 0x18, 0x10,
              (0x00, 0, 0), (0x0C, 0, 0xBE5BE76E), (0x14, 0, 0xED8D65C8),
              False, False, False, 0),
+    # Fish Hunter 6 M607CN (Fish6Pv2-OS).  Ocean Party's design; XORs are
+    # the init constants +/- 0xC7; page ends are word 3.
+    'fish6pv2': ('Fish6PHunterV2.0', 0xD0, 1, 0x150, 0x78, 0x72,
+                 (0x00, 0, 0x683CD4AC), (0x30, 0, 0x67CC9C41), (0x50, 3, 0xC2693974),
+                 True, True, True, 3),
 }
 
 # plaintext profiles: (name length mask, unit, name alignment); the name

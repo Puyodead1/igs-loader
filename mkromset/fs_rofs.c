@@ -61,6 +61,10 @@ static const struct profile profiles[] = {
        0x2E9B. */
     { "fish", NULL, 0x78, 0, 0xC0, 0x18, 0x10,
       { 0x00, 0, 0 }, { 0x0C, 0, 0xBE5BE76E }, { 0x14, 0, 0xED8D65C8 }, 0, 0, 0, 0, 0x3F, 4 },
+    /* Fish Hunter 6 M607CN (Fish6Pv2-OS).  Ocean Party's design; XORs are
+       the init constants +/- 0xC7; page ends are word 3. */
+    { "fish6pv2", "Fish6PHunterV2.0", 0xD0, 1, 0x150, 0x78, 0x72,
+      { 0x00, 0, 0x683CD4AC }, { 0x30, 0, 0x67CC9C41 }, { 0x50, 3, 0xC2693974 }, 1, 1, 1, 3 },
 };
 
 #define NPROF ((int)(sizeof(profiles) / sizeof(profiles[0])))
@@ -461,7 +465,7 @@ int fs_rofs(struct mkr_job *j, uint64_t off, uint64_t size, struct mkr_node *dir
             for (i = 0; i < NPROF && strcmp(profile, profiles[i].name); i++)
                 ;
             if (i == NPROF)
-                mkr_fail(j, "unknown ROFS profile '%s' (known: fish4p, oceanparty, heroofrobots, scratch, pmaster3, fish4p_m400, fish)",
+                mkr_fail(j, "unknown ROFS profile '%s' (known: fish4p, oceanparty, heroofrobots, scratch, pmaster3, fish4p_m400, fish, fish6pv2)",
                          profile);
         }
         mkr_fail(j, "not an IGS ROFS v2 image for any known profile (no key decodes the superblock magic)");
