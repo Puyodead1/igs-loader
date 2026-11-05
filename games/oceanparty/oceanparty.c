@@ -1,5 +1,5 @@
 /*
- * Ocean Party md105cn (E2100) game plugin.  docs/OceanParty.md.
+ * Ocean Party md105cn (E2100) game plugin.  wiki Ocean Party.
  *
  * Channel: a persistent RC4 stream per direction, keyed with the 32-bit key
  * as 4 little-endian bytes (the game's sub_806AAF0 / sub_806ABD0).  The game

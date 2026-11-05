@@ -195,6 +195,20 @@ Everything is stored in `igs-loader.ini`: the game's options in its
 section, so command-line runs use them too; the launcher's own settings
 in `[gui]`.
 
+### Game data
+
+`igs-assets` (`build/igs-assets`, `igs-assets.exe`) lists, dumps, checks
+and extracts the games' own data formats: image and action banks, fonts,
+models, archives, charts, settings and bookkeeping, to PNG, WAV, OBJ and
+JSON. Encrypted E2100 assets are decrypted with the set's mask. The formats
+are on the [wiki](https://github.com/Puyodead1/igs-loader/wiki/Formats).
+
+```powershell
+.\igs-assets.exe formats
+.\igs-assets.exe extract <cache>\windows\fishhunter4_m107cn\Fish\action\02_nemo.rom -o out
+.\igs-assets.exe scan <cache>\windows\speeddriver2    # check every known file in a set
+```
+
 ### Window title and options
 
 The window title shows the game, its status (credits, phase) and the frame
@@ -223,7 +237,7 @@ rate. Useful environment variables:
 
 This builds `build/igs_core.so`, one `.so` per machine and per game,
 `build/igs-romset`, the rom-set helper `run.sh` uses, and
-`build/igs-mkromset`, the set builder, and `build/igs-loader-gui` when
+`build/igs-mkromset`, the set builder, `build/igs-assets`, the game data tool, and `build/igs-loader-gui` when
 `libsdl2-dev` is installed. It also unpacks
 ncurses 5 from `debs/` into `lib/`, because Ubuntu 24.04 no longer ships
 it. `core/font.h`, the overlay font, is regenerated with Python Pillow only
@@ -237,7 +251,7 @@ when `core/gen_font.py` is newer.
 ```
 
 This writes `build/win/igs-loader.exe`, the machine and game DLLs, the
-preloaded libraries, `igs-mkromset.exe` and `igs-loader-gui.exe`, all
+preloaded libraries, `igs-mkromset.exe`, `igs-assets.exe` and `igs-loader-gui.exe`, all
 statically linked.
 
 ## Roadmap
@@ -248,20 +262,17 @@ statically linked.
 
 ## Documentation
 
-Controls and per-game settings are on the [wiki](https://github.com/Puyodead1/igs-loader/wiki).
+The documentation is on the [wiki](https://github.com/Puyodead1/igs-loader/wiki).
 
-| Doc | What |
+| Page | What |
 | --- | --- |
-| [IGS_LOADER.md](docs/IGS_LOADER.md) | the loader in depth: options, rom sets and software lists, architecture, the Windows loader, adding a game |
-| [IGS_E2100_PROTECTION.md](docs/IGS_E2100_PROTECTION.md) | E2100 FPGA card and protection ASIC: kernel driver, boot handshake, runtime messages |
-| [IGS_E2000.md](docs/IGS_E2000.md) | E2000 hardware: PLX9030 interface, IGS036 shared-RAM, IGS027A packet and IGS036 message and packet transports, command sets |
-| [IGS_SOUND_CRYPTO.md](docs/IGS_SOUND_CRYPTO.md) | the FPGA asset cipher used on sounds and sprite banks |
-| [IGS_E1000.md](docs/IGS_E1000.md) | E1000 hardware: the Geode GX2 board, the IGS027A's command protocol |
-| [IGS_E2200.md](docs/IGS_E2200.md) | E2200: the E2100 PC side, the IGS036 framing and messages, the drum I/O board, chart encryption, the screen flow |
-| [IGS_ROFS_REVERSE_ENGINEERING.md](docs/IGS_ROFS_REVERSE_ENGINEERING.md) | the disk formats: E2100 and E2200 `igs_rofs`, E2000 ROFS and IGS_SHFS, boot chains |
-| [IGS_KEYS.md](docs/IGS_KEYS.md) | every key, mask and constant per game |
-| [PercussionMaster3_Online.md](docs/PercussionMaster3_Online.md) | Percussion Master 3's network: servers, framing, registration, commands, profile, boards, the online screen flow |
-| [HarpoonLagoon.md](docs/HarpoonLagoon.md), [FishHunter4.md](docs/FishHunter4.md), [FishHunter6.md](docs/FishHunter6.md), [FishHunterFinal6.md](docs/FishHunterFinal6.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md), [PirateRevenge.md](docs/PirateRevenge.md), [GoGoBall2.md](docs/GoGoBall2.md), [SpeedRider.md](docs/SpeedRider.md), [PandaFamily.md](docs/PandaFamily.md), [SpeedDriver2.md](docs/SpeedDriver2.md), [WeDanceOnline2.md](docs/WeDanceOnline2.md), [PercussionKids.md](docs/PercussionKids.md), [PercussionMaster3.md](docs/PercussionMaster3.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
+| [Games](https://github.com/Puyodead1/igs-loader/wiki/Games) | per game: versions, controls, tunables, internals, what the plugin emulates |
+| [Loader](https://github.com/Puyodead1/igs-loader/wiki/Loader) | the loader in depth: options, rom sets and software lists, architecture, the Windows loader, adding a game |
+| [E1000](https://github.com/Puyodead1/igs-loader/wiki/E1000), [E2000](https://github.com/Puyodead1/igs-loader/wiki/E2000), [E2100 Protection](https://github.com/Puyodead1/igs-loader/wiki/E2100-Protection), [E2200](https://github.com/Puyodead1/igs-loader/wiki/E2200) | the boards, protection chips and their protocols |
+| [Disk Formats](https://github.com/Puyodead1/igs-loader/wiki/Disk-Formats) | E2100 and E2200 `igs_rofs`, E2000 ROFS and IGS_SHFS, boot chains |
+| [Sound Crypto](https://github.com/Puyodead1/igs-loader/wiki/Sound-Crypto) | the FPGA asset cipher used on sounds and sprite banks |
+| [Keys](https://github.com/Puyodead1/igs-loader/wiki/Keys) | every key, mask and constant per game |
+| [Formats](https://github.com/Puyodead1/igs-loader/wiki/Formats) | the games' own data formats |
 
 ## Repository layout
 
@@ -270,17 +281,17 @@ Controls and per-game settings are on the [wiki](https://github.com/Puyodead1/ig
 | `core/` | the Linux `LD_PRELOAD` core: hooks for files, devices, SDL, X11/GLX, OSS audio, overlay, frame cap |
 | `machines/e2100`, `machines/e2200`, `machines/e2000`, `machines/e1000` | the boards: ASIC transports, devices, protection handshakes; E1000's Geode graphics; E2200 is E2100's under its own name |
 | `games/<game>/` | per-game plugins: inputs, coins, the protection chip's game logic |
-| `games/heroofrobots/hero-nfc*.c` | `hero-nfc` and `hero-nfc-gui.exe` (Windows), the Hero of Robots NFC card tool (experimental; [HeroOfRobots.md](docs/HeroOfRobots.md#card-tool-experimental)) |
+| `games/heroofrobots/hero-nfc*.c` | `hero-nfc` and `hero-nfc-gui.exe` (Windows), the Hero of Robots NFC card tool (experimental; [wiki](https://github.com/Puyodead1/igs-loader/wiki/Hero-of-Robots#card-tool-experimental)) |
 | `win/` | the native Windows loader: ELF loader, glibc shims on Win32, SDL 1.2 and GL layers |
 | `gui/` | `igs-loader-gui`: Dear ImGui on Win32 + OpenGL 3 (Windows) or SDL2 + OpenGL 3 (Linux) |
 | `romset/` | rom-set lookup, software-list parser, `.7z` / `.zip` reading |
 | `mkromset/` | the set builder, `igs-mkromset` (a library and its CLI) |
+| `assets/` | the game data formats, `igs-assets` (libigsa, a module per format, and its CLI) |
 | `romtool/` | the Python reference builder and the disk-image filesystem tools |
 | `hash/` | the software lists |
-| `docs/` | the documentation (above) |
 | `third_party/lzma/` | LZMA SDK 23.01 subset (public domain) |
 | `third_party/zlib/` | zlib 1.3.1 and minizip (zlib licence) |
 | `third_party/libchdr/` | libchdr (BSD-3-Clause) with zstd 1.5.7 (BSD) and dr_flac (public domain / MIT-0) |
 | `third_party/imgui/` | Dear ImGui 1.92.9b (MIT) |
-| `third_party/stb/` | stb_image 2.28 (public domain / MIT) |
+| `third_party/stb/` | stb_image 2.28 and stb_image_write 1.16 (public domain / MIT) |
 | `debs/` | ncurses 5 (i386) from Ubuntu 22.04 |

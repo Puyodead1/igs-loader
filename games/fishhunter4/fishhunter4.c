@@ -1,7 +1,7 @@
 /*
  * Fish Hunter 4 (E2100) game plugin: the IGS036's side of the "e2k1"
  * ShareRam protocol (the games' shareram_e2k1/pcshareram.c).
- * docs/FishHunter4.md, docs/IGS_E2100_PROTECTION.md.
+ * wiki Fish Hunter 4, wiki E2100 Protection.
  *
  *   - transport: batch framing with the trailing-sum layout ([payload,
  *     headers, sum]), header register 0 both ways, the game as master: one

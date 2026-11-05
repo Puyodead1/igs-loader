@@ -1,6 +1,6 @@
 /*
  * Scratch m101cn (E2100) game plugin: its ASIC firmware's side of the
- * register-table transport ("PCSR", e2100.h).  docs/Scratch.md.
+ * register-table transport ("PCSR", e2100.h).  wiki Scratch.
  *
  *   - ASIC -> game words: 2 inputs (80-bit map), 3 version, 5 credits,
  *     7 settings, 11 payout/tickets, 15 records + player states, 17 card deal,

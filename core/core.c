@@ -19,7 +19,7 @@
  *   - boards with a frame buffer of their own (E1000): port I/O traps and
  *     iopl, mmap at an offset, lseek on machine files, and a window that
  *     shows the machine's frames (present).
- * See docs/IGS_LOADER.md.
+ * See wiki Loader.
  */
 #define _GNU_SOURCE
 #include <dirent.h>

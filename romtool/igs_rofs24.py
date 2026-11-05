@@ -1,6 +1,6 @@
 """Extract the plaintext IGS ROFS used by E2000 (Linux 2.4.31) root partitions.
 
-The format is cramfs with IGS changes (see docs/IGS_ROFS_REVERSE_ENGINEERING.md,
+The format is cramfs with IGS changes (see wiki Disk Formats,
 "E2000 plaintext ROFS"):
 
 * superblock: magic 0xD4AA2681 at +0x4C, root inode at +0xA8;

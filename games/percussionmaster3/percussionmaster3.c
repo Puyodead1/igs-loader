@@ -1,7 +1,7 @@
 /*
  * Percussion Master 3 (E2200): its IGS036 firmware's side of the
- * request/response transport, rebuilt.  docs/PercussionMaster3.md,
- * docs/IGS_E2200.md.  The executable (pm3) keeps its dynamic symbols; names
+ * request/response transport, rebuilt.  wiki Percussion Master 3,
+ * wiki E2200.  The executable (pm3) keeps its dynamic symbols; names
  * below are its own.
  *
  *   - Framing (Igs036P2A::SendData / ReadData): BAR1 word 0 = total bytes;
@@ -28,12 +28,12 @@
  *     choice was the chip's (not dumped) and is rebuilt here.
  *   - Network data (messages 14 / 15 / 16): the store id, FPGA-encrypted;
  *     kept in ../rewrite/igs036.nv.  Without a message 15 the game never
- *     connects (docs/PercussionMaster3_Online.md).
+ *     connects (wiki Percussion Master 3 Online).
  *
  * Invented: the state flow; versions, thresholds and the coin record are
  * plausible values; thresholds are not kept between runs; the FPGA mask of
  * the network-data key.  The charts' keys and cut bytes are recovered from
- * the dump (docs/IGS_KEYS.md), not the chip's.
+ * the dump (wiki Keys), not the chip's.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -146,7 +146,7 @@ static int well_formed(const uint8_t *p, uint32_t n)
  * for the chart the game asks for (message 6).  The table here is
  * PowerOn's (/PM3.bin/PowerOn decrypts pm3 with its key 5, whose mask is
  * also chart key 5's); the masks were recovered from the charts themselves
- * (docs/IGS_KEYS.md).  SongList.enc uses a key built into pm3.
+ * (wiki Keys).  SongList.enc uses a key built into pm3.
  */
 static const uint8_t chart_key[10][16] = {
     { 0x4e, 0x67, 0xd5, 0x98, 0xe7, 0x3e, 0x6a, 0x6f, 0x67, 0x1d, 0x87, 0xcd, 0xa7, 0x13, 0xb2, 0x7c },
@@ -206,7 +206,7 @@ static const uint8_t *asset_mask(const uint8_t *k)
     return NULL;
 }
 
-/* the FPGA cipher (machines/e2100, docs/IGS_SOUND_CRYPTO.md) */
+/* the FPGA cipher (machines/e2100, wiki Sound Crypto) */
 static const uint8_t perm[16] = { 14, 10, 8, 1, 0, 12, 9, 4, 3, 6, 11, 7, 2, 13, 5, 15 };
 
 static void cipher_encrypt(uint8_t *blk, const uint8_t *mask)

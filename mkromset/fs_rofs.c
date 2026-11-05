@@ -1,7 +1,7 @@
 /*
  * E2100/E2200 root filesystems: IGS ROFS v2 ("igs_rofs"), a port of
  * romtool/igs_rofs.py (itself a port of romtool/IgsRofsExtractor).  Format:
- * docs/IGS_ROFS_REVERSE_ENGINEERING.md; keys and constants: docs/IGS_KEYS.md.
+ * wiki Disk Formats; keys and constants: wiki Keys.
  *
  * Every per-kernel profile shares the AES-128 key transform, the record
  * stream and the per-page zlib layout; they differ in constants, field

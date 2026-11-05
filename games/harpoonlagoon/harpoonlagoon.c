@@ -1,6 +1,6 @@
 /*
  * Harpoon Lagoon (E2100) game plugin: its ASIC firmware's side of the
- * runtime channel.  docs/IGS_E2100_PROTECTION.md, docs/HarpoonLagoon.md.
+ * runtime channel.  wiki E2100 Protection, wiki Harpoon Lagoon.
  *
  *   - channel cipher: every word XORed with a 32-bit key per direction;
  *     the game announces its next index and key in message 5 (words 11/12).

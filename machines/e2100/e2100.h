@@ -7,7 +7,7 @@
  * headers], header register (payload << 7 | n), shared running checksum),
  * the register table, or plain request/response.  Also the PC's serial
  * ports, when the game plugin puts a peripheral on one.  See
- * docs/IGS_E2100_PROTECTION.md.
+ * wiki E2100 Protection.
  *
  * A game plugin supplies what differs per game's ASIC firmware: the channel
  * cipher, the message set, the controller logic, input and its overlay.

@@ -2,7 +2,7 @@
  * Hero of Robots: NFC tags standing in for the QR cards and the points card.
  * The reader code (nfc.c) is built into the preloaded card library
  * (libcasmcard-hero), which exports hero_nfc_api(); the ASIC plugin
- * (heroofrobots.c) finds it at run time.  docs/HeroOfRobots.md, NFC.
+ * (heroofrobots.c) finds it at run time.  wiki Hero of Robots, NFC.
  *
  * Tags: NTAG215 (or any Type 2 tag with an NDEF capability container) on a
  * PC/SC reader (ACR122U), or a 540-byte file (IGS_NFC_FAKE).  The loader's

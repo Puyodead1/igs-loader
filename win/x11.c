@@ -23,7 +23,7 @@
  *   - Grabs, pointer warps and auto-repeat changes are no-ops; extensions
  *     (XShm, XF86VidMode, RandR...) are absent; Xt/Xaw (Ogre's config
  *     dialog) are empty stand-ins.
- * See docs/IGS_LOADER.md, "Windows".
+ * See wiki Loader, "Windows".
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>

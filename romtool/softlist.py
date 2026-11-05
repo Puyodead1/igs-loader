@@ -7,7 +7,7 @@
     sw.tunables  [Tunable: name, type, default, group, text]
 
 The lists are found in $IGS_HASHPATH (';'-separated directories) or in the
-loader repo's hash/.  Format: docs/IGS_LOADER.md, "Rom sets".
+loader repo's hash/.  Format: wiki Loader, "Rom sets".
 """
 import glob
 import os

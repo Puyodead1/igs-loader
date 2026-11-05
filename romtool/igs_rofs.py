@@ -2,7 +2,7 @@
 
 A Python port of IgsRofsExtractor (romtool/IgsRofsExtractor, C#): same
 profiles, same tree reconstruction.  Format facts are in
-docs/IGS_ROFS_REVERSE_ENGINEERING.md, keys and constants in docs/IGS_KEYS.md.
+wiki Disk Formats, keys and constants in wiki Keys.
 
 Every per-kernel profile shares the AES-128 key transform, the record stream
 and the per-page zlib layout; they differ in constants, field positions,

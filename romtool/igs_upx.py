@@ -8,7 +8,7 @@ block is the original ELF header and program headers; then come each
 PT_LOAD's file bytes (the first one's after the headers), then the gaps
 between and after them in file order.  Only NRV2B/NRV2D/NRV2E (le32)
 without filters is handled, which is all `wedo` uses.
-docs/IGS_ROFS_REVERSE_ENGINEERING.md (E2000).
+wiki Disk Formats (E2000).
 
 Usage: igs_upx.py <packed> <out>
 """

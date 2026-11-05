@@ -1,7 +1,7 @@
 /*
  * Hero of Robots m100fa (E2100) game plugin: its IGS036 firmware's side of
  * the request/response transport, and the two serial peripherals.
- * docs/HeroOfRobots.md.
+ * wiki Hero of Robots.
  *
  *   - Channel: modified RC4 over each whole message, both directions, one
  *     S-box carried over (i and j restart at 0 per message).  The game's

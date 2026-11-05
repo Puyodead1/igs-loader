@@ -7,7 +7,7 @@
 # extracted once into ~/.cache/igs-loader/linux/<id> (IGS_CACHE / cachepath=).
 #   run.sh --list           the games, and which sets are found
 #   run.sh --verify <id>    check a set against the list's hashes
-# Env (see docs/IGS_LOADER.md):
+# Env (see wiki Loader):
 #   IGS_FULLSCREEN=1   keep the game's fullscreen mode
 #   IGS_FPS_CAP=n      frame-rate cap (default 60, 0 = off)
 #   IGS_FPS=1          log the frame rate every 5 s

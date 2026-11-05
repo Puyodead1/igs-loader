@@ -1,7 +1,7 @@
 /*
  * hero-nfc: creates, inspects, edits and erases Hero of Robots NFC cards
  * (NTAG215 on an ACR122U, or the fake reader's tag.bin) in the loader's tag
- * format.  Experimental, like the game side.  docs/HeroOfRobots.md, NFC.
+ * format.  Experimental, like the game side.  wiki Hero of Robots, NFC.
  *
  * The readers and the format are the game's own (nfc_tag.c).  Every write
  * asks first (--yes skips), touches user pages 4..129 only (format: also

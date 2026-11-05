@@ -1,13 +1,13 @@
 /*
  * Hero of Robots: what the ASIC plugin (heroofrobots.c) and the emulated
- * smart card (libcasmcard.c) share.  docs/HeroOfRobots.md, Smart card.
+ * smart card (libcasmcard.c) share.  wiki Hero of Robots, Smart card.
  *
  * The game decrypts the card's replies with an RSA key the ASIC hands it
  * (message 6, CRSA::_vSetRSAKey): slot 0/1 the primes p < q, slot 2
  * p^-1 mod q, slot 3 the private exponent d (CRT in rsaHPrivateDecrypt).
  * The real card's key is unknown, so the loader brings its own: this
  * 2048-bit pair was generated for it (e = 65537), the card encrypts with
- * N.  Also in docs/IGS_KEYS.md.
+ * N.  Also in wiki Keys.
  */
 #ifndef HERO_CARD_H
 #define HERO_CARD_H

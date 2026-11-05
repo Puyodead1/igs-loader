@@ -22,14 +22,14 @@ piece is kept; n starts at TRIM_KB and changes by TRIM_STEP after each piece:
                           whole KiB (last piece: of the bytes); t starts at
                           CUT_KB, changes by CUT_STEP; empty or missing
                           pieces are passed over and do not step
-Details: docs/IGS_ROFS_REVERSE_ENGINEERING.md.
+Details: wiki Disk Formats.
 
 The software list (hash/e2000.xml) supplies the features geca_sector,
 head_sector, pieces, trim_kb, trim_step and, where they differ from Gold
 Captain's, head_part (default p2), geca_part (p1) or geca_head, geca_file
 (/lib/libdb0.a), piece_file (/lib/libdb%s.a), piece_mode (trim), and for
 cut cut_kb, cut_step; see
-docs/IGS_KEYS.md.
+wiki Keys.
 
 This is the development workspace layout (root/, game/, <BINARY>.bin,
 loader/GECA).  Rom sets for the loader are built by mkromset.py, which uses

@@ -21,7 +21,7 @@
  *     Each read is a frame: the machine shows the frame buffer (core
  *     present: window, overlay, keys, frame cap), then the game plugin
  *     builds the next command list from the last answer.
- * Protocol: docs/IGS_E1000.md.
+ * Protocol: wiki E1000.
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>

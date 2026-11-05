@@ -4,7 +4,7 @@
  * The machine emulates what E2000 games share: the PLX SDK driver
  * (/dev/plx/Pci9030*) for the PCI9030 bridge in front of the protection CPU,
  * its transport, the /dev/roio BIOS fingerprint and the unused /dev/pccard0.
- * Three transports (docs/IGS_E2000.md):
+ * Three transports (wiki E2000):
  *   - E2000_IGS036: shared-RAM message words, BAR3 status registers,
  *     RC4-wrapped message keys (Gold Captain, Pirate Revenge);
  *   - E2000_IGS027A: RC4-encrypted packets in BAR2 behind a sequenced

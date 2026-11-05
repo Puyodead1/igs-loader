@@ -1,7 +1,7 @@
 /*
  * IGS loader: the interface between the loader core and machine plugins.
  *
- * Layers (docs/IGS_LOADER.md):
+ * Layers (wiki Loader):
  *   core     LD_PRELOAD library: libc/SDL interposition, device routing,
  *            MMIO traps, frame pacing, audio and the overlay renderer.
  *   machine  the emulated board (e.g. e2100: the FPGA card and the protection

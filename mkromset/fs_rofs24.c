@@ -1,7 +1,7 @@
 /*
  * E2000 (Linux 2.4.31) root filesystems: the plaintext IGS ROFS, cramfs with
  * IGS changes; a port of romtool/igs_rofs24.py.  See
- * docs/IGS_ROFS_REVERSE_ENGINEERING.md, "E2000 plaintext ROFS":
+ * wiki Disk Formats, "E2000 plaintext ROFS":
  *
  *   superblock: magic 0xD4AA2681 at +0x4C, root inode at +0xA8
  *   16-byte inodes: version word, namelen:6|offset:26 (4-byte units),

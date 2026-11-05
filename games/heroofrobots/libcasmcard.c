@@ -3,7 +3,7 @@
  * EZ100-style PC/SC wrapper) with one reader and one inserted Java card,
  * the game's credit card.  Built with SONAME libcasmcard.so and preloaded
  * (manifest PRELOAD), so the game's Cas* imports land here instead of on
- * pcscd.  docs/HeroOfRobots.md, Smart card.
+ * pcscd.  wiki Hero of Robots, Smart card.
  *
  * The game (SmartCard::Authentication) talks to the card applet with
  * RSA-wrapped APDUs:

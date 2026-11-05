@@ -1,7 +1,7 @@
 /*
  * Fish Hunter 6 (E2100) game plugin: the IGS036's side of the "e2k1"
  * ShareRam protocol (the games' shareram_e2k1/pcshareram.c, M607CN's
- * shareram_e2k1v1.0.5).  docs/FishHunter6.md, docs/IGS_E2100_PROTECTION.md.
+ * shareram_e2k1v1.0.5).  wiki Fish Hunter 6, wiki E2100 Protection.
  *
  *   - variants "cn" (M601FA..M604CN) and "cn2" (M606CN), Fish-OS: Fish
  *     Hunter 4 M107CN's channel: [payload, headers, sum], RC4 per direction

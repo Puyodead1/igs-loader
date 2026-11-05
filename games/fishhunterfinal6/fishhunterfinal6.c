@@ -1,7 +1,7 @@
 /*
  * Fish Hunter Final 6 (E2100) game plugin: the IGS036's side of the "e2k1"
  * ShareRam protocol, and the cabinet's Sentinel Keys dongle (sentinel.c).
- * docs/FishHunterFinal6.md, docs/IGS_E2100_PROTECTION.md.
+ * wiki Fish Hunter Final 6, wiki E2100 Protection.
  *
  *   - boot: the game reads its channel keys, the running sum's start and
  *     three check words from the dongle (data object 49, decrypted by its

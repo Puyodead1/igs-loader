@@ -31,7 +31,7 @@
  *   - /dev/roio: BIOS byte reads (ioctl 0xFC, address ^ 0x1FB8408E, data
  *     ^ 0xB8) served from the strings the game plugin lists.
  *   - /dev/pccard0: must open; only used when the BIOS check fails.
- * Protocol: docs/IGS_E2000.md.
+ * Protocol: wiki E2000.
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>

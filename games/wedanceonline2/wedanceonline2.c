@@ -1,6 +1,6 @@
 /*
  * We Dance Online 2 (E2000): what its IGS027A firmware does, as far as the
- * game needs.  docs/WeDanceOnline2.md.  The executable (wedo, unpacked) keeps
+ * game needs.  wiki We Dance Online 2.  The executable (wedo, unpacked) keeps
  * its symbols; names below are its own.
  *
  * Transport: IGS027A packets (machines/e2000, E2000_IGS027A), Go Go Ball 2's

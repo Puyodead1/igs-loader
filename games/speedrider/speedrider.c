@@ -1,6 +1,6 @@
 /*
  * Speed Rider (E2000): what its IGS036 firmware does, as far as the game
- * needs.  docs/SpeedRider.md.  The executable is stripped; addresses below
+ * needs.  wiki Speed Rider.  The executable is stripped; addresses below
  * are its own.
  *
  * Transport: IGS036 messages (machines/e2000, E2000_IGS036_MSG).  Every

@@ -58,6 +58,10 @@ $CC $CF -Wno-format-truncation -Wno-unused-function -Iromset -mwindows -o "$OUT/
 . mkromset/sources.sh
 MKR_OBJ=$(mkr_objs $CC "$CF -Wno-format-truncation" "$OBJ/mkr")
 $CC $CF -Wno-format-truncation -Imkromset -Iromset -o "$OUT/igs-mkromset.exe" mkromset/igs-mkromset.c $MKR_OBJ $RS -static
+# the game data tool, igs-assets.exe (assets/)
+. assets/sources.sh
+$CC $CF -Wno-format-truncation $IGSA_INC -o "$OUT/igs-assets.exe" assets/igs-assets.c $IGSA_SRC $MKR_OBJ $RS \
+    -static -Wl,--large-address-aware
 # the GUI, igs-loader-gui.exe: Dear ImGui on Win32 + OpenGL 3; 32-bit like the exe, so it links the
 # same romset objects; libstdc++ static
 CXX=${CXX:-i686-w64-mingw32-g++-posix}

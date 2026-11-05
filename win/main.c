@@ -12,7 +12,7 @@
  * IGS_* environment run.sh does (plus the ini's [<id>] section, where the
  * variable is not already set), loads the machine plugin DLL and the
  * game's i386 ELF binary with its libraries, and starts it.  --check lists
- * every module and unresolved symbol.  See docs/IGS_LOADER.md, "Windows"
+ * every module and unresolved symbol.  See wiki Loader, "Windows"
  * and "Rom sets".
  */
 #define WIN32_LEAN_AND_MEAN

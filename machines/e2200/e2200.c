@@ -6,7 +6,7 @@
  * Igs036P2A).  What differs is outside the PC: the drum I/O board, which
  * the IGS036 relays (games/percussionmaster3).  So this is machines/e2100
  * under its own name, with the game interface of machines/e2100/e2100.h.
- * docs/IGS_E2200.md.
+ * wiki E2200.
  */
 #define MACHINE_NAME "e2200"
 #include "../e2100/e2100.c"

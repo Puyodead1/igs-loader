@@ -7,7 +7,7 @@
  * libGL/GLX (thunks to opengl32), Xlib/Xext on Win32 and empty stand-ins for
  * the X toolkit libraries.
  * Native functions are named l_<linux name>; Linux structures are declared
- * here with the i386 glibc layout (l_ prefix).  See docs/IGS_LOADER.md.
+ * here with the i386 glibc layout (l_ prefix).  See wiki Loader.
  */
 #ifndef LX_H
 #define LX_H

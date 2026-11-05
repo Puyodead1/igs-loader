@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
 IGS E2200 games: the software list of machine "e2200" (machines/e2200, the
-E2100 board's PC side).  Format: see hash/e2100.xml and docs/IGS_LOADER.md,
+E2100 board's PC side).  Format: see hash/e2100.xml and wiki Loader,
 "Rom sets".
 -->
 <softwarelist name="e2200" description="IGS E2200">
@@ -11,7 +11,7 @@ E2100 board's PC side).  Format: see hash/e2100.xml and docs/IGS_LOADER.md,
 		<year>2012</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M107FA"/>
-		<info name="usage" value="docs/PercussionMaster3.md"/>
+		<info name="usage" value="Percussion-Master-3"/>
 		<info name="tunable" value="PM3_VELOCITY int 160 level a key press reports to the drum sensors (1..255)"/>
 		<info name="tunable" value="PM3_SCRIPT str - [Testing] keys on a timetable, sec:key[+],... (coin service test b1 r1 d1 m1 k0..k9 kstar khash b2 r2 d2 m2 j0..j9 jstar jhash)"/>
 		<info name="tunable" value="PM3_SCRIPT_CLOCK enum:wall|frames wall [Testing] time PM3_SCRIPT in wall-clock seconds or game frames"/>

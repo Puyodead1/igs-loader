@@ -2,7 +2,7 @@
  * A SafeNet Sentinel Keys USB dongle, emulated at its client API: the game
  * links the Sentinel Keys client statically and talks to the key through
  * /var/run/sentinel/u.daemon; the plugin replaces the client's entry points
- * (igs_core.hook) with the key's behaviour.  docs/FishHunterFinal6.md.
+ * (igs_core.hook) with the key's behaviour.  wiki Fish Hunter Final 6.
  */
 #ifndef SENTINEL_H
 #define SENTINEL_H

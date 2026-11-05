@@ -1,13 +1,13 @@
 /*
  * Percussion Kids (E1000): what its IGS027A firmware does, rebuilt.
- * docs/PercussionKids.md.  The executable (pkids) keeps its symbols; names
+ * wiki Percussion Kids.  The executable (pkids) keeps its symbols; names
  * below are its own.
  *
  * On E1000 the a27 runs the game and the executable draws and plays what it
  * is told: each frame the chip sends a list of commands (main_vProtect), a
  * 16-bit id and its 16-bit arguments, structs aligned to 4.  None of the
  * firmware is dumped; the flow below follows what each command does
- * (docs/IGS_E1000.md has the command set):
+ * (wiki E1000 has the command set):
  *
  *   boot      0 SystemInit, 1 signals, 2 common sprites, 3 region, 93
  *             language, 5 fonts, 59 volumes, 118/119 credit display

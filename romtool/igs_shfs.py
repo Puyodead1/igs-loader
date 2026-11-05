@@ -1,7 +1,7 @@
 """Extract IGS_SHFS game-data partitions (E2000, Linux 2.4.31 kernels).
 
 IGS_SHFS is SquashFS 2.x with an IGS superblock (see
-docs/IGS_ROFS_REVERSE_ENGINEERING.md, "E2000 IGS_SHFS").  Two layouts:
+wiki Disk Formats, "E2000 IGS_SHFS").  Two layouts:
 
   "Game Image" (Gold Captain, Panda Family, Go Go Ball 2, Speed Rider):
     +0x00 magic 0xD4AA2682 (0xD4AA2683 = other endian, not supported here)

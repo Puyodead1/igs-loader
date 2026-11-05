@@ -1,6 +1,6 @@
 /*
  * Speed Driver 2 (E2000): what its IGS036 firmware does, as far as the game
- * needs.  docs/SpeedDriver2.md, docs/IGS_E2000.md (Speed Driver 2).
+ * needs.  wiki Speed Driver 2, wiki E2000 (Speed Driver 2).
  *
  * The chip talks the IGS036 message transport in Speed Driver 2's layout:
  * header words (steer, gas, brake, the main state, credits, two counters)

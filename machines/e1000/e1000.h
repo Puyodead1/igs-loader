@@ -8,7 +8,7 @@
  * game: each frame it sends the executable a list of commands (screens to
  * set up and run, sounds, scores) and the executable answers with a few
  * words.  A game plugin is that firmware.  Every callback runs with the
- * machine lock held.  Protocol: docs/IGS_E1000.md.
+ * machine lock held.  Protocol: wiki E1000.
  */
 #ifndef E1000_H
 #define E1000_H

@@ -20,9 +20,11 @@ jobs:
           touch core/font.h
           bash build.sh
       - name: Package
-        # build/igs-mkromset is the rom-set builder (finds hash/ one up)
+        # build/igs-mkromset is the rom-set builder (finds hash/ one up); build/igs-assets the game data tool
         run: |
           test -x build/igs-mkromset
+          test -x build/igs-assets
+          build/igs-assets formats >/dev/null
           test -x build/igs-loader-gui
           mkdir -p dist/igs-loader
           cp -a build lib hash run.sh play.ps1 igs-loader.ini.example dist/igs-loader/
@@ -48,6 +50,7 @@ jobs:
         # igs-loader.exe and igs-mkromset.exe find hash\ and igs-loader.ini next to themselves
         run: |
           test -f build/win/igs-mkromset.exe
+          test -f build/win/igs-assets.exe
           test -f build/win/igs-loader-gui.exe
           mkdir -p dist/igs-loader
           cp -a build/win/. hash igs-loader.ini.example dist/igs-loader/

@@ -10,7 +10,7 @@
  * mkr_options.sw to avoid even the lookup.  Several builds may run at once
  * when they write to different outputs.
  *
- * See docs/IGS_LOADER.md, "Building sets".
+ * See wiki Loader, "Building sets".
  */
 #ifndef IGS_MKROMSET_H
 #define IGS_MKROMSET_H

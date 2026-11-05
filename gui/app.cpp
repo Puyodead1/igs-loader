@@ -41,7 +41,7 @@
 #endif
 
 static const char *const kinds[] = { "missing", "folder", "7z", "zip" };
-static const char doc_url[] = "https://github.com/Puyodead1/igs-loader/blob/main/";
+static const char doc_url[] = "https://github.com/Puyodead1/igs-loader/wiki/";
 
 /* ---- state ------------------------------------------------------------------------------ */
 
@@ -1092,15 +1092,13 @@ static void game_page()
                 sel = o.sw->name;
         }
     if (const char *u = sw_info_value(sw, "usage", NULL)) {
-        std::string doc = trim(split(u, ';')[0]), local = root + SEP + doc;
+        std::string page = trim(split(u, ';')[0]), label = page;
 
-#ifdef _WIN32
-        std::replace(local.begin(), local.end(), '/', '\\');
-#endif
+        std::replace(label.begin(), label.end(), '-', ' ');
         ImGui::TextDisabled("Controls and settings:");
         ImGui::SameLine();
-        if (ImGui::SmallButton(doc.c_str()))
-            sys_open(sys_exists(local) ? local : doc_url + doc);
+        if (ImGui::SmallButton(label.c_str()))
+            sys_open(doc_url + page);
     }
 
     /* the snapshot */

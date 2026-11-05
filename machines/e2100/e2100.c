@@ -12,7 +12,7 @@
  *     (cipher, messages, game logic) is the game plugin's ($IGS_GAME, see
  *     e2100.h).
  *   - Serial ports the game plugin puts a peripheral on (read/write/termios).
- * Protocol: docs/IGS_E2100_PROTECTION.md.  This started as a port of the QEMU
+ * Protocol: wiki E2100 Protection.  This started as a port of the QEMU
  * model (hw/misc/igs_e2100_fpga.c on the igs branch).
  */
 #define _GNU_SOURCE
@@ -115,7 +115,7 @@ static struct serial {
 } ports[SERIAL_MAX];
 static int nports;
 
-/* ---- FPGA asset cipher (docs/IGS_SOUND_CRYPTO.md) ------------------------- */
+/* ---- FPGA asset cipher (wiki Sound Crypto) ------------------------- */
 
 /* the mask follows the ASIC's runtime key: per game, $IGS_ASSET_MASK */
 static uint8_t cipher_mask[16];

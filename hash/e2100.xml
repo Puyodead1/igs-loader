@@ -6,8 +6,8 @@ Modelled on MAME's hash/*.xml software lists.  Each <software name="id">
 is one dump, run by id: run.sh <id>, igs-loader.exe <id>.  The rom set
 <id>/, <id>.7z or <id>.zip on the rompath holds the cabinet's file tree
 as the running game sees it; romtool/mkromset.py builds it from the disk
-image named in <diskarea>.  docs/IGS_LOADER.md, "Rom sets", describes
-every feature; docs/IGS_KEYS.md tabulates the keys.
+image named in <diskarea>.  wiki Loader, "Rom sets", describes
+every feature; wiki Keys tabulates the keys.
 
 <disk sha1> is the SHA-1 of the raw disk image (chdman's "data SHA-1").
 <dataarea name="files"> lists files of the built set by cabinet path, for
@@ -20,7 +20,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2013</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M107US"/>
-		<info name="usage" value="docs/HarpoonLagoon.md"/>
+		<info name="usage" value="Harpoon-Lagoon"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="harpoonlagoon"/>
 			<!-- /etc/X11/IGS: cd /Fish; ./FH  (FH -> ../Fish.bin/fish) -->
@@ -45,7 +45,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2013</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M001US-WA"/>
-		<info name="usage" value="docs/HarpoonLagoon.md"/>
+		<info name="usage" value="Harpoon-Lagoon"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="harpoonlagoon"/>
 			<!-- US-WA operator-settings layout (games/harpoonlagoon) -->
@@ -71,7 +71,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2013</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M200US-WA"/>
-		<info name="usage" value="docs/HarpoonLagoon.md"/>
+		<info name="usage" value="Harpoon-Lagoon"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="harpoonlagoon"/>
 			<feature name="variant" value="wa"/>
@@ -96,7 +96,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2011</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M107CN"/>
-		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="usage" value="Fish-Hunter-4"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -126,7 +126,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2010</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M101CN"/>
-		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="usage" value="Fish-Hunter-4"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -159,7 +159,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2010</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M102CN"/>
-		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="usage" value="Fish-Hunter-4"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -189,7 +189,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2011</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M103CN"/>
-		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="usage" value="Fish-Hunter-4"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -219,7 +219,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2011</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M104CN"/>
-		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="usage" value="Fish-Hunter-4"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -249,7 +249,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2011</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M105CN"/>
-		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="usage" value="Fish-Hunter-4"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -279,7 +279,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2011</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M400CN"/>
-		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="usage" value="Fish-Hunter-4"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -310,7 +310,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2011</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M401CN"/>
-		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="usage" value="Fish-Hunter-4"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -341,7 +341,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2011</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M402CN"/>
-		<info name="usage" value="docs/FishHunter4.md"/>
+		<info name="usage" value="Fish-Hunter-4"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at odds level 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (tiny, small, big bomb or the bonus game); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -371,7 +371,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2011</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M606CN"/>
-		<info name="usage" value="docs/FishHunter6.md"/>
+		<info name="usage" value="Fish-Hunter-6"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -399,7 +399,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2011</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M601FA"/>
-		<info name="usage" value="docs/FishHunter6.md"/>
+		<info name="usage" value="Fish-Hunter-6"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -426,7 +426,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2011</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M602CN"/>
-		<info name="usage" value="docs/FishHunter6.md"/>
+		<info name="usage" value="Fish-Hunter-6"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -453,7 +453,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2011</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M603CN"/>
-		<info name="usage" value="docs/FishHunter6.md"/>
+		<info name="usage" value="Fish-Hunter-6"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -480,7 +480,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2011</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M604CN"/>
-		<info name="usage" value="docs/FishHunter6.md"/>
+		<info name="usage" value="Fish-Hunter-6"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -507,7 +507,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2011</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M607CN"/>
-		<info name="usage" value="docs/FishHunter6.md"/>
+		<info name="usage" value="Fish-Hunter-6"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
 		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
@@ -540,7 +540,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2013</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="U102CN"/>
-		<info name="usage" value="docs/FishHunterFinal6.md"/>
+		<info name="usage" value="Fish-Hunter-Final-6"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 2 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHAIN str 0.85 chance the extra-fish chain goes on each round (at most 20 fish)"/>
 		<info name="tunable" value="FISH_STATIONS enum:4|6 6 stations the cabinet has"/>
@@ -570,7 +570,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2013</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="U102CN"/>
-		<info name="usage" value="docs/FishHunterFinal6.md"/>
+		<info name="usage" value="Fish-Hunter-Final-6"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 2 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHAIN str 0.85 chance the extra-fish chain goes on each round (at most 20 fish)"/>
 		<info name="tunable" value="FISH_STATIONS enum:4|6 6 stations the cabinet has"/>
@@ -603,7 +603,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2013</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="U102CN"/>
-		<info name="usage" value="docs/FishHunterFinal6.md"/>
+		<info name="usage" value="Fish-Hunter-Final-6"/>
 		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 2 (each level up takes 0.02 off)"/>
 		<info name="tunable" value="FISH_CHAIN str 0.85 chance the extra-fish chain goes on each round (at most 20 fish)"/>
 		<info name="tunable" value="FISH_STATIONS enum:4|6 4 stations the cabinet has"/>
@@ -634,7 +634,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2012</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="MD105CN"/>
-		<info name="usage" value="docs/OceanParty.md"/>
+		<info name="usage" value="Ocean-Party"/>
 		<info name="tunable" value="OCEAN_BET_SECONDS int 20 length of the betting period, seconds"/>
 		<info name="tunable" value="OCEAN_COIN int 10 credits per coin"/>
 		<info name="tunable" value="OCEAN_CREDITS int 0 starting credits"/>
@@ -663,7 +663,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2012</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M101CN"/>
-		<info name="usage" value="docs/Scratch.md"/>
+		<info name="usage" value="Scratch"/>
 		<info name="tunable" value="SCRATCH_COIN int 100 credits per coin"/>
 		<part name="hdd" interface="igs_hdd">
 			<feature name="plugin" value="scratch"/>
@@ -699,7 +699,7 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		<year>2016</year>
 		<publisher>IGS</publisher>
 		<info name="version" value="M100FA"/>
-		<info name="usage" value="docs/HeroOfRobots.md"/>
+		<info name="usage" value="Hero-of-Robots"/>
 		<info name="tunable" value="HERO_REGION hex 0x24 area byte the chip and card report (0x24 USA)"/>
 		<info name="tunable" value="HERO_CARD_CREDIT int 100 points on the emulated card (and on a blank NFC tag)"/>
 		<info name="tunable" value="HERO_NFC enum:0|all|scan|dispense|points|scan,dispense|scan,points|dispense,points 0 [NFC] NFC tags for the QR cards and the points card (experimental)"/>

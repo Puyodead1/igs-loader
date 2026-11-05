@@ -1,7 +1,7 @@
 /*
  * mkr_build(): mkromset.py's main() and Builder.  The software list entry's
  * "build" feature is a ';'-separated list of steps that mirror the
- * cabinet's boot (docs/IGS_LOADER.md, "Building sets"):
+ * cabinet's boot (wiki Loader, "Building sets"):
  *
  *   root p2               the root fs (E2100/E2200 igs_rofs with the entry's
  *                         rofs_profile; E2000 plaintext ROFS)

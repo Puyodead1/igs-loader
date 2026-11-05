@@ -1,6 +1,6 @@
 /*
  * Gold Captain (E2000): what its IGS036 firmware does, as far as the game
- * needs.  docs/GoldCaptain.md.
+ * needs.  wiki Gold Captain.
  *
  * Every exchange the game sends 8 words:
  *   [2] lamp bits (word_8701440), [3]/[7] a state byte, [4] an event byte,

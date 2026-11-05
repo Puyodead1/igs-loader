@@ -59,6 +59,9 @@ gcc $NF -Iromset -o build/hero-nfc games/heroofrobots/hero-nfc.c $RS -ldl
 . mkromset/sources.sh
 MKR_OBJ=$(mkr_objs gcc "$NF" build/obj/mkr)
 gcc $NF -Imkromset -Iromset -o build/igs-mkromset mkromset/igs-mkromset.c $MKR_OBJ $RS -lpthread
+# the game data tool, igs-assets (assets/)
+. assets/sources.sh
+gcc $NF $IGSA_INC -o build/igs-assets assets/igs-assets.c $IGSA_SRC $MKR_OBJ $RS -lpthread -lm
 # the GUI, igs-loader-gui (Dear ImGui on SDL2 + OpenGL 3): needs libsdl2-dev
 if command -v sdl2-config >/dev/null; then
     IM=third_party/imgui

@@ -1,6 +1,6 @@
 /*
  * Hero of Robots: the NFC reader (nfc.h), part of the preloaded card library
- * (#included by libcasmcard.c).  docs/HeroOfRobots.md, NFC.
+ * (#included by libcasmcard.c).  wiki Hero of Robots, NFC.
  *
  * A thread polls the reader every 250 ms, keeps a copy of the tag on it and
  * does the queued writes, so neither the game loop nor the card thread ever

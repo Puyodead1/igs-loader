@@ -1,6 +1,6 @@
 /*
  * Pirate Revenge (E2000): what its IGS036 firmware does, as far as the game
- * needs.  docs/PirateRevenge.md.  The executable keeps its symbols; the names
+ * needs.  wiki Pirate Revenge.  The executable keeps its symbols; the names
  * below are the game's.
  *
  * The transport and message layout are Gold Captain's (same engine,
@@ -74,7 +74,7 @@ static const int8_t flow_next[] = {
 
 /*
  * Weapon table (command 15, WeaponInit -> WeaponDataDefault): 168 types x 8
- * words, the fields as in docs/IGS_E2000.md (Weapon record).  Types 0..46
+ * words, the fields as in wiki E2000 (Weapon record).  Types 0..46
  * are the player's, 47..162 enemy and boss shots, 163..167 the pick-up
  * specials.  The values are not the IGS036's: chosen to play sensibly.
  */

@@ -1,7 +1,7 @@
 /*
  * The game executables: the FPGA asset cipher (romtool/igs_fpga_decrypt.py),
  * UPX unpacking (romtool/igs_upx.py) and the E2000 split-executable assembly
- * (romtool/igs_e2000_extract.py).  Keys and constants: docs/IGS_KEYS.md.
+ * (romtool/igs_e2000_extract.py).  Keys and constants: wiki Keys.
  */
 #include <stdlib.h>
 #include <string.h>
@@ -49,7 +49,7 @@ void fpga_decrypt(const uint8_t mask[16], uint8_t *data, size_t n)
  * l_info, p_info (the original file size) and the blocks, each a b_info
  * {sz_unc, sz_cpr, method, filter id, filter cto, 0} and its data; sz_unc 0
  * ends them.  NRV2B (method 2), NRV2D (5) or NRV2E (others), le32 bit
- * buffer, no filters.  docs/IGS_ROFS_REVERSE_ENGINEERING.md (E2000).
+ * buffer, no filters.  wiki Disk Formats (E2000).
  */
 struct bits {
     const uint8_t *src;

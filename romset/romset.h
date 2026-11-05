@@ -2,7 +2,7 @@
  * Rom sets: the software lists (hash/<machine>.xml), the rompath, and
  * folder / .7z / .zip sets extracted into a cache.  Portable C, shared by
  * the Windows loader (win/main.c) and the Linux helper (igs-romset.c).
- * See docs/IGS_LOADER.md, "Rom sets".
+ * See wiki Loader, "Rom sets".
  */
 #ifndef IGS_ROMSET_H
 #define IGS_ROMSET_H

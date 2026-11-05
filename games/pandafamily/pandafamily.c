@@ -1,10 +1,10 @@
 /*
  * Panda Family (E2000): what its IGS036 firmware does, as far as the game
- * needs.  docs/PandaFamily.md.
+ * needs.  wiki Panda Family.
  *
  * The game logic is all in the executable; the IGS036 is the I/O board, the
  * settings store and the action-group allocator.  It talks the IGS036
- * packet transport (app/c/shareram.c, docs/IGS_E2000.md): each exchange is
+ * packet transport (app/c/shareram.c, wiki E2000): each exchange is
  * a list of sub-messages [type, length (16-bit), data].
  *
  * Chip -> game, every packet: 2 key bits, 0x0B/0x0C tickets still to pay

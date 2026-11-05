@@ -1,5 +1,5 @@
 /*
- * igs-loader-gui: a launcher for this platform's loader (docs/IGS_LOADER.md,
+ * igs-loader-gui: a launcher for this platform's loader (wiki Loader,
  * "GUI").  app.cpp is the UI, task.cpp the runs, ini.cpp igs-loader.ini,
  * setbuild.cpp the set builder (mkromset/); sys_win.cpp / sys_posix.cpp the
  * host, main_win.cpp (Win32 + WGL) / main_sdl.cpp (SDL2) the window.
