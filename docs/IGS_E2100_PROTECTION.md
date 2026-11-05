@@ -343,6 +343,18 @@ reads the mailbox without a session XOR and, like the CN loader, compares
 DONE's word 1 with its upload's CRC (`E2100_HS_NOSUM`).  Messages:
 `FishHunter6.md`.
 
+## Fish Hunter Final 6
+
+M607CN's framing and XOR channel, with its own message set (the ASIC's
+key in message 37, its register in message 6 word 12; the game's in
+message 5 words 9, 10).  The first keys and the running sum's start are
+not in the executable: a Sentinel Keys USB dongle holds them, AES-encrypted
+in its data object, with three check words `fish6` hangs without.  The
+plugin emulates the dongle at the client library's API (`igs_core.hook`).
+The loader compares DONE's word 1 with its upload's CRC
+(`E2100_HS_NOSUM`); `fish44` and `fish6p` embed the image.  Messages:
+`FishHunterFinal6.md`.
+
 ## Scratch: the register-table transport
 
 Scratch (2012) keeps the boot handshake but replaces the batches with a

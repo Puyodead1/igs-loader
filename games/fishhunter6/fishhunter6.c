@@ -29,6 +29,7 @@
 #include <time.h>
 
 #include "../../machines/e2100/e2100.h"
+#include "fishkeys.h"
 
 #define RX_KEY 0x82675251u   /* ASIC -> game (m_rDecodeKey) */
 #define TX_KEY 0x80678267u   /* game -> ASIC (m_rEncodeKey) */
@@ -733,32 +734,12 @@ static void build(struct e2100_channel *ch, struct e2100_batch *b)
 
 /* ---- input ---------------------------------------------------------------------------------- */
 
-/*
- * SDL 1.2 key symbols -> input bits (Player_KeySeq: station p bits 8p+0..5
- * = up, down, right, left, bet, fire; 78 = Test), or a chip action for a
- * station: coin, key-in, key-out, the payout key.
- */
-#define COIN   0x100
-#define KEYIN  0x200
-#define KEYOUT 0x400
-#define PAYOUT 0x800
-static const struct { int sym; int bit; } keymap[] = {
-    { 273, 0 }, { 274, 1 }, { 275, 2 }, { 276, 3 },          /* arrows */
-    { 308, 4 }, { 307, 4 }, { 306, 5 }, { 305, 5 },           /* Alt bet, Ctrl fire */
-    { 'r', 8 }, { 'f', 9 }, { 'g', 10 }, { 'd', 11 }, { 's', 12 }, { 'a', 13 },
-    { 'i', 16 }, { 'k', 17 }, { 'l', 18 }, { 'j', 19 }, { 'v', 20 }, { 'b', 21 },
-    { 264, 24 }, { 258, 25 }, { 262, 26 }, { 260, 27 }, { 266, 28 }, { 256, 29 },
-    { 278, 32 }, { 279, 33 }, { 281, 34 }, { 127, 35 }, { 280, 36 }, { 277, 37 },  /* Home End PgDn Del PgUp Ins */
-    { 'y', 40 }, { 'n', 41 }, { 'm', 42 }, { 'h', 43 }, { 'z', 44 }, { 'x', 45 },
-    { 283, 78 },                                               /* F2 = Test */
-    { '5', COIN | 0 }, { '6', COIN | 1 }, { '7', COIN | 2 }, { '8', COIN | 3 }, { '9', COIN | 4 }, { '0', COIN | 5 },
-    { 286, KEYIN | 0 }, { 287, KEYIN | 1 }, { 288, KEYIN | 2 }, { 289, KEYIN | 3 },     /* F5..F8 */
-    { '-', KEYIN | 4 }, { '=', KEYIN | 5 },
-    { 'q', KEYOUT | 0 }, { 'w', KEYOUT | 1 }, { 'e', KEYOUT | 2 }, { 't', KEYOUT | 3 },
-    { 'u', KEYOUT | 4 }, { 'o', KEYOUT | 5 },
-    { 290, PAYOUT | 0 }, { 291, PAYOUT | 1 }, { 292, PAYOUT | 2 }, { 293, PAYOUT | 3 }, /* F9..F12 */
-    { '[', PAYOUT | 4 }, { ']', PAYOUT | 5 },
-};
+/* the keys: fishkeys.h (shared with Fish Hunter Final 6) */
+#define COIN   FK_COIN
+#define KEYIN  FK_KEYIN
+#define KEYOUT FK_KEYOUT
+#define PAYOUT FK_PAYOUT
+#define keymap fish_keymap
 
 static void key(int sym, int down)
 {
@@ -826,26 +807,9 @@ static void key(int sym, int down)
 /* the key help, bottom left */
 static void draw(int w, int h)
 {
-    static const char *lines[] = {
-        "St Turn    Up/Dn   Fire Bet Coin In Out Pay",
-        "1  Lt Rt   Up Dn   Ctrl Alt 5    F5 Q   F9",
-        "2  D G     R F     A    S   6    F6 W   F10",
-        "3  J L     I K     B    V   7    F7 E   F11",
-        "4  KP4 6   KP8 2   KP0  KP. 8    F8 T   F12",
-        "5  Del PgD Hom End Ins  PgU 9    -  U   [",
-        "6  H M     Y N     X    Z   0    =  O   ]",
-        "F2 menu  F1 hide this",
-    };
-    const struct igs_core *c = api->core;
-    int i, n = sizeof(lines) / sizeof(lines[0]), y;
-
     (void)w;
-    if (!g.help)
-        return;
-    y = h - 4 - n * c->font_h;
-    c->fill(0, y - 4, 45 * c->font_w, n * c->font_h + 8, 0, 0, 0, 0.6f);
-    for (i = 0; i < n; i++)
-        c->text(6, y + i * c->font_h + 6, lines[i], 1, 1, 0.6f);
+    if (g.help)
+        fish_keys_draw(api->core, h, SEATS);
 }
 
 static void status(char *buf, size_t n){

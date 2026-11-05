@@ -535,6 +535,100 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		</part>
 	</software>
 
+	<software name="fishhunterfinal6_fish6">
+		<description>Fish Hunter Final 6 (U102CN, fish6)</description>
+		<year>2013</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="U102CN"/>
+		<info name="usage" value="docs/FishHunterFinal6.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 2 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHAIN str 0.85 chance the extra-fish chain goes on each round (at most 20 fish)"/>
+		<info name="tunable" value="FISH_STATIONS enum:4|6 6 stations the cabinet has"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_FORCE enum:0|1|2|3 0 [Testing] 1 a hit lightning fish always starts the chain, 2 a hit fish king always catches, 3 both"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunterfinal6"/>
+			<!-- Fish-OS; the channel keys come from a Sentinel dongle the plugin emulates -->
+			<feature name="variant" value="6"/>
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="fish"/>
+			<feature name="rofs_profile" value="fish"/>
+			<feature name="asset_mask" value="2516b6794a33aef4f6ec05cbe169092f"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunterfinal6_u102cn_fish6" sha1="455d1f664698f5389c920ed40b1f8797fa8a693a"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="2631776" sha1="57de023863b68eaf24128290f859b20f0763a01b"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="8a4853bf52986486730d7c8263617a205e4c60c4"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunterfinal6_fish6p" cloneof="fishhunterfinal6_fish6">
+		<description>Fish Hunter Final 6 (U102CN, fish6p)</description>
+		<year>2013</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="U102CN"/>
+		<info name="usage" value="docs/FishHunterFinal6.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 2 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHAIN str 0.85 chance the extra-fish chain goes on each round (at most 20 fish)"/>
+		<info name="tunable" value="FISH_STATIONS enum:4|6 6 stations the cabinet has"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_FORCE enum:0|1|2|3 0 [Testing] 1 a hit lightning fish always starts the chain, 2 a hit fish king always catches, 3 both"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunterfinal6"/>
+			<!-- its own kernel with Fish6Pv2-OS's ROFS key; the chip image is embedded -->
+			<feature name="variant" value="6"/>
+			<feature name="data" value="/Fish6P"/>
+			<feature name="binary" value="FH6P"/>
+			<feature name="rofs_profile" value="fish6pv2"/>
+			<feature name="rofs_key" value="Fish6PHunterV2.0"/>
+			<!-- the kernel runs /usr/bin/info /Fish6P/fish /Fish6P.bin/fish Hello-Fish6PV2.0; /etc/X11/IGS copies asic36.bin -->
+			<feature name="exe_mask" value="3af00e36a3aa82d3751050d1c5989932"/>
+			<feature name="asset_mask" value="c515b13d486ba6b2f4388582b369a88d"/>
+			<feature name="build" value="root p2; decrypt /Fish6P/fish /Fish6P.bin/fish 3157008; copy /Fish6P/asic36.bin /Fish6P.bin/asic36.bin; mount p3 /Fish6P"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunterfinal6_u102cn_fish6p" sha1="70fc72e5c4f7ac54abba327c0953a172267c5eeb"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish6P.bin/fish" size="3157008" sha1="1077581b642358dd714a2f709c5a2aedb6d6f4ef"/>
+				<rom name="/Fish6P/asic36.bin" size="524288" sha1="5df239bd271c841de2e8ad8df9869176e7103f9b"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunterfinal6_fish44" cloneof="fishhunterfinal6_fish6">
+		<description>Fish Hunter Final 6 (U102CN, fish44)</description>
+		<year>2013</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="U102CN"/>
+		<info name="usage" value="docs/FishHunterFinal6.md"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 2 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHAIN str 0.85 chance the extra-fish chain goes on each round (at most 20 fish)"/>
+		<info name="tunable" value="FISH_STATIONS enum:4|6 4 stations the cabinet has"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_FORCE enum:0|1|2|3 0 [Testing] 1 a hit lightning fish always starts the chain, 2 a hit fish king always catches, 3 both"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunterfinal6"/>
+			<!-- Harpoon Lagoon's kernel (Fish4P-OS #3); four stations; the chip image is embedded -->
+			<feature name="variant" value="4"/>
+			<feature name="data" value="/Fish"/>
+			<feature name="binary" value="FH"/>
+			<feature name="rofs_profile" value="fish4p"/>
+			<feature name="rofs_key" value="Hunter4PFishV1.0"/>
+			<feature name="asset_mask" value="efbf4b780af0631b50c73d2ba5e7ac77"/>
+			<feature name="build" value="root p2; mount p3 /Fish"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunterfinal6_u102cn_fish44" sha1="380af6032f2f8522c11a3eaca6dc8ac20ff00181"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish.bin/fish" size="3157032" sha1="1df695b2be0f704627bc90ef661c0f67ec55b7a1"/>
+				<rom name="/Fish/asic36.bin" size="524288" sha1="f99a6766b7eb9247e08ac69f6910af59881dc651"/>
+			</dataarea>
+		</part>
+	</software>
+
 	<software name="oceanparty_md105cn">
 		<description>Ocean Party (MD105CN)</description>
 		<year>2012</year>

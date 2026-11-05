@@ -55,6 +55,14 @@ struct igs_core {
      * it from the game's thread at the end of each frame.
      */
     void (*present)(const void *rgb565, int w, int h, int pitch);
+
+    /*
+     * Replace the game's function at addr (in the game executable) with fn,
+     * which takes the same i386 cdecl arguments: a jump is written over the
+     * function's entry.  0 on success.  For HLE of a library the game links
+     * statically (Fish Hunter Final 6's Sentinel dongle client).
+     */
+    int (*hook)(uint32_t addr, void *fn);
 };
 
 /* what a machine plugin provides */

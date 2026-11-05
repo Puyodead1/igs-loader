@@ -346,6 +346,22 @@ static void *core_mmio_map(size_t len, void *opaque,
     return p;
 }
 
+/* igs_core.hook: jmp rel32 to fn over the game function's entry */
+static int core_hook(uint32_t addr, void *fn)
+{
+    uintptr_t pg = addr & ~(uintptr_t)0xfff;
+    uint8_t *p = (uint8_t *)(uintptr_t)addr;
+    int32_t rel = (int32_t)((uintptr_t)fn - (addr + 5));
+
+    if (mprotect((void *)pg, ((addr + 5 - pg) + 0xfff) & ~(uintptr_t)0xfff, PROT_READ | PROT_WRITE | PROT_EXEC))
+        return -1;
+    p[0] = 0xE9;
+    memcpy(p + 1, &rel, 4);
+    mprotect((void *)pg, ((addr + 5 - pg) + 0xfff) & ~(uintptr_t)0xfff, PROT_READ | PROT_EXEC);
+    __builtin___clear_cache((char *)p, (char *)p + 5);
+    return 0;
+}
+
 /* port I/O is the machine's (port_in/port_out): the trap handler takes in/out */
 int iopl(int level)
 {
@@ -582,6 +598,7 @@ __attribute__((constructor)) static void core_init(void)
         .font_w = FONT_W,
         .font_h = FONT_H,
         .present = core_present,
+        .hook = core_hook,
     };
     /* the games' own diagnostics go to stdout: keep them in order with ours */
     setvbuf(stdout, NULL, _IOLBF, 0);

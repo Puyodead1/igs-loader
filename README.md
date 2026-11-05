@@ -29,6 +29,9 @@ data is included.
 | `fishhunter6_m603cn` | Fish Hunter 6 (M603CN) | E2100 | ✓ | ✓ |
 | `fishhunter6_m604cn` | Fish Hunter 6 (M604CN) | E2100 | ✓ | ✓ |
 | `fishhunter6_m607cn` | Fish Hunter 6 (M607CN) | E2100 | ✓ | ✓ |
+| `fishhunterfinal6_fish6` | Fish Hunter Final 6 (U102CN, fish6) | E2100 | ✓ | ✓ |
+| `fishhunterfinal6_fish6p` | Fish Hunter Final 6 (U102CN, fish6p) | E2100 | ✓ | ✓ |
+| `fishhunterfinal6_fish44` | Fish Hunter Final 6 (U102CN, fish44) | E2100 | ✓ | ✓ |
 | `oceanparty_md105cn` | Ocean Party (MD105CN) | E2100 | ✓ | ✓ |
 | `scratch_m101cn` | Scratch (M101CN) | E2100 | ✓ | ✓ |
 | `heroofrobots_m100fa` | Hero of Robots (M100FA) | E2100 | ✓ | ✓ |
@@ -258,7 +261,7 @@ Controls and per-game settings are on the [wiki](https://github.com/Puyodead1/ig
 | [IGS_ROFS_REVERSE_ENGINEERING.md](docs/IGS_ROFS_REVERSE_ENGINEERING.md) | the disk formats: E2100 and E2200 `igs_rofs`, E2000 ROFS and IGS_SHFS, boot chains |
 | [IGS_KEYS.md](docs/IGS_KEYS.md) | every key, mask and constant per game |
 | [PercussionMaster3_Online.md](docs/PercussionMaster3_Online.md) | Percussion Master 3's network: servers, framing, registration, commands, profile, boards, the online screen flow |
-| [HarpoonLagoon.md](docs/HarpoonLagoon.md), [FishHunter4.md](docs/FishHunter4.md), [FishHunter6.md](docs/FishHunter6.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md), [PirateRevenge.md](docs/PirateRevenge.md), [GoGoBall2.md](docs/GoGoBall2.md), [SpeedRider.md](docs/SpeedRider.md), [PandaFamily.md](docs/PandaFamily.md), [SpeedDriver2.md](docs/SpeedDriver2.md), [WeDanceOnline2.md](docs/WeDanceOnline2.md), [PercussionKids.md](docs/PercussionKids.md), [PercussionMaster3.md](docs/PercussionMaster3.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
+| [HarpoonLagoon.md](docs/HarpoonLagoon.md), [FishHunter4.md](docs/FishHunter4.md), [FishHunter6.md](docs/FishHunter6.md), [FishHunterFinal6.md](docs/FishHunterFinal6.md), [OceanParty.md](docs/OceanParty.md), [Scratch.md](docs/Scratch.md), [HeroOfRobots.md](docs/HeroOfRobots.md), [GoldCaptain.md](docs/GoldCaptain.md), [PirateRevenge.md](docs/PirateRevenge.md), [GoGoBall2.md](docs/GoGoBall2.md), [SpeedRider.md](docs/SpeedRider.md), [PandaFamily.md](docs/PandaFamily.md), [SpeedDriver2.md](docs/SpeedDriver2.md), [WeDanceOnline2.md](docs/WeDanceOnline2.md), [PercussionKids.md](docs/PercussionKids.md), [PercussionMaster3.md](docs/PercussionMaster3.md) | per-game pages: versions, controls, tunables, internals, what the plugin emulates |
 
 ## Repository layout
 

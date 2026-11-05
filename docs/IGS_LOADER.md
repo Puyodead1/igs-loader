@@ -16,6 +16,7 @@ Status (2026-11-01), under WSLg:
 | Harpoon Lagoon M001US-WA, M200US-WA | E2100 | playable (same plugin, variant `wa`); see `HarpoonLagoon.md`, Versions |
 | Fish Hunter 4 M101–M107CN, M400–M402CN | E2100 | plays: 4 keyboard stations, coins, catches, chance and bonus games, ticket payout, operator menu; trailing-sum batch transport, the IGS036's game logic rebuilt with invented odds (`FishHunter4.md`) |
 | Fish Hunter 6 M601FA–M607CN | E2100 | plays: 6 keyboard stations, coins, key-in/out, catches, chance games, golden fish, the five payout modes, operator menu and books; M60x trailing-sum transport, M607CN Harpoon's re-keyed channel and an encrypted executable (`FishHunter6.md`) |
+| Fish Hunter Final 6 U102CN (`fish6`, `fish6p`, `fish44`) | E2100 | plays: 4 or 6 keyboard stations, coins, key-in/out, catches, the fish king, bomb crab and big fish, the five payout modes, operator menu (password) and books; the Sentinel dongle emulated at its API; `fish6p`'s encrypted executable (`FishHunterFinal6.md`) |
 | Ocean Party md105cn | E2100 | playable, 1 keyboard player, re-implemented game logic |
 | Scratch m101cn | E2100 | playable, 1 keyboard player, register-table transport, made-up prizes, about 20 fps (`Scratch.md`) |
 | Hero of Robots m100fa | E2100 | plays a whole game: attract, coins, start, fights, card debit and dispense, game over; request/response transport, emulated smart card (RSA), dispenser and QR reader always ready, no card scanning; slow start-up from a Windows drive (`HeroOfRobots.md`) |
@@ -49,7 +50,7 @@ or in WSL:
 
 `<id>` is a software name from the software lists (`hash/*.xml`, see Rom
 sets): `harpoonlagoon_m107us`, `harpoonlagoon_m001uswa`,
-`harpoonlagoon_m200uswa`, `fishhunter4_m107cn` (and its clones `fishhunter4_m101cn` … `m402cn`), `fishhunter6_m606cn` (and its clones `m601fa` … `m607cn`), `oceanparty_md105cn`, `scratch_m101cn`,
+`harpoonlagoon_m200uswa`, `fishhunter4_m107cn` (and its clones `fishhunter4_m101cn` … `m402cn`), `fishhunter6_m606cn` (and its clones `m601fa` … `m607cn`), `fishhunterfinal6_fish6` (and `fish6p`, `fish44`), `oceanparty_md105cn`, `scratch_m101cn`,
 `heroofrobots_m100fa`, `goldcaptain`, `piraterevenge_m101cn`, `gogoball2_dx`,
 `speedrider_m109cnc`, `pandafamily_cn`, `speeddriver2`, `wedanceonline2`,
 `percussionkids_m105cn`, `percussionmaster3_m107fa`.  The per-game controls are on each
@@ -325,6 +326,7 @@ on this machine:
 | `fishhunter4_m107cn`, `m400cn` … `m402cn` | 135 MB | 0.80 GB | 2.5 min (`igs-mkromset`) |
 | `fishhunter6_m601fa` … `m606cn` | 137 MB | 0.78 GB | 2 min (`igs-mkromset`) |
 | `fishhunter6_m607cn` | 178 MB | 0.78 GB | 2.5 min (`igs-mkromset`) |
+| `fishhunterfinal6_fish6` … `fish44` | 310 MB | 0.64 GB | 2.5–3.5 min (`igs-mkromset`) |
 | `oceanparty_md105cn` | 252 MB | 0.82 GB | 4.5 min |
 | `scratch_m101cn` | 122 MB | 0.58 GB | 5 min |
 | `heroofrobots_m100fa` | 2,083 MB | 5.8 GB | 44 min |
@@ -419,7 +421,8 @@ tools/
     machines/e2200/            e2200.c (machines/e2100 under its own name)
     games/harpoonlagoon/       harpoonlagoon.c
     games/fishhunter4/         fishhunter4.c
-    games/fishhunter6/         fishhunter6.c
+    games/fishhunter6/         fishhunter6.c  fishkeys.h (six-station keys, shared)
+    games/fishhunterfinal6/    fishhunterfinal6.c  sentinel.c (the dongle)  sources
     games/oceanparty/          oceanparty.c
     games/scratch/             scratch.c
     games/heroofrobots/        heroofrobots.c, libcasmcard.c (reader + card), card.h,
@@ -446,13 +449,15 @@ symbols.
 | --- | --- | --- |
 | **core** (`igs_core.so`, the `LD_PRELOAD` library) | libc/SDL interposition, routing device files to the machine, MMIO traps, libc fixes, frame pacing, audio, the overlay renderer | the only Linux/SDL/GL-specific code |
 | **machine** (`$IGS_MACHINE`) | the board: device files, registers, DMA, the protection transport | `e2100`: `/dev/pccard0`, BARs, DMA, the asset cipher (mask from the software list), the ASIC handshake, and three runtime transports: batch framing (Harpoon, Ocean Party; Fish Hunter 4's trailing-sum layout and older loader handshake as game-plugin flags), the register table (Scratch) and request/response (Hero of Robots), chosen by the game plugin's `transport`; serial ports with a peripheral the game plugin answers for.  `e2000`: the PLX PCI9030 card (`/dev/plx/*`), the IGS036 shared-RAM transport with RC4-wrapped keys, the IGS027A packet transport, the IGS036 message or packet transport (the game plugin's `transport`), `/dev/roio`, `/dev/pccard0`, the kernel's `/dev/tdcr` cipher.  `e1000`: the Geode GX2 (`/dev/mem`: display controller, 2D engine, frame buffer; PCI and VSA port I/O; `/dev/cpu/0/msr`) and the IGS027A command transport on `/dev/pccard0`.  `e2200`: `e2100` under its own name; the game plugin may pick the asset-cipher mask by key (`asset_mask`) |
-| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `fishhunter4` (trailing-sum batches, RC4 or no channel cipher: catches, credits, chance and bonus games, settings, records, payout), `fishhunter6` (trailing-sum or re-keyed XOR batches: six stations, catches, credits, chance games, settings, the books, five payout modes), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs), `piraterevenge` (the same commands plus coin counters), `gogoball2` (IGS027A packets: stores, settings, light curtain, tickets, ball stopper, game flow), `speedrider` (IGS036 messages: inputs, coins, NVRAM, zip prefixes, UI, game modes, AI riders), `pandafamily` (IGS036 packets: inputs, coins, tickets, settings, action groups), `speeddriver2` (IGS036 messages, Speed Driver 2 layout: game flow, inputs, coins, texture and sound pages, the `data.hdr` prefix), `wedanceonline2` (IGS027A packets: inputs, coins, system status, settings; the cabinet's `/proc/meminfo`), `percussionkids` (the IGS027A's command lists: the whole game flow, the song engine and judging, the operator menu), `percussionmaster3` (IGS036 request/response: channel, state table and screen flow, the drum I/O board, chart keys and cut bytes) |
+| **game** (`$IGS_GAME`, loaded by the machine) | what that game's protection firmware does: channel cipher, message set, game logic, input, its overlay | `harpoonlagoon` (XOR channel, credits/buttons), `fishhunter4` (trailing-sum batches, RC4 or no channel cipher: catches, credits, chance and bonus games, settings, records, payout), `fishhunter6` (trailing-sum or re-keyed XOR batches: six stations, catches, credits, chance games, settings, the books, five payout modes), `fishhunterfinal6` (re-keyed XOR batches: four or six stations, catches, specials, settings, the books, payout modes; the Sentinel dongle at its client API), `scratch` (register-table transport: inputs, credits, ticket deals), `oceanparty` (RC4 channel, the whole betting game, player panel), `heroofrobots` (request/response: RC4 channel, state pointer, settings, inputs, RSA key parts; QR reader and card dispenser on the serial ports; plus a preloaded `libcasmcard` with the smart card), `goldcaptain` (IGS036 commands: sprite-group store, NVRAM, game flow, WarZones, weapon table, ticket dispenser, inputs), `piraterevenge` (the same commands plus coin counters), `gogoball2` (IGS027A packets: stores, settings, light curtain, tickets, ball stopper, game flow), `speedrider` (IGS036 messages: inputs, coins, NVRAM, zip prefixes, UI, game modes, AI riders), `pandafamily` (IGS036 packets: inputs, coins, tickets, settings, action groups), `speeddriver2` (IGS036 messages, Speed Driver 2 layout: game flow, inputs, coins, texture and sound pages, the `data.hdr` prefix), `wedanceonline2` (IGS027A packets: inputs, coins, system status, settings; the cabinet's `/proc/meminfo`), `percussionkids` (the IGS027A's command lists: the whole game flow, the song engine and judging, the operator menu), `percussionmaster3` (IGS036 request/response: channel, state table and screen flow, the drum I/O board, chart keys and cut bytes) |
 
 **Interfaces:**
 - **Core ↔ machine:** `core/igs.h`.
   - The core provides `struct igs_core`: log, config, time, a placeholder
-    fd, `mmio_map` (trapped register windows with read/write callbacks), and
-    the overlay primitives `fill`/`text`, and `present`: a machine that
+    fd, `mmio_map` (trapped register windows with read/write callbacks),
+    `hook` (a jump over a game function's entry to a plugin function with
+    the same cdecl arguments: Fish Hunter Final 6's linked-in Sentinel
+    client), the overlay primitives `fill`/`text`, and `present`: a machine that
     scans out its own frame buffer (E1000) hands each RGB565 frame to the
     core, which shows it in a window of its own (Linux: SDL GL; Windows: the
     native SDL window) with the overlay, keys, title and frame cap.
@@ -641,6 +646,7 @@ Status (2026-11-01, RTX 3060, Windows 11):
 | Harpoon Lagoon M001US-WA, M200US-WA | M001US-WA runs to attract from its `.7z` set (2026-10-30); M200US-WA links cleanly (`--check`) |
 | Fish Hunter 4 (all nine) | attract, coins, catches, chance games, bonus game, payout, operator menu; sound; 60 fps |
 | Fish Hunter 6 (all six) | attract, coins, key-in/out, catches, chance games, payout, operator menu and books; sound; 60 fps |
+| Fish Hunter Final 6 (all three) | attract, coins, key-in/out, catches, fish king, bomb crab, payout, operator menu, password, books, reset; sound |
 | Ocean Party md105cn | attract, coins, rounds, overlay; sound |
 | Scratch m101cn | attract and coins at 60 fps; `libmikmod.so.2` missing (SDL_mixer's MOD support only) |
 | Gold Captain | attract after about 55 s, coins, captain select, stage; sound through `/dev/dsp`; windowed (the game asks for fullscreen) |
@@ -731,8 +737,9 @@ way the exe does and lists the symbols no loaded ELF module defines and
   - libGL/GLX;
   - libX11/libXext (`x11.c`);
   - empty stand-ins for libXt, libXaw, libXpm, libXmu, libSM, libICE,
-    libXfont, libXrandr, libXxf86vm, libpci and ncurses (Ogre's config dialog
-    and helpers no game here calls).
+    libXfont, libXrandr, libXxf86vm and ncurses (Ogre's config dialog and
+    helpers no game here calls); libpci with an empty bus (Fish Hunter Final
+    6 reads its cards' ids).
 - **Preload.**  The `preload` libraries are DLLs next to the exe, built from
   the same sources as `build/<name>.so`.  Each sits in the lookup order right
   after the executable, as `LD_PRELOAD` puts it, under the SONAME it exports

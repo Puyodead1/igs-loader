@@ -17,7 +17,8 @@ entry per game id).
 | ROFS profile (extractor) | `fish4p` | `oceanparty` |
 
 Fish Hunter 4 (profiles `fish`, plaintext, and `fish4p_m400`), Fish
-Hunter 6 (`fish`, and `Fish6PHunterV2.0`, profile `fish6pv2`), Scratch
+Hunter 6 (`fish`, and `Fish6PHunterV2.0`, profile `fish6pv2`), Fish Hunter
+Final 6 (`fish`, `fish4p`, `fish6pv2`), Scratch
 m101cn (`SwinV1.00Scratch`, profile `scratch`) and Hero of Robots
 m100fa (`RobotsHeroOfV1.0`, profile `heroofrobots`) are listed under ROFS
 below; their runtime protocols are in `Scratch.md` and `HeroOfRobots.md`,
@@ -273,6 +274,26 @@ Addresses in the decompressed payload loaded at `0xC0FFF000`.
 | Fish values | as Fish Hunter 4; 13 kinds in the catch messages | `0x82CC060` |
 | Station keys | `Player_KeySeq` as M102, six stations | `0x820E1E0` |
 
+### Fish Hunter Final 6 U102CN (`fish6`, `fish6p`, `fish44`)
+
+Kernels: `fish6` `Fish-OS` (profile `fish`), `fish44` `Fish4P-OS` #3
+(`fish4p`), `fish6p` its own build with `Fish6Pv2-OS`'s ROFS key and
+constants (`fish6pv2`).  Addresses: `fish6`'s executable.
+
+| Item | Value | Where |
+| --- | --- | --- |
+| `fish6p` executable | FPGA cipher, kernel key string `Hello-Fish6PV2.0` (as M607CN) but mask `3af00e36a3aa82d3751050d1c5989932` (`exe_mask`), from the ELF `e_ident`; the file's 3,157,008 bytes | `/Fish6P/fish` → `/Fish6P.bin/fish` |
+| Asset masks | `fish6` `2516b6794a33aef4f6ec05cbe169092f`, `fish44` `efbf4b780af0631b50c73d2ba5e7ac77`, `fish6p` `c515b13d486ba6b2f4388582b369a88d` | WAV `fmt ` blocks (PCM, 44.1 kHz mono 16-bit): 91/117 (`fish44` 10/11) agree, the rest are stereo |
+| FPGA key | 16 bytes from the dongle (data object 49, bytes 0..15; default `xxxxxxxxxxxxxxxx`), bytes 0..7 replaced by the device ids of four PCI cards: class/vendor `0000`/`11AA` (Actel), `0200`/`10EC`, `0300`/`10DE`, `0600`/`8086` | `sub_806AB30`, `FAFC_iCombineHWInfoKey` `sub_8069EE0`, set `sub_806AA60` |
+| Sentinel dongle | SafeNet Sentinel Keys, client linked in, `/var/run/sentinel/u.daemon`; developer id `0x5E07A0E1`, license `36435`, flags `0x20`; data object feature 49 read in 16-byte blocks, decrypted by AES feature 43 | `sub_806D880`, `sub_806D340` |
+| Sentinel API entries | `55 89 E5 83 EC 38 C7 45 D8 <n> 00 00 00`, n = 1 GetLicense, 2 QueryFeature, 3/4 Read/WriteString, 5/6 Read/WriteInteger, 7/8 Read/WriteRawData, 9 CounterDecrement, 10/11 Encrypt/Decrypt, 12/13 Verify/Sign, 15 ReleaseLicense | `0x82352CA`.. |
+| Dongle data (plaintext) | 16 game → chip key, 20 chip → game key, 24 running-sum start, 28/32/36 `0x100002D0`, `0x10000300`, `0x10000320` (`fish6` checks them, else `jmp $`; `fish44` does not), 64..75 fish per kind 0..11 in the opening scenes (≤ 39) | `PcShareRam_MainInit` `0x80695E0`, `sub_80692D0`, `sub_8083B20` |
+| Plugin's dongle | AES key `IGS-FHF6-SNTL-43`, keys `0x80678267` / `0x82675251`, sum start 0 (invented) | `games/fishhunterfinal6` |
+| Channel | each word XOR a 32-bit key per direction; `[running sum, payload, headers]`, the sum shared; game: message 5 words 9 / 10 next register / key; chip: message 6 word 12 register, message 37 key (taken once) | `sub_8067290`, `sub_80673D0` |
+| Chip image | `fish6`: `asic36.bin`; `fish44`, `fish6p`: embedded (`0x82A3E20` in `fish44`, `0x80000` bytes), not uploaded (DONE word 1 = 0) | `sub_809C460` |
+| System password | 12 digits: settings words 26..37 (default zeros), or the built-in `860222995048`, or a code for the page's challenge (below) | `sub_8096A30` |
+| Challenge code | challenge: 8 octal digits from a random word; code digits 5, 11 pick row `d11 + 10·d5` of a 10-digit table (`0x825F5C0`); the other 10 digits minus the row mod 10, permuted by the row, read as a decimal number, RC4 (state `0x85C8680`, key word `0x093C3E46`) → 3-bit groups must equal the challenge; the bits above set the difficulty ceiling (settings word 47, ≤ 2) | `sub_808DCF0`, `sub_808C500`, `sub_806BD50` |
+
 ## E2000: Gold Captain (`GoldCaptain-OS-e65`, Linux 2.4.31)
 
 Details: the E2000 part of `IGS_ROFS_REVERSE_ENGINEERING.md`.  Nothing is
@@ -514,6 +535,8 @@ Details: `IGS_SOUND_CRYPTO.md`.
 | Scratch (`swin`, key `Hello-ScratchWin`) | `e4be1b4e7f081654fa6b81698b039a06` | first block = ELF `e_ident`; the whole file then parses as an i386 ELF. Scratch's assets themselves are not encrypted |
 | Fish Hunter 6 M607CN (`fish`, key `Hello-Fish6PV2.0`) | `daf30972a1f28a9577c4d09897983890` | first block = ELF `e_ident`; the file parses as an i386 ELF |
 | Fish Hunter 6 M607CN (assets) | `567c8f1f6245c7a43f62a3a2996d3d3b` | WAV headers (`RIFF`, size, `WAVEfmt `, PCM, `data`): 45/45; the game loads its sounds and animations with it |
+| Fish Hunter Final 6 `fish6p` (`fish`, key `Hello-Fish6PV2.0`) | `3af00e36a3aa82d3751050d1c5989932` | first block = ELF `e_ident`; the file parses as an i386 ELF |
+| Fish Hunter Final 6 (assets) | `fish6` `2516b6794a33aef4f6ec05cbe169092f`, `fish44` `efbf4b780af0631b50c73d2ba5e7ac77`, `fish6p` `c515b13d486ba6b2f4388582b369a88d` | WAV `fmt ` block (block 1: chunk size 16, PCM, mono, 44.1 kHz, 16-bit); the games load their sounds and animations with them |
 
 ## ASIC handshake and firmware
 

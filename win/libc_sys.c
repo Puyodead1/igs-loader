@@ -1649,6 +1649,33 @@ static int l_getrlimit(int r, uint32_t *rl) { (void)r; rl[0] = rl[1] = 0xfffffff
 static int l_setrlimit(int r, const uint32_t *rl) { (void)r; (void)rl; return 0; }
 static int l_getrusage(int who, void *ru) { (void)who; memset(ru, 0, 72); return 0; }
 
+/*
+ * libpci (pciutils 3): an empty bus.  struct pci_access is zeroed; its
+ * device list (offset 44) stays NULL.  Fish Hunter Final 6 reads the class,
+ * vendor and device ids of its cabinet's cards into its FPGA key, which the
+ * emulated FPGA does not use (the list's mask decides).
+ */
+static void *l_pci_alloc(void) { return calloc(1, 256); }
+static void l_pci_init(void *a) { (void)a; }
+static void l_pci_scan_bus(void *a) { (void)a; }
+static void l_pci_cleanup(void *a) { free(a); }
+static int l_pci_fill_info(void *d, int flags) { (void)d; return flags; }
+static uint8_t l_pci_read_byte(void *d, int pos) { (void)d; (void)pos; return 0; }
+static char *l_pci_lookup_name(void *a, char *buf, int size, int flags, ...)
+{
+    va_list ap;
+    unsigned v, d;
+
+    (void)a;
+    va_start(ap, flags);
+    v = va_arg(ap, unsigned);
+    d = va_arg(ap, unsigned);
+    va_end(ap);
+    /* PCI_LOOKUP_DEVICE (2) with no id database: the numeric form */
+    snprintf(buf, size, flags & 2 ? "Device %04x" : "Vendor %04x", flags & 2 ? d : v);
+    return buf;
+}
+
 static int l_net_fail(void) { SET_ERRNO(L_ENOSYS); return -1; }
 static void *l_net_null(void) { SET_ERRNO(L_ENOSYS); return NULL; }
 static void l_if_freenameindex(void *p) { (void)p; }
@@ -1805,7 +1832,7 @@ const struct nsym sys_syms[] = {
     N(mremap),
     /* socket, connect, send, recv...: net.c */
     NA(bind, l_net_fail), NA(listen, l_net_fail), NA(accept, l_net_fail),
-    NA(gethostbyname, l_net_null), NA(if_nameindex, l_net_null), N(if_freenameindex), N(inet_ntoa),
+    NA(gethostbyname, l_net_null), NA(gethostbyaddr, l_net_null), NA(if_nameindex, l_net_null), N(if_freenameindex), N(inet_ntoa),
     N(inet_addr), N(inet_aton),
     NA(getaddrinfo, l_gai_fail), NA(getnameinfo, l_gai_fail), N(freeaddrinfo), N(gai_strerror),
     NA(socketpair, l_net_fail), NA(sendmsg, l_net_fail), NA(recvmsg, l_net_fail),
@@ -1814,6 +1841,8 @@ const struct nsym sys_syms[] = {
     NA(ntohs, l_htons), N(htonl), NA(ntohl, l_htonl), N(statvfs), N(drand48), N(gcvt),
     N(mkstemp), NA(mkstemp64, l_mkstemp),
     N(chmod), N(syscall),
+    N(pci_alloc), N(pci_init), N(pci_scan_bus), N(pci_cleanup), N(pci_fill_info), N(pci_read_byte),
+    N(pci_lookup_name),
     N(_setjmp), NA(setjmp, l__setjmp), NA(__sigsetjmp, l__setjmp), N(longjmp),
     NA(_longjmp, l_longjmp), NA(siglongjmp, l_longjmp), NA(__longjmp_chk, l_longjmp),
     { NULL, NULL },

@@ -217,6 +217,11 @@ The executable on it is FPGA-cipher encrypted; the kernel decrypts it into
 a tmpfs at boot (`/usr/bin/info`, as Scratch's `/bin/unrar`), which the sets
 mirror with the build step `decrypt` and the list's `exe_mask`.
 
+Fish Hunter Final 6 `fish6p` runs its own kernel build with the same ROFS
+key and constants (profile `fish6pv2`: 321 directories, 3,161 files) and
+the same `/usr/bin/info` step under another FPGA mask; `fish6` and
+`fish44` use `fish` and `fish4p`.
+
 **A dump without its partition table** (Fish Hunter 4 M101CN starts 511
 bytes into the disk) is built with the list's `dump_skip` and
 `partitions` features (`IGS_LOADER.md`).

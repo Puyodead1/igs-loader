@@ -1047,6 +1047,22 @@ static void core_log_fn(const char *fmt, ...)
     LeaveCriticalSection(&log_lock);
 }
 
+/* igs_core.hook: jmp rel32 to fn over the game function's entry */
+static int core_hook(uint32_t addr, void *fn)
+{
+    uint8_t *p = (uint8_t *)(uintptr_t)addr;
+    int32_t rel = (int32_t)((uintptr_t)fn - (addr + 5));
+    DWORD old;
+
+    if (!elf_owns(addr) || !VirtualProtect(p, 5, PAGE_EXECUTE_READWRITE, &old))
+        return -1;
+    p[0] = 0xE9;
+    memcpy(p + 1, &rel, 4);
+    VirtualProtect(p, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), p, 5);
+    return 0;
+}
+
 void core_init(void)
 {
     const char *path = getenv("IGS_MACHINE");
@@ -1066,6 +1082,7 @@ void core_init(void)
     core.font_w = FONT_W;
     core.font_h = FONT_H;
     core.present = sdl_present;
+    core.hook = core_hook;
     if (!path)
         return;
     h = LoadLibraryA(path);

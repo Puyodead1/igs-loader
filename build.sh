@@ -27,9 +27,10 @@ mkdir -p build/uclibc
 gcc $CF -Wl,-soname,libc.so.0 -o build/uclibc/libc.so.0 core/uclibc.c -ldl
 gcc $CF -DSHIM_ONLY -Wl,-soname,libm.so.0 -Wl,--no-as-needed -o build/uclibc/libm.so.0 core/uclibc.c -lm
 gcc $CF -DSHIM_ONLY -Wl,-soname,libdl.so.0 -Wl,--no-as-needed -o build/uclibc/libdl.so.0 core/uclibc.c -ldl
+# games/<n>/sources: more sources for that plugin
 for g in games/*/; do
     n=$(basename "$g")
-    gcc $CF -fvisibility=hidden -o "build/$n.so" "$g$n.c"
+    gcc $CF -fvisibility=hidden -o "build/$n.so" "$g$n.c" $(cat "${g}sources" 2>/dev/null)
 done
 # native 64-bit tools share the rom-set objects (software lists, rompath, .7z/.zip sets)
 LZ=third_party/lzma
