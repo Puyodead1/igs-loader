@@ -45,6 +45,7 @@ class Software:
         self.machine = machine
         self.name = e.get('name')
         self.cloneof = e.get('cloneof')
+        self.runnable = e.get('supported') != 'no'   # supported="no": builds and verifies, cannot run
         text = lambda tag: (e.findtext(tag) or '').strip()
         self.description, self.year, self.publisher = text('description'), text('year'), text('publisher')
         self.info = {i.get('name'): i.get('value') for i in e.iter('info')}

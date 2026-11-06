@@ -128,6 +128,10 @@ int main(int argc, char **argv)
         fprintf(stderr, "unknown game %s (igs-loader --list shows the ids)\n", game);
         return 1;
     }
+    if (!verify && !sw_runnable(sw)) {
+        fprintf(stderr, "%s cannot run: %s\n", game, sw_info_value(sw, "unsupported", "the list marks it unsupported"));
+        return 1;
+    }
     if (rs_open(game, rootfs, sizeof(rootfs))) {
         fprintf(stderr, "%s\n", rs_error);
         return 1;

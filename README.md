@@ -40,6 +40,7 @@ data is included.
 | `demonhunter_m100cn` | Demon Hunter (M100CN) | E2100 | ✓ | ✓ |
 | `crazyshoot_m100cn` | Crazy Shoot (M100CN) | E2100 | ✓ | ✓ |
 | `oceanparty_md105cn` | Ocean Party (MD105CN) | E2100 | ✓ | ✓ |
+| `sangomario` | SangoMario (recovered; some animations and sounds lost) | E2100 | ✓ | ✓ |
 | `scratch_m101cn` | Scratch (M101CN) | E2100 | ✓ | ✓ |
 | `heroofrobots_m100fa` | Hero of Robots (M100FA) | E2100 | ✓ | ✓ |
 | `goldcaptain` | Gold Captain | E2000 | ✓ | ✓ |
@@ -51,14 +52,24 @@ data is included.
 | `wedanceonline2` | We Dance Online 2 (offline; online with `IGS_NET`) | E2000 | ✓ | ✓ |
 | `percussionkids_m105cn` | Percussion Kids (M105CN) | E1000 | ✓ | ✓ |
 | `percussionmaster3_m107fa` | Percussion Master 3 (M107FA) (offline; online with `IGS_NET`) | E2200 | ✓ | ✓ |
+| `fishhunterskl2_m801cn` | Fish Hunter SKL2 8P (M801CN) | E2200 | ✓ | ✓ |
 
 Where the protection chip runs game logic whose code has not been dumped
 (Fish Hunter 4's, 6's, Plus 6P's, SKL's, SKL2's and Demon Hunter's catches, chance games and payouts, Ocean Party's odds, Scratch's prizes, the E2000 games' weapon tables and
-game flow, Speed Rider's AI riders and lost archive bytes, Speed Driver 2's
+game flow, SangoMario's rounds and odds, Speed Rider's AI riders and lost archive bytes, Speed Driver 2's
 screens and AI throttle, all of Percussion Kids' game flow and judging,
 Percussion Master 3's screen flow, Crazy Shoot's prize odds, ported from the
 developers' own stand-in in the game), the plugin reconstructs or invents it,
 so gameplay may not be completely identical to the real cabinet.
+
+The E2200 dumps of Ocean King (M015CN–M817CN), Poseidon, Full Attack, Soul of Gun
+and Westtrip (MD012CN–MD108CN) are listed with `supported="no"`: their sets build
+and verify, but their code is encrypted by a Sentinel HASP Envelope that only the
+cabinet's HASP key can open, so the loaders refuse to run them.
+
+SangoMario was never dumped: its files were carved from an older filesystem left in
+Westtrip MD018CN's free space.  Its set is a folder of those files (no disk entry),
+with stand-ins for the action banks that did not survive.
 
 ## Getting the loader
 

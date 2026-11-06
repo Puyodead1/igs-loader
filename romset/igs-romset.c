@@ -105,6 +105,11 @@ int main(int argc, char **argv)
         rs_section(id, section_line, NULL);
         return 0;
     }
+    if (!strcmp(cmd, "--env") && !sw_runnable(sw)) {
+        fprintf(stderr, "igs-romset: %s cannot run: %s\n", id,
+                sw_info_value(sw, "unsupported", "the list marks it unsupported"));
+        return 1;
+    }
     if (rs_open(id, dir, sizeof(dir))) {
         fprintf(stderr, "igs-romset: %s\n", rs_error);
         return 1;

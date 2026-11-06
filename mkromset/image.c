@@ -233,9 +233,21 @@ int img_chd_sha1(struct mkr_job *j, const char *path, char hex[41])
     fclose(f);
     if (got < 16 || memcmp(h, "MComprHD", 8))
         return mkr_fail(j, "%s: not a CHD", path);
-    /* v5: the raw data SHA-1 at 64 */
-    if (got >= 84 && (h[12] << 24 | h[13] << 16 | h[14] << 8 | h[15]) == 5)
-        mkr_sha1_hex(h + 64, hex);
+    /* the raw data SHA-1: v5 at 64, v4 at 88; v3 has only the data SHA-1, at 80 */
+    switch (h[12] << 24 | h[13] << 16 | h[14] << 8 | h[15]) {
+    case 5:
+        if (got >= 84)
+            mkr_sha1_hex(h + 64, hex);
+        break;
+    case 4:
+        if (got >= 108)
+            mkr_sha1_hex(h + 88, hex);
+        break;
+    case 3:
+        if (got >= 100)
+            mkr_sha1_hex(h + 80, hex);
+        break;
+    }
     return 0;
 }
 

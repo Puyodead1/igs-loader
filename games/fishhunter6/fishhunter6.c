@@ -29,9 +29,20 @@
  *     messages, and chance games 1..3 per station, 4 the bonus for all.
  *     "demon100" (M100CN): the next key is 40, no asset key or push-to-pay,
  *     13 kinds, the reset (20) without a word.
+ *   - variant "skl2_8p" (Fish Hunter SKL2 8P M801CN, E2200): SKL2 for eight
+ *     stations with a Sentinel HASP key in place of the Sentinel Keys
+ *     dongle (Crazy Shoot's layout: read-only memory 0..15 the asset key,
+ *     16 / 20 the first keys, 24 the sum's start, 28 / 32 / 36 the words the
+ *     chip returns in message 46).  The 8-station arrays: inputs 16 bytes
+ *     (Test bit 104), credits 17 words (register 16), payout 16, push 8,
+ *     chance kinds 8 nibbles and 8 prizes, golden fish 9, errors 14,
+ *     version 7; the game's message 5 is 15 words (date 9, register 13, key
+ *     14); a catch is asked as player << 18 | shot << 8 | level and answered
+ *     player << 16 | shot << 6; messages 37, 42, 43, 45 become 38, 43, 44,
+ *     46.  The book: 24-word rows, 16-word chance blocks, 567 words.
  *   - all boot through the P2A loader, which checks DONE's word 1 against
  *     its upload's CRC (none uploaded: 0).
- *   - six stations; the chip's firmware is not dumped: its game logic is
+ *   - six (or eight) stations; the chip's firmware is not dumped: its game logic is
  *     rebuilt here.  Catches (message 13/25 -> 14) are drawn with
  *     probability RTP / value per fish, wins credited at value x bet; chance
  *     games, the bonus game, settings, the books (total, period, day) and
@@ -49,7 +60,8 @@
 
 #define RX_KEY 0x82675251u   /* ASIC -> game (m_rDecodeKey) */
 #define TX_KEY 0x80678267u   /* game -> ASIC (m_rEncodeKey) */
-#define SEATS     6          /* stations, and the protocol's arrays */
+#define MAXSEATS  8          /* stations: six, eight on SKL2 8P */
+#define SEATS     g.seats
 
 /*
  * SKL2's Sentinel dongle, data object 47 (decrypted by AES feature 43): 0..15
@@ -59,6 +71,15 @@
  * the plugin's own; the cabinet's dongle is not dumped.
  */
 static uint8_t dongle_raw[208];
+/*
+ * SKL2 8P's Sentinel HASP key (feature 2): the read-only memory (file
+ * 0xFFF5), 40 bytes that THaspKeyPro reads and hasp_decrypts (stored here
+ * as the plaintext, the key's encrypt / decrypt are the identity): 0..15
+ * the asset key, 16 the game's first key, 20 the chip's, 24 the running
+ * sum's start, 28 / 32 / 36 the words the chip returns in message 46.
+ * Invented values; the cabinet's key is not dumped.
+ */
+static uint8_t hasp_ro[112], hasp_rw[128];
 #define KINDS_MAX 17         /* fish kinds the catch messages count */
 
 static const struct e2100_api *api;
@@ -163,16 +184,26 @@ static const uint32_t set_default[NSET] = { 5, 1, 5, 1, 3, 0, 0, 0, 0, 0, 0, 0, 
  * (198, 216; no page shows them) and everything after moves up 36 words
  * (wheel 234, day count 287, records 456 words).
  */
-#define NREC_MAX 456
+#define NREC_MAX 600
 #define DAYS 42
-#define NROWS 11                      /* the 18-word rows 0..180 */
-enum { R_IN = 0, R_OUT = 18, R_COIN_IN = 36, R_COIN_OUT = 72, R_KEY_IN = 90, R_KEY_OUT = 108,
-       R_TICKET_OUT = 126, R_BET = 144, R_WIN = 162, R_SHOTS = 180 };
-/* + 12 (k - 1): times, + 6: won; k = 1 wheel, 2 task, 3 bomb, 4 golden */
-#define R_CHANCE      (198 + g.shift)
-#define R_JACKPOTS    (246 + g.shift)
-#define R_JACKPOT_WIN (247 + g.shift)
-#define R_LIGHT_GOLD  260                /* SKL2: the searchlight's golden fish */
+#define NROWS 11                      /* the 18-word rows 0..180 (SKL2 8P: 24-word rows 0..240) */
+/* row r starts at r * RW: RW = 3 stations' worth (total, this period, last period) */
+#define RW            (3 * SEATS)
+#define R_IN          0
+#define R_OUT         RW
+#define R_COIN_IN     (2 * RW)
+#define R_COIN_OUT    (4 * RW)
+#define R_KEY_IN      (5 * RW)
+#define R_KEY_OUT     (6 * RW)
+#define R_TICKET_OUT  (7 * RW)
+#define R_BET         (8 * RW)
+#define R_WIN         (9 * RW)
+#define R_SHOTS       (10 * RW)
+/* + 2 SEATS (k - 1): times, + SEATS: won; k = 1 wheel, 2 task, 3 bomb, 4 golden */
+#define R_CHANCE      (11 * RW + g.shift)
+#define R_JACKPOTS    (R_CHANCE + 8 * SEATS)
+#define R_JACKPOT_WIN (R_JACKPOTS + 1)
+#define R_LIGHT_GOLD  (R_JACKPOT_WIN + 1 + 2 * SEATS)   /* SKL2: the searchlight's golden fish */
 #define R_PLAY_TIME   g.r_play
 #define R_ON_TIME     (g.r_play + 1)
 #define R_DAY_COUNT   g.r_days
@@ -186,6 +217,8 @@ enum { D_IN, D_OUT, D_TICKETS };
 #define CATCHQ 32
 
 static struct {
+    int seats;                        /* stations: 6, SKL2 8P 8 */
+    int eight;                        /* variant skl2_8p: the HASP key and the 8-station layouts */
     int six;                          /* variants 6p, plus */
     int plus;                         /* variant plus: messages 38, 43, 44; the book's extra rows */
     int skl;                          /* variants skl ("6p"), sklcn ("cn2"): 14 fish kinds */
@@ -202,18 +235,18 @@ static struct {
     uint32_t rx_key, tx_key, rx_next; /* 6p */
     int rekey;
 
-    uint32_t input[10];               /* key 8j+b = input[j] bit b */
+    uint32_t input[16];               /* key 8j+b = input[j] bit b */
     uint32_t set[NSET];
     uint32_t rec[NREC_MAX];
-    long credit[SEATS];
-    uint32_t coins[SEATS];            /* coins toward the next credit (coin rate 2:1) */
-    uint32_t payout[12];              /* message 18: coins [0..5], tickets [6..11] */
-    uint32_t push[SEATS];             /* message 37: push-to-pay */
-    uint32_t last_bet[SEATS];
-    uint32_t chance[SEATS], chance_win[SEATS];
-    uint32_t big_fish[7];
+    long credit[MAXSEATS];
+    uint32_t coins[MAXSEATS];         /* coins toward the next credit (coin rate 2:1) */
+    uint32_t payout[2 * MAXSEATS];    /* message 18: coins [0..n-1], tickets [n..2n-1] */
+    uint32_t push[MAXSEATS];          /* message 37: push-to-pay */
+    uint32_t last_bet[MAXSEATS];
+    uint32_t chance[MAXSEATS], chance_win[MAXSEATS];
+    uint32_t big_fish[MAXSEATS + 1];  /* message 26: per station, then the total */
     uint32_t date;                    /* the game's yyyymmdd (message 5) */
-    double bet_down[SEATS];           /* bet key held since, for the bet-key coin-out */
+    double bet_down[MAXSEATS];        /* bet key held since, for the bet-key coin-out */
     int help;                         /* F1: the key help */
 
     /* replies queued for the next batch */
@@ -221,7 +254,7 @@ static struct {
     int credit_dirty, payout_dirty, chance_dirty, big_dirty, push_dirty;
     uint32_t catchq[CATCHQ][1 + (KINDS_MAX + 3) / 4];
     int ncatch;
-    uint32_t bonusq[SEATS][3];
+    uint32_t bonusq[MAXSEATS][3];
     int nbonus;
 
     uint32_t batches, state;
@@ -261,11 +294,11 @@ static void day_add(int col, uint32_t v)
     g.rec[R_DAY_COL + DAYS * col] += v;
 }
 
-/* an 18-word row: the station's total and this period */
+/* a row: the station's total and this period */
 static void rec_add(int row, int p, uint32_t v)
 {
     g.rec[row + p] += v;
-    g.rec[row + 6 + p] += v;
+    g.rec[row + SEATS + p] += v;
 }
 
 /* message 32 (the current book's Bet key held): this period becomes the last */
@@ -275,20 +308,20 @@ static void close_period(void)
 
     for (r = 0; r < NROWS; r++)
         for (p = 0; p < SEATS; p++) {
-            g.rec[18 * r + 12 + p] = g.rec[18 * r + 6 + p];
-            g.rec[18 * r + 6 + p] = 0;
+            g.rec[RW * r + 2 * SEATS + p] = g.rec[RW * r + SEATS + p];
+            g.rec[RW * r + SEATS + p] = 0;
         }
     LOG("period closed");
 }
 
-/* chance game k (1 tiny, 3 small, 4 big bomb, 5 bonus; SKL2 6 the all-station event) -> its 12-word block */
+/* chance game k (1 tiny, 3 small, 4 big bomb, 5 bonus; SKL2 6 the all-station event) -> its block (times, won) */
 static int chance_row(uint32_t k)
 {
-    if (k == 6)                       /* SKL2: after the jackpot pair, 248 */
+    if (k == 6)                       /* SKL2: after the jackpot pair, 248 (8P 378) */
         return R_JACKPOT_WIN + 1;
     if (g.demon)                      /* Demon Hunter: 1, 2, 3 per station, 4 the bonus */
-        return R_CHANCE + 12 * (k >= 1 && k <= 4 ? k - 1 : 3);
-    return R_CHANCE + 12 * (k == 1 ? 0 : k == 3 ? 1 : k == 4 ? 2 : 3);
+        return R_CHANCE + 2 * SEATS * (k >= 1 && k <= 4 ? k - 1 : 3);
+    return R_CHANCE + 2 * SEATS * (k == 1 ? 0 : k == 3 ? 1 : k == 4 ? 2 : 3);
 }
 
 /* ---- credits and the payout ----------------------------------------------------------- */
@@ -320,7 +353,7 @@ static long dispense(int p, long c, int tickets)
 
         n = t > 100 ? (uint32_t)c * (10 * t - 1000) : (uint32_t)c / t;
         used = t > 100 ? c : (long)n * t;
-        g.payout[6 + p] += n;
+        g.payout[SEATS + p] += n;
     }
     if (!n)
         return 0;
@@ -439,7 +472,7 @@ static void maybe_chance(int p, uint32_t bet)
                     chance_start(q, 4);
                     g.big_fish[q] = 1 + rand() % 3;            /* message 25: the station's jackpot pumpkins */
                 }
-            g.big_fish[6] = 40;                                /* and the pumpkins in all */
+            g.big_fish[SEATS] = 40;                            /* and the pumpkins in all */
             g.big_dirty = 1;
         } else {
             return;
@@ -470,7 +503,7 @@ static void maybe_chance(int p, uint32_t bet)
                 chance_start(q, 5);
                 g.big_fish[q] = 1 + rand() % 3;
             }
-        g.big_fish[6] = 40;
+        g.big_fish[SEATS] = 40;
         g.big_dirty = 1;
     }
     g.chance_dirty = 1;
@@ -485,7 +518,9 @@ static void maybe_chance(int p, uint32_t bet)
  */
 static void ask_catch(uint32_t type, const uint32_t *w)
 {
-    uint32_t p = (w[0] >> 16) & 0xFF, weapon = (w[0] >> 8) & 0xFF, level = w[0] & 0xFF;
+    /* SKL2 8P: player << 18 | shot << 8 (10 bits) | level, answered player << 16 | shot << 6 */
+    uint32_t p = g.eight ? w[0] >> 18 : (w[0] >> 16) & 0xFF;
+    uint32_t weapon = g.eight ? (w[0] >> 8) & 0x3FF : (w[0] >> 8) & 0xFF, level = w[0] & 0xFF;
     uint32_t bet = level % 100, k, *r;
     uint8_t hint[20], have[20], got[20];
     long v = 0;
@@ -518,10 +553,10 @@ static void ask_catch(uint32_t type, const uint32_t *w)
     }
     r = g.catchq[g.ncatch++];
     memset(r, 0, sizeof(g.catchq[0]));
-    r[0] = p << 16 | weapon << 8;
+    r[0] = p << 16 | weapon << (g.eight ? 6 : 8);
     memcpy(&r[1], got, 4 * g.fwords);
     if (type == 25 && g.chance[p] == 4 && !g.demon) /* the depth bomb's catch */
-        g.rec[chance_row(4) + 6 + p] += (uint32_t)v;
+        g.rec[chance_row(4) + SEATS + p] += (uint32_t)v;
     win(p, v);
     VLOG("player %u weapon %u level %u: win %ld", p + 1, weapon, level, v);
 }
@@ -539,10 +574,10 @@ static void message(struct e2100_channel *ch, uint32_t type, uint32_t len, const
         g.want_version = 1;
         break;
     case 5:                                       /* every batch: state, bets, date, flags (6p: next register, key) */
-        if (len < 11)
+        if (len < (g.eight ? 15u : 11u))
             break;
         g.state = w[0];
-        g.date = w[7];
+        g.date = w[1 + SEATS];                    /* 8P: bets 1..8, the date 9 */
         for (i = 0; i < SEATS; i++) {
             uint32_t b = w[1 + i], cost;
 
@@ -557,7 +592,10 @@ static void message(struct e2100_channel *ch, uint32_t type, uint32_t len, const
                 maybe_chance(i, cost);
             }
         }
-        if (g.six && len >= 13) {
+        if (g.eight) {                            /* 8P: the next register 13, key 14 */
+            ch->tx_idx = w[13] & 0x3F;
+            g.tx_key = w[14];
+        } else if (g.six && len >= 13) {
             ch->tx_idx = w[11] & 0x3F;
             g.tx_key = w[12];
         }
@@ -611,13 +649,16 @@ static void message(struct e2100_channel *ch, uint32_t type, uint32_t len, const
                     if (g.demon ? g.chance[i] == 4 : g.chance[i] == 5 || g.chance[i] == 6)
                         g.chance[i] = 0;
                 memset(g.big_fish, 0, sizeof(g.big_fish));
+            } else if (v == 0xFF0E) {             /* the station's assigned game timed out (SKL2): no prize */
+                if (p < SEATS)
+                    g.chance[p] = g.chance_win[p] = 0;
             } else if (p < SEATS) {
                 long wv = (long)v * (g.last_bet[p] ? g.last_bet[p] : 1);  /* the wheel's win, in fish values */
 
                 if (g.chance[p] == 3)
                     wv += g.chance_win[p];
                 if (g.chance[p] && (g.demon || (g.chance[p] != 5 && g.chance[p] != 6)))
-                    g.rec[chance_row(g.chance[p]) + 6 + p] += (uint32_t)wv;
+                    g.rec[chance_row(g.chance[p]) + SEATS + p] += (uint32_t)wv;
                 win(p, wv);
                 g.chance[p] = 0;
                 g.chance_win[p] = 0;
@@ -648,7 +689,7 @@ static void message(struct e2100_channel *ch, uint32_t type, uint32_t len, const
             g.nbonus++;
             b = g.last_bet[p] ? g.last_bet[p] : 1;
             v = (long)(10 * c0 + 100 * c1) * b;
-            g.rec[chance_row(light ? 6 : g.demon ? 4 : 5) + 6 + p] += (uint32_t)v;
+            g.rec[chance_row(light ? 6 : g.demon ? 4 : 5) + SEATS + p] += (uint32_t)v;
             if (c1 && light) {
                 g.rec[R_LIGHT_GOLD]++;                /* beside the searchlight's total */
             } else if (c1) {
@@ -665,8 +706,8 @@ static void message(struct e2100_channel *ch, uint32_t type, uint32_t len, const
     case 46:                                      /* SKL2: the dongle's words 188, 192, 196 (the chip answers them in 45) */
         break;
     case 44:                                      /* SKL2, at start: the MAC, as plus's 45 */
-    case 45:                                      /* plus, at start: eth0's (else eth1's) MAC, bytes 0..3 and 4..5 */
-        if ((type == 45) == !g.skl2 && len >= 2)
+    case 45:                                      /* plus, SKL2 8P, at start: eth0's (else eth1's) MAC, bytes 0..3 and 4..5 */
+        if ((type == 45) == (!g.skl2 || g.eight) && len >= 2)
             VLOG("game MAC %02x:%02x:%02x:%02x:%02x:%02x", w[0] & 0xFF, w[0] >> 8 & 0xFF, w[0] >> 16 & 0xFF,
                 w[0] >> 24, w[1] & 0xFF, w[1] >> 8 & 0xFF);
         break;
@@ -688,17 +729,17 @@ static uint32_t pack(uint32_t *w, const uint8_t *b, uint32_t n)
 
 static void add_input(struct e2100_batch *b)
 {
-    uint32_t w[10];
-    uint8_t keys[10];
-    int i;
+    uint32_t w[16];
+    uint8_t keys[16];
+    int i, n = g.eight ? 16 : 10;                 /* 8P: 16 bytes, 112 keys */
 
     if (!g.six) {
         api->batch_add(b, 2, g.input, 10);
         return;
     }
-    for (i = 0; i < 10; i++)
+    for (i = 0; i < n; i++)
         keys[i] = (uint8_t)g.input[i];
-    api->batch_add(b, 2, w, pack(w, keys, 10));
+    api->batch_add(b, 2, w, pack(w, keys, n));
 }
 
 static void add_version(struct e2100_batch *b)
@@ -706,11 +747,12 @@ static void add_version(struct e2100_batch *b)
     static const char ver[8] = "FH6-036", rom[8] = "HLE";
     uint32_t w[19], i;
 
-    if (g.six) {                                  /* [fuse << 16, version, rom] */
+    if (g.six) {                                  /* [fuse << 16, version, rom] (8P: two words more, unused) */
         w[0] = 0;
         memcpy(&w[1], ver, 8);
         memcpy(&w[3], rom, 8);
-        api->batch_add(b, 4, w, 5);
+        w[5] = w[6] = 0;
+        api->batch_add(b, 4, w, g.eight ? 7 : 5);
         return;
     }
     memset(w, 0, sizeof(w));                      /* 8 chars, 8 chars, fuse, two words */
@@ -739,29 +781,34 @@ static void build(struct e2100_channel *ch, struct e2100_batch *b)
             g.rekey = 1;
             api->batch_add(b, g.msg_key, &g.rx_next, 1);
             for (i = 0; i < 16; i++)
-                w[i] = g.skl2 ? dongle_raw[i] : akey[i];
+                w[i] = g.eight ? hasp_ro[i] : g.skl2 ? dongle_raw[i] : akey[i];
             if (g.msg_akey)                       /* M100CN has none: its FPGA key is its own */
                 api->batch_add(b, g.msg_akey, w, 16);
-            /* SKL2: the dongle's words 188, 192, 196; the game hangs unless they match */
-            if (g.skl2)
+            /* SKL2: the dongle's words 188, 192, 196 (8P: the HASP key's 28, 32, 36);
+               the game hangs unless they match */
+            if (g.eight)
+                api->batch_add(b, 46, (const uint32_t *)(hasp_ro + 28), 3);
+            else if (g.skl2)
                 api->batch_add(b, 45, (const uint32_t *)(dongle_raw + 188), 3);
         }
     }
     /* the payout runs down, one ticket or coin every 100 ms */
     if (now - g.last_tick >= 0.1) {
         g.last_tick = now;
-        for (i = 0; i < 12; i++)
+        for (i = 0; i < 2u * SEATS; i++)
             if (g.payout[i]) {
+                uint32_t p = i % SEATS;
+
                 g.payout[i]--;
-                if (i < 6) {
-                    rec_add(R_COIN_OUT, i, 1);
+                if (i < (uint32_t)SEATS) {
+                    rec_add(R_COIN_OUT, p, 1);
                 } else {
-                    rec_add(R_TICKET_OUT, i - 6, 1);
+                    rec_add(R_TICKET_OUT, p, 1);
                     day_add(D_TICKETS, 1);
                 }
                 /* the station is free again when its payout is through */
-                if (!g.payout[i % 6] && !g.payout[6 + i % 6] && g.push[i % 6]) {
-                    g.push[i % 6] = 0;
+                if (!g.payout[p] && !g.payout[SEATS + p] && g.push[p]) {
+                    g.push[p] = 0;
                     g.push_dirty = 1;
                 }
                 g.payout_dirty = 1;
@@ -798,7 +845,7 @@ static void build(struct e2100_channel *ch, struct e2100_batch *b)
     }
     if (g.want_errors) {                          /* ErrorPC: no master or station errors */
         memset(w, 0, 40 * 4);
-        api->batch_add(b, 15, w, g.six ? 12 : 40);
+        api->batch_add(b, 15, w, g.eight ? 14 : g.six ? 12 : 40);
         g.want_errors = 0;
     }
     if (g.want_reset) {
@@ -809,14 +856,14 @@ static void build(struct e2100_channel *ch, struct e2100_batch *b)
     if (g.credit_dirty) {                         /* per station a coin flag and the credits (6p: + register) */
         for (i = 0; i < SEATS; i++) {
             w[i] = 0;
-            w[6 + i] = (uint32_t)g.credit[i];
+            w[SEATS + i] = (uint32_t)g.credit[i];
         }
-        w[12] = ch->rx_idx;
-        api->batch_add(b, 6, w, g.six ? 13 : 12);
+        w[2 * SEATS] = ch->rx_idx;
+        api->batch_add(b, 6, w, 2 * SEATS + (g.six ? 1 : 0));
         g.credit_dirty = 0;
     }
     if (g.payout_dirty) {
-        api->batch_add(b, 18, g.payout, 12);
+        api->batch_add(b, 18, g.payout, 2 * SEATS);
         g.payout_dirty = 0;
     }
     if (g.push_dirty && !g.packed && g.msg_push) {
@@ -824,24 +871,24 @@ static void build(struct e2100_channel *ch, struct e2100_batch *b)
         g.push_dirty = 0;
     }
     if (g.big_dirty) {
-        api->batch_add(b, g.msg_big, g.big_fish, 7);
+        api->batch_add(b, g.msg_big, g.big_fish, SEATS + 1);
         g.big_dirty = 0;
     }
     if (g.chance_dirty && g.skl2) {               /* SKL2: kinds as nibbles, prizes as halfwords */
-        memset(w, 0, 4 * 4);
+        memset(w, 0, 5 * 4);
         for (i = 0; i < SEATS; i++) {
             w[0] |= (g.chance[i] & 0xF) << (4 * i);
             w[1 + i / 2] |= (g.chance_win[i] & 0xFFFF) << (16 * (i & 1));
         }
-        api->batch_add(b, 23, w, 4);
+        api->batch_add(b, 23, w, 1 + SEATS / 2);
         g.chance_dirty = 0;
     }
     if (g.chance_dirty) {
         for (i = 0; i < SEATS; i++) {
             w[i] = g.chance[i];
-            w[6 + i] = g.chance_win[i];
+            w[SEATS + i] = g.chance_win[i];
         }
-        api->batch_add(b, 23, w, 12);
+        api->batch_add(b, 23, w, 2 * SEATS);
         g.chance_dirty = 0;
     }
     while (g.ncatch && b->npayload + 1 + g.fwords <= E2100_BATCH_MAX && b->nhdrs < 16) {
@@ -870,6 +917,8 @@ static void build(struct e2100_channel *ch, struct e2100_batch *b)
 #define PAYOUT FK_PAYOUT
 #define keymap fish_keymap
 
+static void key_bit(int bit, int down);
+
 static void key(int sym, int down)
 {
     unsigned i;
@@ -879,11 +928,32 @@ static void key(int sym, int down)
             g.help = !g.help;
         return;
     }
-    for (i = 0; i < sizeof(keymap) / sizeof(keymap[0]); i++) {
-        int bit = keymap[i].bit, p = bit & 0xFF;
+    for (i = 0; i < sizeof(keymap) / sizeof(keymap[0]); i++)
+        if (keymap[i].sym == sym)
+            key_bit(g.eight && keymap[i].bit == 78 ? 104 : keymap[i].bit, down);   /* 8P: Test is 104 */
+    if (g.eight)
+        for (i = 0; i < sizeof(fish_keymap8) / sizeof(fish_keymap8[0]); i++)
+            if (fish_keymap8[i].sym == sym)
+                key_bit(fish_keymap8[i].bit, down);
+}
 
-        if (keymap[i].sym != sym)
-            continue;
+static void key_bit(int bit, int down)
+{
+    /* SKL2 8P: the cabinet's station labels 1..8 (the key help's rows) are
+       the protocol's stations 0, 6, 1, 5, 3, 7, 4, 2 (the I/O test page, the
+       books' columns) */
+    static const int label8[8] = { 0, 6, 1, 5, 3, 7, 4, 2 };
+    int p;
+
+    if (g.eight) {
+        if (bit & (COIN | KEYIN | KEYOUT | PAYOUT))
+            bit = (bit & ~0xFF) | label8[bit & 7];
+        else if (bit < 64)
+            bit = 8 * label8[bit >> 3] + (bit & 7);
+    }
+    p = bit & 0xFF;
+
+    {                                             /* a station's key, or a chip action */
         if (bit & COIN) {
             if (down) {
                 const uint32_t *r = coin_rate[g.set[S_COIN] < NCOIN ? g.set[S_COIN] : 0];
@@ -941,9 +1011,14 @@ static void draw(int w, int h)
         fish_keys_draw(api->core, h, g.demon ? 4 : SEATS);
 }
 
-static void status(char *buf, size_t n){
-    snprintf(buf, n, "credits %ld / %ld / %ld / %ld / %ld / %ld",
-             g.credit[0], g.credit[1], g.credit[2], g.credit[3], g.credit[4], g.credit[5]);
+static void status(char *buf, size_t n)
+{
+    size_t o;
+    int i;
+
+    o = (size_t)snprintf(buf, n, "credits");
+    for (i = 0; i < SEATS && o < n; i++)
+        o += (size_t)snprintf(buf + o, n - o, "%s%ld", i ? " / " : " ", g.credit[i]);
 }
 
 static struct e2100_game game = {
@@ -984,6 +1059,72 @@ static void dongle(void)
         LOG("cannot emulate the Sentinel dongle");
 }
 
+/* ---- SKL2 8P's HASP key, at the HASP client's API (statically linked) ------------------- */
+
+#define HASP_FILEID_RW 0xFFF4
+#define HASP_FILEID_RO 0xFFF5
+
+static int hasp_login(int feature, const void *vendor, int *handle)
+{
+    (void)vendor;
+    VLOG("hasp_login feature %d", feature);
+    if (handle)
+        *handle = 1;
+    return 0;
+}
+
+static int hasp_logout(int handle) { (void)handle; return 0; }
+
+static int hasp_read(int handle, int file, unsigned off, unsigned len, void *buf)
+{
+    const uint8_t *m = file == HASP_FILEID_RW ? hasp_rw : hasp_ro;
+    size_t n = file == HASP_FILEID_RW ? sizeof(hasp_rw) : sizeof(hasp_ro);
+
+    (void)handle;
+    if (file != HASP_FILEID_RW && file != HASP_FILEID_RO)
+        return 9;                                 /* HASP_INV_FILEID */
+    if ((size_t)off + len > n)
+        return 8;                                 /* HASP_MEM_RANGE */
+    memcpy(buf, m + off, len);
+    return 0;
+}
+
+static int hasp_write(int handle, int file, unsigned off, unsigned len, const void *buf)
+{
+    (void)handle;
+    if (file != HASP_FILEID_RW)
+        return 9;
+    if ((size_t)off + len > sizeof(hasp_rw))
+        return 8;
+    memcpy(hasp_rw + off, buf, len);
+    return 0;
+}
+
+static int hasp_crypt(int handle, void *buf, int len) { (void)handle; (void)buf; (void)len; return 0; }
+
+static void hasp_install(void)
+{
+    /* the client's entries in M801CN's executable (THaspKeyPro's callers, 0x806A750..) */
+    static const struct { uint32_t addr; void *fn; } api_[] = {
+        { 0x8214880, (void *)hasp_login }, { 0x8214820, (void *)hasp_logout },
+        { 0x8213750, (void *)hasp_read }, { 0x82136A0, (void *)hasp_write },
+        { 0x8214780, (void *)hasp_crypt }, { 0x8214700, (void *)hasp_crypt },
+    };
+    static const uint32_t words[3] = { 0x534B4C38, 0x46485038, 0x00000801 };   /* invented */
+    uint32_t v;
+    unsigned i;
+
+    memcpy(hasp_ro, "FishHunterSKL2-8", 16);
+    v = TX_KEY;
+    memcpy(hasp_ro + 16, &v, 4);
+    v = RX_KEY;
+    memcpy(hasp_ro + 20, &v, 4);
+    memcpy(hasp_ro + 28, words, 12);
+    for (i = 0; i < sizeof(api_) / sizeof(api_[0]); i++)
+        if (!CORE->hook || CORE->hook(api_[i].addr, api_[i].fn))
+            LOG("cannot hook the HASP client at 0x%08x", api_[i].addr);
+}
+
 __attribute__((visibility("default")))
 const struct e2100_game *e2100_game_entry(const struct e2100_api *a)
 {
@@ -992,26 +1133,33 @@ const struct e2100_game *e2100_game_entry(const struct e2100_api *a)
     int i;
 
     api = a;
+    g.eight = v && !strcmp(v, "skl2_8p");
+    g.seats = g.eight ? 8 : 6;
     g.plus = v && !strcmp(v, "plus");
     g.skl = v && (!strcmp(v, "skl") || !strcmp(v, "sklcn"));
-    g.skl2 = v && !strcmp(v, "skl2");
+    g.skl2 = v && (!strcmp(v, "skl2") || g.eight);
     g.demon = v && (!strcmp(v, "demon") || !strcmp(v, "demon100"));
     g.demon100 = v && !strcmp(v, "demon100");
     g.six = g.plus || g.skl2 || g.demon || (v && (!strcmp(v, "6p") || !strcmp(v, "skl")));
     g.packed = !v || !strcmp(v, "cn");
-    g.shift = g.plus ? 36 : 0;
-    g.msg_push = g.plus ? 38 : g.demon100 ? 0 : g.demon ? 36 : 37;
-    g.msg_key = g.plus ? 43 : g.demon100 ? 40 : g.demon ? 41 : 42;
-    g.msg_akey = g.plus ? 44 : g.demon100 ? 0 : g.demon ? 42 : 43;
+    g.shift = g.plus || g.eight ? 2 * RW : 0;    /* two more rows before the chance games */
+    g.msg_push = g.plus || g.eight ? 38 : g.demon100 ? 0 : g.demon ? 36 : 37;
+    g.msg_key = g.plus || g.eight ? 43 : g.demon100 ? 40 : g.demon ? 41 : 42;
+    g.msg_akey = g.plus || g.eight ? 44 : g.demon100 ? 0 : g.demon ? 42 : 43;
     g.msg_big = g.demon ? 25 : 26;
     g.msg_gold = g.demon ? 34 : 35;
     g.rx0 = g.demon ? 0xCD4CABEDu : RX_KEY;
     g.tx0 = g.demon ? 0xADECB0A7u : TX_KEY;
     /* Demon Hunter M100CN: 13 kinds, Plus 6P's values (FishInfo at 0x82C6320, 24-byte rows, the value at +12) */
     value = g.plus || g.demon100 ? value_plus : g.skl ? value_skl : g.skl2 ? value_skl2 : g.demon ? value_demon : value_fh6;
-    g.r_play = g.skl2 ? 261 : 248 + g.shift;
-    g.r_days = g.skl2 ? 264 : 251 + g.shift;
-    if (g.skl2) {
+    g.r_play = g.skl2 ? R_LIGHT_GOLD + 1 : R_JACKPOT_WIN + 1;   /* SKL2 261 (8P 395), else 248 + shift */
+    g.r_days = g.r_play + 3;
+    if (g.eight) {
+        /* the HASP key is read before the card is opened; the executable is mapped */
+        hasp_install();
+        game.name = "Fish Hunter SKL2 8P";
+        game.handshake = E2100_HS_ADV;
+    } else if (g.skl2) {
         /* the game reads the dongle before it opens the card; the executable is mapped */
         dongle();
         game.name = "Fish Hunter SKL2";

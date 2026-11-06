@@ -812,6 +812,83 @@ static size_t l___strftime_l(char *s, size_t n, const char *fmt, const struct l_
     (void)l;
     return l_strftime(s, n, fmt, t);
 }
+
+/* strptime: the numeric fields, month and weekday names, %%, white space and literals */
+static const char *const tm_mon_names[12] = {
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+};
+static const char *const tm_day_names[7] = { "sun", "mon", "tue", "wed", "thu", "fri", "sat" };
+
+static const char *tm_num(const char *s, int maxdig, int lo, int hi, int32_t *out)
+{
+    int v = 0, n = 0, neg = 0;
+
+    while (*s == ' ')
+        s++;
+    if (*s == '-' || *s == '+')
+        neg = *s++ == '-';
+    while (n < maxdig && *s >= '0' && *s <= '9') {
+        v = v * 10 + (*s++ - '0');
+        n++;
+    }
+    if (!n || (neg ? -v : v) < lo || (neg ? -v : v) > hi)
+        return NULL;
+    *out = neg ? -v : v;
+    return s;
+}
+
+static const char *tm_name(const char *s, const char *const *names, int count, int32_t *out)
+{
+    int i;
+    size_t k;
+
+    for (i = 0; i < count; i++) {
+        if (_strnicmp(s, names[i], 3))
+            continue;
+        *out = i;
+        for (k = 3; isalpha((unsigned char)s[k]); k++)
+            ;
+        return s + k;             /* the abbreviation or the full name */
+    }
+    return NULL;
+}
+
+static char *l_strptime(const char *s, const char *fmt, struct l_tm *t)
+{
+    int32_t v;
+
+    for (; s && *fmt; fmt++) {
+        if (isspace((unsigned char)*fmt)) {
+            while (isspace((unsigned char)*s))
+                s++;
+            continue;
+        }
+        if (*fmt != '%') {
+            if (*s++ != *fmt)
+                return NULL;
+            continue;
+        }
+        switch (*++fmt) {
+        case 'Y': if ((s = tm_num(s, 4, 0, 9999, &v))) t->tm_year = v - 1900; break;
+        case 'y': if ((s = tm_num(s, 2, 0, 99, &v))) t->tm_year = v < 69 ? v + 100 : v; break;
+        case 'm': if ((s = tm_num(s, 2, 1, 12, &v))) t->tm_mon = v - 1; break;
+        case 'd': case 'e': s = tm_num(s, 2, 1, 31, &t->tm_mday); break;
+        case 'H': s = tm_num(s, 2, 0, 23, &t->tm_hour); break;
+        case 'M': s = tm_num(s, 2, 0, 59, &t->tm_min); break;
+        case 'S': s = tm_num(s, 2, 0, 61, &t->tm_sec); break;
+        case 'j': if ((s = tm_num(s, 3, 1, 366, &v))) t->tm_yday = v - 1; break;
+        case 'b': case 'B': case 'h': s = tm_name(s, tm_mon_names, 12, &t->tm_mon); break;
+        case 'a': case 'A': s = tm_name(s, tm_day_names, 7, &t->tm_wday); break;
+        case 'n': case 't': while (isspace((unsigned char)*s)) s++; break;
+        case 'D': s = l_strptime(s, "%m/%d/%y", t); break;
+        case 'T': s = l_strptime(s, "%H:%M:%S", t); break;
+        case 'R': s = l_strptime(s, "%H:%M", t); break;
+        case '%': if (*s++ != '%') return NULL; break;
+        default: return NULL;
+        }
+    }
+    return (char *)s;
+}
 static double l___strtod_l(const char *s, char **e, void *l) { (void)l; return strtod(s, e); }
 static float l___strtof_l(const char *s, char **e, void *l) { (void)l; return strtof(s, e); }
 static long double l___strtold_l(const char *s, char **e, void *l) { (void)l; return strtold(s, e); }
@@ -1721,7 +1798,7 @@ const struct nsym libc_syms[] = {
     N(__newlocale), N(__duplocale), N(__freelocale), N(__uselocale), NA(newlocale, l___newlocale),
     NA(duplocale, l___duplocale), NA(freelocale, l___freelocale), NA(uselocale, l___uselocale),
     N(setlocale), N(nl_langinfo), N(__nl_langinfo_l), N(__strcoll_l), N(__strxfrm_l),
-    N(strftime), N(__strftime_l), N(__strtod_l), N(__strtof_l), N(__strtold_l),
+    N(strftime), N(__strftime_l), N(strptime), N(__strtod_l), N(__strtof_l), N(__strtold_l),
     NA(strtold_l, l___strtold_l), N(__ctype_get_mb_cur_max), N(__strtol_l), N(__strtoul_l),
     N(__strtoll_l), N(__strtoull_l), N(__rawmemchr),
     N(__towlower_l), N(__towupper_l), N(towlower), N(towupper), N(__wctype_l), N(wctype),

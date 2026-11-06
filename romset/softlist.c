@@ -3,7 +3,7 @@
  * subset of MAME's softlist format the loader uses.
  *
  *   <softwarelist name="e2100" description="...">
- *     <software name="id" [cloneof="parent"]>
+ *     <software name="id" [cloneof="parent"] [supported="no"]>
  *       <description>..</description> <year>..</year> <publisher>..</publisher>
  *       <info name="version" value=".."/>  (every <info> is kept; "tunable" is parsed)
  *       <sharedfeat name=".." value=".."/>
@@ -66,6 +66,11 @@ const char *sw_info_value(const struct sw_info *sw, const char *name, const char
     return def;
 }
 
+int sw_runnable(const struct sw_info *sw)
+{
+    return !sw || !sw->supported || strcmp(sw->supported, "no");
+}
+
 void sw_free(void)
 {
     int i, j;
@@ -76,6 +81,7 @@ void sw_free(void)
         free(s->list);
         free(s->name);
         free(s->cloneof);
+        free(s->supported);
         free(s->description);
         free(s->year);
         free(s->publisher);
@@ -293,6 +299,7 @@ static int start_el(struct xp *x, struct state *st, const char *tag, const struc
         sw->list = strdup(st->list);
         sw->name = strdup(n);
         sw->cloneof = dupnull(aget(a, "cloneof"));
+        sw->supported = dupnull(aget(a, "supported"));
         st->sw_depth = st->depth;
     } else if (sw) {
         if (!strcmp(tag, "description") || !strcmp(tag, "year") || !strcmp(tag, "publisher")) {

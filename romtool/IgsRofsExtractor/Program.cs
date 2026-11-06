@@ -181,6 +181,45 @@ sealed record RofsProfile(
             Table: (0x00, 1, 0xBAA513A0),
             EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
             PageTableWord: 2, EncryptedHead: 0xA0),
+        // Ocean King (E2200; also Poseidon, Full Attack).  Crazy Shoot's
+        // design; page ends are word 3.
+        new("oceanking", "OceanKingRFOSysK",
+            MagicBlock: 0xD8, MagicWord: 1,
+            FirstRecord: 0x150, HeaderSize: 0x78, ModeOffset: 0x74,
+            NameLength: (0x20, 0, 0x1069E4F0),
+            Size: (0x50, 0, 0xDBEC369E),
+            Table: (0x40, 1, 0xB5CF8A8D),
+            EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
+            PageTableWord: 3, EncryptedHead: 0xA0),
+        // Soul of Gun (E2200).  Crazy Shoot's design; page ends are word 1.
+        new("soulofgun", "FSV2SoulRO-OfGun",
+            MagicBlock: 0x100, MagicWord: 0,
+            FirstRecord: 0x150, HeaderSize: 0x78, ModeOffset: 0x74,
+            NameLength: (0x50, 2, 0xA2963B4A),
+            Size: (0x30, 1, 0x1C937DAD),
+            Table: (0x00, 3, 0x03301B0B),
+            EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
+            PageTableWord: 1, EncryptedHead: 0xA0),
+        // Westtrip (E2200).  Crazy Shoot's design, magic block unaligned at
+        // 0x58; page ends are word 1.
+        new("westtrip", "MakeWestRFOSTrip",
+            MagicBlock: 0x58, MagicWord: 2,
+            FirstRecord: 0x150, HeaderSize: 0x78, ModeOffset: 0x74,
+            NameLength: (0x50, 3, 0x27EB5867),
+            Size: (0x30, 0, 0x27EC5B59),
+            Table: (0x00, 0, 0x00F2465A),
+            EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
+            PageTableWord: 1, EncryptedHead: 0xA0),
+        // Fish Hunter SKL2 8P (E2200).  Crazy Shoot's design moved by 8: the
+        // mode leads the record and its AES blocks start at +8.
+        new("fishskl2_8p", "8PFishSKLv2InOST",
+            MagicBlock: 0x58, MagicWord: 2,
+            FirstRecord: 0x150, HeaderSize: 0x78, ModeOffset: 0x00,
+            NameLength: (0x28, 1, 0xD3A4465C),
+            Size: (0x08, 3, 0x531CABC7),
+            Table: (0x48, 2, 0x034FC930),
+            EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
+            PageTableWord: 1, EncryptedHead: 0xA0),
     ];
 }
 

@@ -890,6 +890,31 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		</part>
 	</software>
 
+	<software name="sangomario">
+		<description>SangoMario (recovered)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="usage" value="SangoMario"/>
+		<info name="tunable" value="SANGO_BET_SECONDS int 20 length of the betting countdown, seconds"/>
+		<info name="tunable" value="SANGO_COIN int 10 credits per coin"/>
+		<info name="tunable" value="SANGO_CREDITS int 0 starting credits"/>
+		<info name="tunable" value="SANGO_PANEL bool 1 show the player panel (Tab toggles)"/>
+		<info name="tunable" value="SANGO_SEAL_RATE int 0 [Testing] jade-seal rounds, 1 in N (0 off: their bonus scene hangs without the lost Award banks)"/>
+		<info name="tunable" value="SANGO_RESULT int - [Testing] force every result (0-11, 12 the jade seal)"/>
+		<info name="tunable" value="SANGO_STAGE int - [Testing] force the status stage (with SANGO_STEP)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="sangomario"/>
+			<!-- not dumped: carved from an older filesystem left in Westtrip MD018CN's p3 free space (wiki SangoMario) -->
+			<feature name="data" value="/SangoMario"/>
+			<feature name="binary" value="SangoMario"/>
+			<feature name="asset_mask" value="d6467a35a3f0567e9770edd09d26564e"/>
+			<dataarea name="files">
+				<rom name="/SangoMario/SangoMario" size="3018324" sha1="f27b2351c09bc15a1cc2766814a32077022142b4"/>
+				<rom name="/SangoMario/asic36.bin" size="524288" sha1="edfaf28e3ab71b4fa0e386b92a3310b138457449"/>
+			</dataarea>
+		</part>
+	</software>
+
 	<software name="scratch_m101cn">
 		<description>Scratch (M101CN)</description>
 		<year>2012</year>

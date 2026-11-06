@@ -182,7 +182,8 @@ def chd_data_sha1(path):
     if h[:8] != b'MComprHD':
         sys.exit('%s: not a CHD' % path)
     version, = struct.unpack_from('>I', h, 12)
-    return h[64:84].hex() if version == 5 else None
+    # the raw data SHA-1: v5 at 64, v4 at 88; v3 has only the data SHA-1, at 80
+    return {5: h[64:84], 4: h[88:108], 3: h[80:100]}.get(version, b'').hex() or None
 
 
 def chd_to_img(chd, img):

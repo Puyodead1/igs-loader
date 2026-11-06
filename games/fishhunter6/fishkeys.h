@@ -1,7 +1,7 @@
 /*
  * The six-station fish cabinets' keys (Fish Hunter 6, Fish Hunter Final 6):
  * SDL 1.2 key symbols -> input bits (Player_KeySeq: station p bits 8p+0..5
- * = up, down, right, left, bet, fire; 78 = Test), or a chip action for a
+ * = up, down, right, left, bet, fire; 78 = Test, 104 on eight stations), or a chip action for a
  * station: coin, key-in, key-out, the payout key.  And the key help.
  */
 #ifndef FISHKEYS_H
@@ -33,6 +33,16 @@ static const struct { int sym; int bit; } fish_keymap[] = {
     { '[', FK_PAYOUT | 4 }, { ']', FK_PAYOUT | 5 },
 };
 
+/* eight-station cabinets (Fish Hunter SKL2 8P): stations 7 and 8, bits 48..61 */
+static const struct { int sym; int bit; } fish_keymap8[] = {
+    { ',', 51 }, { '.', 50 }, { ';', 48 }, { '/', 49 }, { 'c', 52 }, { 'p', 53 },
+    { 263, 59 }, { 265, 58 }, { 267, 56 }, { 268, 57 }, { 269, 60 }, { 270, 61 },   /* KP7 KP9 KP/ KP* KP- KP+ */
+    { '1', FK_COIN | 6 }, { '2', FK_COIN | 7 },
+    { 284, FK_KEYIN | 6 }, { 285, FK_KEYIN | 7 },                                    /* F3, F4 */
+    { '`', FK_KEYOUT | 6 }, { 8, FK_KEYOUT | 7 },                                     /* Backspace */
+    { '\\', FK_PAYOUT | 6 }, { '\'', FK_PAYOUT | 7 },
+};
+
 /* the key help, top left (the overlay's y runs up), for the first n stations */
 static void fish_keys_draw(const struct igs_core *c, int h, int n)
 {
@@ -44,6 +54,8 @@ static void fish_keys_draw(const struct igs_core *c, int h, int n)
         "4  KP4 6   KP8 2   KP0  KP. 8    F8 T   F12",
         "5  Del PgD Hom End Ins  PgU 9    -  U   [",
         "6  H M     Y N     X    Z   0    =  O   ]",
+        "7  , .     ; /     P    C   1    F3 `   \\",
+        "8  KP7 9   KP/ *   KP+  KP- 2    F4 Bs  '",
         "F2 menu  F1 hide this",
     };
     int i, y, rows = n + 2;
@@ -51,7 +63,7 @@ static void fish_keys_draw(const struct igs_core *c, int h, int n)
     y = h - 4 - rows * c->font_h;
     c->fill(0, y - 4, 45 * c->font_w, rows * c->font_h + 8, 0, 0, 0, 0.6f);
     for (i = 0; i < rows; i++)
-        c->text(6, y + (rows - 1 - i) * c->font_h + 6, lines[i == rows - 1 ? 7 : i], 1, 1, 0.6f);
+        c->text(6, y + (rows - 1 - i) * c->font_h + 6, lines[i == rows - 1 ? 9 : i], 1, 1, 0.6f);
 }
 
 #endif

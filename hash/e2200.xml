@@ -46,4 +46,663 @@ E2100 board's PC side).  Format: see hash/e2100.xml and wiki Loader,
 		</part>
 	</software>
 
+	<software name="fishhunterskl2_m801cn">
+		<description>Fish Hunter SKL2 8P (M801CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M801CN"/>
+		<info name="usage" value="Fish-Hunter-SKL2-8P"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb, super golden fish or searchlight); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5|6 0 [Testing] the chance game to start: 0 any, 1 lucky wheel, 3 fish-hunt task, 4 depth bomb, 5 super golden fish, 6 searchlight"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter6"/>
+			<!-- FishSKLv2-8p: SKL2 for eight stations; a Sentinel HASP key; the executable is assembled at boot (E2000 style) and FPGA-encrypted -->
+			<feature name="variant" value="skl2_8p"/>
+			<feature name="asset_mask" value="cb0568fc51aff735e90a08ab338922ef"/>
+			<feature name="rofs_profile" value="fishskl2_8p"/>
+			<feature name="rofs_key" value="8PFishSKLv2InOST"/>
+			<feature name="data" value="/FishSKLv2-8p"/>
+			<feature name="binary" value="FHSKLv2-8p"/>
+			<feature name="exe_mask" value="82137c54650dbb103575e5efaaf36644"/>
+			<feature name="head_part" value="p3"/>
+			<feature name="head_sector" value="1921665"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="851462739"/>
+			<feature name="piece_file" value="/usr/lib/libshadow%s.so"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="5"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="32"/>
+			<feature name="cut_step" value="-2"/>
+			<!-- the kernel: /usr/bin/x86ld writes /mnt/head (p3 sector 1921665) and /mnt/GECA (p3 sector 1910562 + /sbin/smbclient); GECA cats head + the cut libshadow pieces into /FishSKLv2-8p/fish, which the kernel FPGA-decrypts into the /FishSKLv2-8pBin tmpfs -->
+			<feature name="build" value="root p2; assemble /FishSKLv2-8p/fish; decrypt /FishSKLv2-8p/fish /FishSKLv2-8pBin/FHSKLv2-8p 3403004; mount p3 /FishSKLv2-8p"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_fishhunterskl2_m801cn" sha1="901d594338f190786db7c90633e3a90ece226438"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/FishSKLv2-8pBin/FHSKLv2-8p" size="3403004" sha1="63526f608f3cb0dc06d35cade18edf287ae73c54"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="oceanking_m817cn" supported="no">
+		<description>Ocean King (M817CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M817CN"/>
+		<info name="usage" value="Ocean-King"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="7f1ed8a4b17495e9b63b965109c9c086"/>
+			<feature name="rofs_profile" value="oceanking"/>
+			<feature name="rofs_key" value="OceanKingRFOSysK"/>
+			<feature name="data" value="/OceanKing"/>
+			<feature name="binary" value="OceanKing"/>
+			<feature name="exe_mask" value="7ca0196a69fad6c657832fa34ba7c3aa"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="326892"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="652471839"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="12"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="12"/>
+			<feature name="cut_step" value="-1"/>
+			<!-- /sbin/pin writes /mnt/head (p2 sector 326892, past the ROFS) and /mnt/GECA (p3 sector 1923754 + /etc/rc.d/rc0.d); GECA cats head + the cut rc pieces into /OceanKing/blue, which the kernel FPGA-decrypts into /OceanKingBin/OceanKing -->
+			<feature name="build" value="root p2; assemble /OceanKing/blue; decrypt /OceanKing/blue /OceanKingBin/OceanKing 10225551; mount p3 /OceanKing"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_oceanking_m817cn" sha1="cd2605143aa83b0d8062e6e65810b2f2052b014e"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/OceanKingBin/OceanKing" size="10225551" sha1="36950b2f076e47105af458f27a60d37e56c53cf2"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="oceanking_m816cn" cloneof="oceanking_m817cn" supported="no">
+		<description>Ocean King (M816CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M816CN"/>
+		<info name="usage" value="Ocean-King"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="7f1ed8a4b17495e9b63b965109c9c086"/>
+			<feature name="rofs_profile" value="oceanking"/>
+			<feature name="rofs_key" value="OceanKingRFOSysK"/>
+			<feature name="data" value="/OceanKing"/>
+			<feature name="binary" value="OceanKing"/>
+			<feature name="exe_mask" value="7ca0196a69fad6c657832fa34ba7c3aa"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="326892"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="652471839"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="12"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="12"/>
+			<feature name="cut_step" value="-1"/>
+			<!-- /sbin/pin writes /mnt/head (p2 sector 326892, past the ROFS) and /mnt/GECA (p3 sector 1923754 + /etc/rc.d/rc0.d); GECA cats head + the cut rc pieces into /OceanKing/blue, which the kernel FPGA-decrypts into /OceanKingBin/OceanKing -->
+			<feature name="build" value="root p2; assemble /OceanKing/blue; decrypt /OceanKing/blue /OceanKingBin/OceanKing 10225551; mount p3 /OceanKing"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_oceanking_m816cn" sha1="eba15342ecf45512352657f11de12b814f90a7bc"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/OceanKingBin/OceanKing" size="10225551" sha1="345f20fada3afc9eb0ac586e8814822ce658f3d2"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="oceanking_m815cn" cloneof="oceanking_m817cn" supported="no">
+		<description>Ocean King (M815CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M815CN"/>
+		<info name="usage" value="Ocean-King"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="7f1ed8a4b17495e9b63b965109c9c086"/>
+			<feature name="rofs_profile" value="oceanking"/>
+			<feature name="rofs_key" value="OceanKingRFOSysK"/>
+			<feature name="data" value="/OceanKing"/>
+			<feature name="binary" value="OceanKing"/>
+			<feature name="exe_mask" value="7ca0196a69fad6c657832fa34ba7c3aa"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="326892"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="652471839"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="12"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="12"/>
+			<feature name="cut_step" value="-1"/>
+			<!-- /sbin/pin writes /mnt/head (p2 sector 326892, past the ROFS) and /mnt/GECA (p3 sector 1923754 + /etc/rc.d/rc0.d); GECA cats head + the cut rc pieces into /OceanKing/blue, which the kernel FPGA-decrypts into /OceanKingBin/OceanKing -->
+			<feature name="build" value="root p2; assemble /OceanKing/blue; decrypt /OceanKing/blue /OceanKingBin/OceanKing 10221455; mount p3 /OceanKing"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_oceanking_m815cn" sha1="726fad4e5e93f44e278fae6e8f832444b4e9fdab"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/OceanKingBin/OceanKing" size="10221455" sha1="a49f0450259cd8a59176aa2772e0f8bdb87ed9ac"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="oceanking_m812cn" cloneof="oceanking_m817cn" supported="no">
+		<description>Ocean King (M812CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M812CN"/>
+		<info name="usage" value="Ocean-King"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="7f1ed8a4b17495e9b63b965109c9c086"/>
+			<feature name="rofs_profile" value="oceanking"/>
+			<feature name="rofs_key" value="OceanKingRFOSysK"/>
+			<feature name="data" value="/OceanKing"/>
+			<feature name="binary" value="OceanKing"/>
+			<feature name="exe_mask" value="7ca0196a69fad6c657832fa34ba7c3aa"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="326892"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="652471839"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="12"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="12"/>
+			<feature name="cut_step" value="-1"/>
+			<!-- /sbin/pin writes /mnt/head (p2 sector 326892, past the ROFS) and /mnt/GECA (p3 sector 1923754 + /etc/rc.d/rc0.d); GECA cats head + the cut rc pieces into /OceanKing/blue, which the kernel FPGA-decrypts into /OceanKingBin/OceanKing -->
+			<feature name="build" value="root p2; assemble /OceanKing/blue; decrypt /OceanKing/blue /OceanKingBin/OceanKing 10221455; mount p3 /OceanKing"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_oceanking_m812cn" sha1="bb9db7f19d713e9197378d392943b091f4e4f9e4"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/OceanKingBin/OceanKing" size="10221455" sha1="2e5f98e81b4bfa537326ac0a2701ccf2f637a3b8"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="oceanking_m809cn" cloneof="oceanking_m817cn" supported="no">
+		<description>Ocean King (M809CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M809CN"/>
+		<info name="usage" value="Ocean-King"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="7f1ed8a4b17495e9b63b965109c9c086"/>
+			<feature name="rofs_profile" value="oceanking"/>
+			<feature name="rofs_key" value="OceanKingRFOSysK"/>
+			<feature name="data" value="/OceanKing"/>
+			<feature name="binary" value="OceanKing"/>
+			<feature name="exe_mask" value="7ca0196a69fad6c657832fa34ba7c3aa"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="326892"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="652471839"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="12"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="12"/>
+			<feature name="cut_step" value="-1"/>
+			<!-- /sbin/pin writes /mnt/head (p2 sector 326892, past the ROFS) and /mnt/GECA (p3 sector 1923754 + /etc/rc.d/rc0.d); GECA cats head + the cut rc pieces into /OceanKing/blue, which the kernel FPGA-decrypts into /OceanKingBin/OceanKing -->
+			<feature name="build" value="root p2; assemble /OceanKing/blue; decrypt /OceanKing/blue /OceanKingBin/OceanKing 9836431; mount p3 /OceanKing"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_oceanking_m809cn" sha1="b1f5236262420044e399b52dd2b4ee2cec00c8aa"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/OceanKingBin/OceanKing" size="9836431" sha1="5b7643277e769c723770c6306a51e07868e70aac"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="oceanking_m808cn" cloneof="oceanking_m817cn" supported="no">
+		<description>Ocean King (M808CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M808CN"/>
+		<info name="usage" value="Ocean-King"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="7f1ed8a4b17495e9b63b965109c9c086"/>
+			<feature name="rofs_profile" value="oceanking"/>
+			<feature name="rofs_key" value="OceanKingRFOSysK"/>
+			<feature name="data" value="/OceanKing"/>
+			<feature name="binary" value="OceanKing"/>
+			<feature name="exe_mask" value="7ca0196a69fad6c657832fa34ba7c3aa"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="326892"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="652471839"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="12"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="12"/>
+			<feature name="cut_step" value="-1"/>
+			<!-- the dump starts 511 bytes into the disk: the MBR is lost (55AA fill) -->
+			<feature name="dump_skip" value="511"/>
+			<feature name="partitions" value="63+24129 24192+352800 436464+3282048 376992+59472"/>
+			<!-- /sbin/pin writes /mnt/head (p2 sector 326892, past the ROFS) and /mnt/GECA (p3 sector 1923754 + /etc/rc.d/rc0.d); GECA cats head + the cut rc pieces into /OceanKing/blue, which the kernel FPGA-decrypts into /OceanKingBin/OceanKing -->
+			<feature name="build" value="root p2; assemble /OceanKing/blue; decrypt /OceanKing/blue /OceanKingBin/OceanKing 9570191; mount p3 /OceanKing"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_oceanking_m808cn" sha1="b77102a65358e1760572e1c5c9faa6b5dfd6c247"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/OceanKingBin/OceanKing" size="9570191" sha1="6fa864c20a71624e1f6688b3d0ff729b7251661e"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="oceanking_m806cn" cloneof="oceanking_m817cn" supported="no">
+		<description>Ocean King (M806CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M806CN"/>
+		<info name="usage" value="Ocean-King"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="7f1ed8a4b17495e9b63b965109c9c086"/>
+			<feature name="rofs_profile" value="oceanking"/>
+			<feature name="rofs_key" value="OceanKingRFOSysK"/>
+			<feature name="data" value="/OceanKing"/>
+			<feature name="binary" value="OceanKing"/>
+			<feature name="exe_mask" value="7ca0196a69fad6c657832fa34ba7c3aa"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="326892"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="652471839"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="12"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="12"/>
+			<feature name="cut_step" value="-1"/>
+			<!-- /sbin/pin writes /mnt/head (p2 sector 326892, past the ROFS) and /mnt/GECA (p3 sector 1923754 + /etc/rc.d/rc0.d); GECA cats head + the cut rc pieces into /OceanKing/blue, which the kernel FPGA-decrypts into /OceanKingBin/OceanKing -->
+			<feature name="build" value="root p2; assemble /OceanKing/blue; decrypt /OceanKing/blue /OceanKingBin/OceanKing 9549711; mount p3 /OceanKing"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_oceanking_m806cn" sha1="15baff3dee44c196d5229a604747d7debcf551cf"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/OceanKingBin/OceanKing" size="9549711" sha1="791bd17ccaac3d3048151f24138eef254f4af153"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="oceanking_m804cn" cloneof="oceanking_m817cn" supported="no">
+		<description>Ocean King (M804CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M804CN"/>
+		<info name="usage" value="Ocean-King"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="7f1ed8a4b17495e9b63b965109c9c086"/>
+			<feature name="rofs_profile" value="oceanking"/>
+			<feature name="rofs_key" value="OceanKingRFOSysK"/>
+			<feature name="data" value="/OceanKing"/>
+			<feature name="binary" value="OceanKing"/>
+			<feature name="exe_mask" value="7ca0196a69fad6c657832fa34ba7c3aa"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="326892"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="652471839"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="12"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="12"/>
+			<feature name="cut_step" value="-1"/>
+			<!-- /sbin/pin writes /mnt/head (p2 sector 326892, past the ROFS) and /mnt/GECA (p3 sector 1923754 + /etc/rc.d/rc0.d); GECA cats head + the cut rc pieces into /OceanKing/blue, which the kernel FPGA-decrypts into /OceanKingBin/OceanKing -->
+			<feature name="build" value="root p2; assemble /OceanKing/blue; decrypt /OceanKing/blue /OceanKingBin/OceanKing 9324431; mount p3 /OceanKing"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_oceanking_m804cn" sha1="480b526972bb378791a4b3310ba1334091536c1e"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/OceanKingBin/OceanKing" size="9324431" sha1="4759c957f30ddb28cc698943392d943486a0e4ea"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="oceanking_m800cn" cloneof="oceanking_m817cn" supported="no">
+		<description>Ocean King (M800CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M800CN"/>
+		<info name="usage" value="Ocean-King"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="7f1ed8a4b17495e9b63b965109c9c086"/>
+			<feature name="rofs_profile" value="oceanking"/>
+			<feature name="rofs_key" value="OceanKingRFOSysK"/>
+			<feature name="data" value="/OceanKing"/>
+			<feature name="binary" value="OceanKing"/>
+			<feature name="exe_mask" value="7ca0196a69fad6c657832fa34ba7c3aa"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="326892"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="652471839"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="12"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="12"/>
+			<feature name="cut_step" value="-1"/>
+			<!-- /sbin/pin writes /mnt/head (p2 sector 326892, past the ROFS) and /mnt/GECA (p3 sector 1923754 + /etc/rc.d/rc0.d); GECA cats head + the cut rc pieces into /OceanKing/blue, which the kernel FPGA-decrypts into /OceanKingBin/OceanKing -->
+			<feature name="build" value="root p2; assemble /OceanKing/blue; decrypt /OceanKing/blue /OceanKingBin/OceanKing 9056848; mount p3 /OceanKing"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_oceanking_m800cn" sha1="22247b54370956c994a7e2d3a4351f817303b9c5"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/OceanKingBin/OceanKing" size="9056848" sha1="92baeaac3b75237b8235e1e716d58fca76cb64f7"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="oceanking_m015cn" cloneof="oceanking_m817cn" supported="no">
+		<description>Ocean King (M015CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M015CN"/>
+		<info name="usage" value="Ocean-King"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="7f1ed8a4b17495e9b63b965109c9c086"/>
+			<feature name="rofs_profile" value="oceanking"/>
+			<feature name="rofs_key" value="OceanKingRFOSysK"/>
+			<feature name="data" value="/OceanKing"/>
+			<feature name="binary" value="OceanKing"/>
+			<feature name="exe_mask" value="7ca0196a69fad6c657832fa34ba7c3aa"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="326892"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="652471839"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="12"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="12"/>
+			<feature name="cut_step" value="-1"/>
+			<!-- /sbin/pin writes /mnt/head (p2 sector 326892, past the ROFS) and /mnt/GECA (p3 sector 1923754 + /etc/rc.d/rc0.d); GECA cats head + the cut rc pieces into /OceanKing/blue, which the kernel FPGA-decrypts into /OceanKingBin/OceanKing -->
+			<feature name="build" value="root p2; assemble /OceanKing/blue; decrypt /OceanKing/blue /OceanKingBin/OceanKing 9069136; mount p3 /OceanKing"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_oceanking_m015cn" sha1="dcba5ef5b0bbc3129b27f25facd9ae254ecc4cf3"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/OceanKingBin/OceanKing" size="9069136" sha1="d8eec148f4c6e155bbe7f691c93d8d924ac29651"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="poseidon_m806cn" supported="no">
+		<description>Poseidon (M806CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M806CN"/>
+		<info name="usage" value="Poseidon"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="7f1ed8a4b17495e9b63b965109c9c086"/>
+			<feature name="rofs_profile" value="oceanking"/>
+			<feature name="rofs_key" value="OceanKingRFOSysK"/>
+			<feature name="data" value="/OceanKing"/>
+			<feature name="binary" value="OceanKing"/>
+			<feature name="exe_mask" value="7ca0196a69fad6c657832fa34ba7c3aa"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="326892"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="652471839"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="12"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="12"/>
+			<feature name="cut_step" value="-1"/>
+			<!-- /sbin/pin writes /mnt/head (p2 sector 326892, past the ROFS) and /mnt/GECA (p3 sector 1923754 + /etc/rc.d/rc0.d); GECA cats head + the cut rc pieces into /OceanKing/blue, which the kernel FPGA-decrypts into /OceanKingBin/OceanKing -->
+			<feature name="build" value="root p2; assemble /OceanKing/blue; decrypt /OceanKing/blue /OceanKingBin/OceanKing 10258319; mount p3 /OceanKing"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_poseidon_m806cn" sha1="eb7e3c363b13bfb83bb464a3ba499584b6ca050d"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/OceanKingBin/OceanKing" size="10258319" sha1="d772d32bce29742ade1cc8d102f379d6c03076a5"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="fullattack_m802my" supported="no">
+		<description>Full Attack (M802MY)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M802MY"/>
+		<info name="usage" value="Full-Attack"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="5b5ed8b4b1748de1363296590dd9c084"/>
+			<feature name="rofs_profile" value="oceanking"/>
+			<feature name="rofs_key" value="OceanKingRFOSysK"/>
+			<feature name="data" value="/OceanKing"/>
+			<feature name="binary" value="OceanKing"/>
+			<feature name="exe_mask" value="58e0197a69faceced78a2fab4fb7c3a8"/>
+			<feature name="head_part" value="p2"/>
+			<feature name="head_sector" value="326892"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="652471839"/>
+			<feature name="piece_file" value="/etc/rc.d/rc%s.d"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="12"/>
+			<feature name="trim_step" value="3"/>
+			<feature name="cut_kb" value="12"/>
+			<feature name="cut_step" value="-1"/>
+			<!-- /sbin/pin writes /mnt/head (p2 sector 326892, past the ROFS) and /mnt/GECA (p3 sector 1923754 + /etc/rc.d/rc0.d); GECA cats head + the cut rc pieces into /OceanKing/blue, which the kernel FPGA-decrypts into /OceanKingBin/OceanKing -->
+			<feature name="build" value="root p2; assemble /OceanKing/blue; decrypt /OceanKing/blue /OceanKingBin/OceanKing 9836431; mount p3 /OceanKing"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_fullattack_m802my" sha1="ae0740e5ae9c6f1fd931c86eccda62329174e16e"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/OceanKingBin/OceanKing" size="9836431" sha1="1febbf98083730297f5acacf89ea3aaa73252376"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="soulofgun_m102cn" supported="no">
+		<description>Soul of Gun (M102CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M102CN"/>
+		<info name="usage" value="Soul-of-Gun"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="580d4176d44cbcddf7b4694bb9fe98a3"/>
+			<feature name="rofs_profile" value="soulofgun"/>
+			<feature name="rofs_key" value="FSV2SoulRO-OfGun"/>
+			<feature name="data" value="/SOG"/>
+			<feature name="binary" value="SoulOfGun"/>
+			<feature name="exe_mask" value="bb3b1d9b86e2337b43d2efaa088637c2"/>
+			<feature name="head_part" value="p3"/>
+			<feature name="head_sector" value="1941373"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="14523768"/>
+			<feature name="piece_file" value="/lib/libsog%s.so"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="20"/>
+			<feature name="trim_step" value="-2"/>
+			<feature name="cut_kb" value="12"/>
+			<feature name="cut_step" value="2"/>
+			<!-- /usr/sbin/postcat writes /mnt/head (p3 sector 1941373) and /mnt/GECA (p2 sector 328846 + /usr/bin/bison); GECA cats head + the cut libsog pieces into /SOG/SoulOfGun, which the kernel FPGA-decrypts into /SOG.bin/SoulOfGun -->
+			<feature name="build" value="root p2; assemble /SOG/SoulOfGun; decrypt /SOG/SoulOfGun /SOG.bin/SoulOfGun 10359376; mount p3 /SOG"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_soulofgun_m102cn" sha1="b323ee2559e33f9065597291fbe601e62e0716a9"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/SOG.bin/SoulOfGun" size="10359376" sha1="f0a559cc68a941a2e167dbbe5ba92f2c94931400"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="westtrip_md108cn" supported="no">
+		<description>Westtrip (MD108CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="MD108CN"/>
+		<info name="usage" value="Westtrip"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="ce31333ab5cb23ee50b4e46b3044837f"/>
+			<feature name="rofs_profile" value="westtrip"/>
+			<feature name="rofs_key" value="MakeWestRFOSTrip"/>
+			<feature name="data" value="/WT"/>
+			<feature name="binary" value="WestTrip"/>
+			<feature name="exe_mask" value="103283cb7365f1cb75b2cbc3e366c8e4"/>
+			<feature name="head_part" value="p3"/>
+			<feature name="head_sector" value="1765312"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="243786159"/>
+			<feature name="piece_file" value="/usr/lib/libmenu%s.so"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="8"/>
+			<feature name="trim_step" value="1"/>
+			<feature name="cut_kb" value="42"/>
+			<feature name="cut_step" value="-3"/>
+			<!-- /usr/bin/addftinfo writes /mnt/head (p3 sector 1765312) and /mnt/GECA (p3 sector 1881231 + /bin/lesskey); GECA cats head + the cut libmenu pieces into /WT/WestTrip, which the kernel FPGA-decrypts into /WT.bin/WestTrip -->
+			<feature name="build" value="root p2; assemble /WT/WestTrip; decrypt /WT/WestTrip /WT.bin/WestTrip 14604175; mount p3 /WT"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_westtrip_md108cn" sha1="3c91f0cb04754ec6fdf5eedc2208bf45d8568ad0"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/WT.bin/WestTrip" size="14604175" sha1="4e00e6a83fa6ee4935fb42088b8de21b2e5b36dc"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="westtrip_md105cn" cloneof="westtrip_md108cn" supported="no">
+		<description>Westtrip (MD105CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="MD105CN"/>
+		<info name="usage" value="Westtrip"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="ce31333ab5cb23ee50b4e46b3044837f"/>
+			<feature name="rofs_profile" value="westtrip"/>
+			<feature name="rofs_key" value="MakeWestRFOSTrip"/>
+			<feature name="data" value="/WT"/>
+			<feature name="binary" value="WestTrip"/>
+			<feature name="exe_mask" value="103283cb7365f1cb75b2cbc3e366c8e4"/>
+			<feature name="head_part" value="p3"/>
+			<feature name="head_sector" value="1765312"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="243786159"/>
+			<feature name="piece_file" value="/usr/lib/libmenu%s.so"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="8"/>
+			<feature name="trim_step" value="1"/>
+			<feature name="cut_kb" value="42"/>
+			<feature name="cut_step" value="-3"/>
+			<!-- the dump starts 511 bytes into the disk: the MBR is lost (55AA fill) -->
+			<feature name="dump_skip" value="511"/>
+			<feature name="partitions" value="2048+49152 51200+368640 931840+2786672 419840+512000"/>
+			<!-- /usr/bin/addftinfo writes /mnt/head (p3 sector 1765312) and /mnt/GECA (p3 sector 1881231 + /bin/lesskey); GECA cats head + the cut libmenu pieces into /WT/WestTrip, which the kernel FPGA-decrypts into /WT.bin/WestTrip -->
+			<feature name="build" value="root p2; assemble /WT/WestTrip; decrypt /WT/WestTrip /WT.bin/WestTrip 14600079; mount p3 /WT"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_westtrip_md105cn" sha1="0941d51f2e77ec00dd3f672cb7187f81edbd90d8"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/WT.bin/WestTrip" size="14600079" sha1="e16f0b7284e41b4472b701e17002bbbb5e17740c"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="westtrip_md100cn" cloneof="westtrip_md108cn" supported="no">
+		<description>Westtrip (MD100CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="MD100CN"/>
+		<info name="usage" value="Westtrip"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="ce31333ab5cb23ee50b4e46b3044837f"/>
+			<feature name="rofs_profile" value="westtrip"/>
+			<feature name="rofs_key" value="MakeWestRFOSTrip"/>
+			<feature name="data" value="/WT"/>
+			<feature name="binary" value="WestTrip"/>
+			<feature name="exe_mask" value="103283cb7365f1cb75b2cbc3e366c8e4"/>
+			<feature name="head_part" value="p3"/>
+			<feature name="head_sector" value="1765312"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="243786159"/>
+			<feature name="piece_file" value="/usr/lib/libmenu%s.so"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="8"/>
+			<feature name="trim_step" value="1"/>
+			<feature name="cut_kb" value="42"/>
+			<feature name="cut_step" value="-3"/>
+			<!-- /usr/bin/addftinfo writes /mnt/head (p3 sector 1765312) and /mnt/GECA (p3 sector 1881231 + /bin/lesskey); GECA cats head + the cut libmenu pieces into /WT/WestTrip, which the kernel FPGA-decrypts into /WT.bin/WestTrip -->
+			<feature name="build" value="root p2; assemble /WT/WestTrip; decrypt /WT/WestTrip /WT.bin/WestTrip 14571407; mount p3 /WT"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_westtrip_md100cn" sha1="2167ab5427da8ab501cdc4df897306e02ee4614d"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/WT.bin/WestTrip" size="14571407" sha1="3671973e23773ec464745df97614e6e5885d155a"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="westtrip_md018cn" cloneof="westtrip_md108cn" supported="no">
+		<description>Westtrip (MD018CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="MD018CN"/>
+		<info name="usage" value="Westtrip"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="ce31333ab5cb23ee50b4e46b3044837f"/>
+			<feature name="rofs_profile" value="westtrip"/>
+			<feature name="rofs_key" value="MakeWestRFOSTrip"/>
+			<feature name="data" value="/WT"/>
+			<feature name="binary" value="WestTrip"/>
+			<feature name="exe_mask" value="103283cb7365f1cb75b2cbc3e366c8e4"/>
+			<feature name="head_part" value="p3"/>
+			<feature name="head_sector" value="1765312"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="243786159"/>
+			<feature name="piece_file" value="/usr/lib/libmenu%s.so"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="8"/>
+			<feature name="trim_step" value="1"/>
+			<feature name="cut_kb" value="42"/>
+			<feature name="cut_step" value="-3"/>
+			<!-- /usr/bin/addftinfo writes /mnt/head (p3 sector 1765312) and /mnt/GECA (p3 sector 1881231 + /bin/lesskey); GECA cats head + the cut libmenu pieces into /WT/WestTrip, which the kernel FPGA-decrypts into /WT.bin/WestTrip -->
+			<feature name="build" value="root p2; assemble /WT/WestTrip; decrypt /WT/WestTrip /WT.bin/WestTrip 14604175; mount p3 /WT"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_westtrip_md018cn" sha1="9d79ab125c0ae8936b922112eae6ba0e58af48fd"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/WT.bin/WestTrip" size="14604175" sha1="4e00e6a83fa6ee4935fb42088b8de21b2e5b36dc"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="westtrip_md012cn" cloneof="westtrip_md108cn" supported="no">
+		<description>Westtrip (MD012CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="MD012CN"/>
+		<info name="usage" value="Westtrip"/>
+		<info name="unsupported" value="HASP Envelope: the code needs the cabinet's HASP HL key (its hasp_decrypt of the envelope's seed and of a few blocks; wiki E2200)"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="asset_mask" value="ce31333ab5cb23ee50b4e46b3044837f"/>
+			<feature name="rofs_profile" value="westtrip"/>
+			<feature name="rofs_key" value="MakeWestRFOSTrip"/>
+			<feature name="data" value="/WT"/>
+			<feature name="binary" value="WestTrip"/>
+			<feature name="exe_mask" value="103283cb7365f1cb75b2cbc3e366c8e4"/>
+			<feature name="head_part" value="p3"/>
+			<feature name="head_sector" value="1765312"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="243786159"/>
+			<feature name="piece_file" value="/usr/lib/libmenu%s.so"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="8"/>
+			<feature name="trim_step" value="1"/>
+			<feature name="cut_kb" value="42"/>
+			<feature name="cut_step" value="-3"/>
+			<!-- /usr/bin/addftinfo writes /mnt/head (p3 sector 1765312) and /mnt/GECA (p3 sector 1881231 + /bin/lesskey); GECA cats head + the cut libmenu pieces into /WT/WestTrip, which the kernel FPGA-decrypts into /WT.bin/WestTrip -->
+			<feature name="build" value="root p2; assemble /WT/WestTrip; decrypt /WT/WestTrip /WT.bin/WestTrip 14557776; mount p3 /WT"/>
+			<diskarea name="harddriv">
+				<disk name="e2200_westtrip_md012cn" sha1="8ab6a053a0583bca9597f49d73e76c4a197cb1a1"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/WT.bin/WestTrip" size="14557776" sha1="3017921dcab39a7669c8e8b1b592f4e134a8f45f"/>
+			</dataarea>
+		</part>
+	</software>
 </softwarelist>

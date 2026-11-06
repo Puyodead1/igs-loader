@@ -328,6 +328,10 @@ static void launch(bool verify)
         say(r ? "no loader here (" + loader_path + ")" : "no game selected");
         return;
     }
+    if (!verify && !sw_runnable(r->sw)) {
+        say(std::string(r->sw->name) + " cannot run: " + sw_info_value(r->sw, "unsupported", "unsupported"));
+        return;
+    }
     id = r->sw->name;
     s.env = launch_env(id);
 #ifdef _WIN32
@@ -1071,6 +1075,8 @@ static void game_page()
         line("Version", sw->version ? sw->version : "");
         line("Disk", std::string(sw->disk ? sw->disk : "") + (sw->disk_sha1 ? std::string("  sha1 ") + sw->disk_sha1 : ""));
         line("Set", std::string(kinds[r->kind]) + (r->set.empty() ? "" : "  " + r->set));
+        if (!sw_runnable(sw))
+            line("Runs", std::string("no: ") + sw_info_value(sw, "unsupported", ""));
         if (r->kind == RS_7Z || r->kind == RS_ZIP)
             line("Cache", fmt_size(cs.host));
         ImGui::EndTable();

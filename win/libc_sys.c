@@ -1097,6 +1097,47 @@ static void l_seekdir(struct ldir *d, long pos)
 
 static int l_dirfd(struct ldir *d) { (void)d; return -1; }
 
+/* scandir: the game's filter and compare are i386 cdecl, called directly; entries from l_malloc
+   so the game frees them */
+static int l_alphasort(const struct l_dirent **a, const struct l_dirent **b)
+{
+    return strcmp((*a)->d_name, (*b)->d_name);
+}
+
+static int l_scandir(const char *path, struct l_dirent ***list, int (*filter)(const struct l_dirent *),
+                     int (*compar)(const struct l_dirent **, const struct l_dirent **))
+{
+    struct ldir *d = l_opendir(path);
+    struct l_dirent *e, **v = NULL, **nv;
+    int n = 0, cap = 0;
+
+    if (!d)
+        return -1;
+    while ((e = l_readdir(d))) {
+        if (filter && !filter(e))
+            continue;
+        if (n == cap) {
+            cap = cap ? 2 * cap : 32;
+            nv = l_malloc(cap * sizeof(*v));
+            if (!nv)
+                break;
+            if (v) {
+                memcpy(nv, v, n * sizeof(*v));
+                l_free(v);
+            }
+            v = nv;
+        }
+        if (!(v[n] = l_malloc(sizeof(*e))))
+            break;
+        memcpy(v[n++], e, sizeof(*e));
+    }
+    l_closedir(d);
+    if (compar && n > 1)
+        qsort(v, n, sizeof(*v), (int (*)(const void *, const void *))compar);
+    *list = v;
+    return n;
+}
+
 /* ---- mmap ----------------------------------------------------------------------------------- */
 
 #define L_MAP_FIXED 0x10
@@ -2028,6 +2069,7 @@ const struct nsym sys_syms[] = {
     N(__fxstat), N(__fxstat64), N(stat), NA(lstat, l_stat), N(fstat), N(access), N(unlink),
     N(mkdir), N(rmdir), N(chdir), N(getcwd), N(realpath),
     N(opendir), N(readdir), N(readdir64), N(closedir), N(rewinddir), N(telldir), N(seekdir), N(dirfd),
+    N(scandir), N(alphasort),
     N(mmap), N(mmap64), N(munmap), N(mprotect), N(msync), N(madvise), N(mlock), NA(munlock, l_mlock),
     N(time), N(gettimeofday), N(clock_gettime), N(clock_getres), N(clock), N(times), N(ftime),
     N(nanosleep), N(clock_nanosleep), N(usleep), N(sleep), N(gmtime), N(gmtime_r), N(localtime),

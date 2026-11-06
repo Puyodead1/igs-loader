@@ -87,7 +87,22 @@ static const struct profile profiles[] = {
        header, the first 0xA0 bytes of a longer page encrypted. */
     { "crazyshoot", "LsT9eNJaHQb2zmMw", 0x100, 3, 0x150, 0x78, 0x74,
       { 0x50, 1, 0x1F011239 }, { 0x30, 3, 0xA1075718 }, { 0x00, 1, 0xBAA513A0 }, 1, 1, 1, 2, 0, 0, 0xA0 },
-};
+    /* Ocean King (E2200; also Poseidon, Full Attack).  Crazy Shoot's design;
+       page ends are word 3. */
+    { "oceanking", "OceanKingRFOSysK", 0xD8, 1, 0x150, 0x78, 0x74,
+      { 0x20, 0, 0x1069E4F0 }, { 0x50, 0, 0xDBEC369E }, { 0x40, 1, 0xB5CF8A8D }, 1, 1, 1, 3, 0, 0, 0xA0 },
+    /* Soul of Gun (E2200).  Crazy Shoot's design; page ends are word 1. */
+    { "soulofgun", "FSV2SoulRO-OfGun", 0x100, 0, 0x150, 0x78, 0x74,
+      { 0x50, 2, 0xA2963B4A }, { 0x30, 1, 0x1C937DAD }, { 0x00, 3, 0x03301B0B }, 1, 1, 1, 1, 0, 0, 0xA0 },
+    /* Westtrip (E2200).  Crazy Shoot's design, magic block unaligned at
+       0x58; page ends are word 1. */
+    { "westtrip", "MakeWestRFOSTrip", 0x58, 2, 0x150, 0x78, 0x74,
+      { 0x50, 3, 0x27EB5867 }, { 0x30, 0, 0x27EC5B59 }, { 0x00, 0, 0x00F2465A }, 1, 1, 1, 1, 0, 0, 0xA0 },
+    /* Fish Hunter SKL2 8P (E2200).  Crazy Shoot's design moved by 8: the
+       mode leads the record and its AES blocks start at +8; magic block at
+       0x58; page ends are word 1. */
+    { "fishskl2_8p", "8PFishSKLv2InOST", 0x58, 2, 0x150, 0x78, 0x00,
+      { 0x28, 1, 0xD3A4465C }, { 0x08, 3, 0x531CABC7 }, { 0x48, 2, 0x034FC930 }, 1, 1, 1, 1, 0, 0, 0xA0 },};
 
 #define NPROF ((int)(sizeof(profiles) / sizeof(profiles[0])))
 
@@ -489,7 +504,7 @@ int fs_rofs(struct mkr_job *j, uint64_t off, uint64_t size, struct mkr_node *dir
             for (i = 0; i < NPROF && strcmp(profile, profiles[i].name); i++)
                 ;
             if (i == NPROF)
-                mkr_fail(j, "unknown ROFS profile '%s' (known: fish4p, oceanparty, heroofrobots, scratch, pmaster3, fish4p_m400, fish, fish6pv2, fishskl, fishskl2, demonhunter, crazyshoot)",
+                mkr_fail(j, "unknown ROFS profile '%s' (known: fish4p, oceanparty, heroofrobots, scratch, pmaster3, fish4p_m400, fish, fish6pv2, fishskl, fishskl2, demonhunter, crazyshoot, oceanking, soulofgun, westtrip, fishskl2_8p)",
                          profile);
         }
         mkr_fail(j, "not an IGS ROFS v2 image for any known profile (no key decodes the superblock magic)");

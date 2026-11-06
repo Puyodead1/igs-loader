@@ -89,13 +89,35 @@ PROFILES = {
     'crazyshoot': ('LsT9eNJaHQb2zmMw', 0x100, 3, 0x150, 0x78, 0x74,
                    (0x50, 1, 0x1F011239), (0x30, 3, 0xA1075718), (0x00, 1, 0xBAA513A0),
                    True, True, True, 2),
-}
+    # Ocean King (E2200; also Poseidon, Full Attack).  Crazy Shoot's design;
+    # page ends are word 3.
+    'oceanking': ('OceanKingRFOSysK', 0xD8, 1, 0x150, 0x78, 0x74,
+                  (0x20, 0, 0x1069E4F0), (0x50, 0, 0xDBEC369E), (0x40, 1, 0xB5CF8A8D),
+                  True, True, True, 3),
+    # Soul of Gun (E2200).  Crazy Shoot's design; page ends are word 1.
+    'soulofgun': ('FSV2SoulRO-OfGun', 0x100, 0, 0x150, 0x78, 0x74,
+                  (0x50, 2, 0xA2963B4A), (0x30, 1, 0x1C937DAD), (0x00, 3, 0x03301B0B),
+                  True, True, True, 1),
+    # Westtrip (E2200).  Crazy Shoot's design, magic block unaligned at 0x58;
+    # page ends are word 1.
+    'westtrip': ('MakeWestRFOSTrip', 0x58, 2, 0x150, 0x78, 0x74,
+                 (0x50, 3, 0x27EB5867), (0x30, 0, 0x27EC5B59), (0x00, 0, 0x00F2465A),
+                 True, True, True, 1),
+    # Fish Hunter SKL2 8P (E2200).  Crazy Shoot's design moved by 8: the mode
+    # leads the record and its AES blocks start at +8; page ends are word 1.
+    'fishskl2_8p': ('8PFishSKLv2InOST', 0x58, 2, 0x150, 0x78, 0x00,
+                    (0x28, 1, 0xD3A4465C), (0x08, 3, 0x531CABC7), (0x48, 2, 0x034FC930),
+                    True, True, True, 1),}
 
 # profiles whose compressed pages longer than n bytes have their first n
 # bytes AES-CBC encrypted (zero IV, the same key)
 ENC_HEAD = {
     'fishskl2': 0xA0,
     'crazyshoot': 0xA0,
+    'oceanking': 0xA0,
+    'soulofgun': 0xA0,
+    'westtrip': 0xA0,
+    'fishskl2_8p': 0xA0,
 }
 
 # plaintext profiles: (name length mask, unit, name alignment); the name

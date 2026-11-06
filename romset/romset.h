@@ -32,6 +32,11 @@ struct sw_tunable { char *name, *type, *def, *group, *text; };
 struct sw_info {
     char *list;                 /* the machine: e2100, e2000 */
     char *name, *cloneof;
+    /*
+     * <software supported="no">: the set builds and verifies but cannot run
+     * (<info name="unsupported"> says why); NULL = runs
+     */
+    char *supported;
     char *description, *year, *publisher, *version;
     char *disk, *disk_sha1;
     int nfeat, nrom, ninfo, ntun;
@@ -49,6 +54,8 @@ const struct sw_info *sw_at(int i);
 const struct sw_info *sw_find(const char *name);
 const char *sw_feature(const struct sw_info *sw, const char *name, const char *def);
 const char *sw_info_value(const struct sw_info *sw, const char *name, const char *def);
+/* 0 when the entry is supported="no" (the set cannot run) */
+int sw_runnable(const struct sw_info *sw);
 
 /* ---- configuration ---------------------------------------------------------------------- */
 
