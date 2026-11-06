@@ -520,6 +520,15 @@ static int step_copy(struct mkr_job *j, char **a)
     return rc;
 }
 
+/* link <path> <target>: a symlink, as a start-up script's ln -s */
+static int step_link(struct mkr_job *j, char **a)
+{
+    char name[1024];
+    struct mkr_node *d = vfs_parent(j, a[0], name, sizeof(name), 1);
+
+    return d && vfs_link(j, d, name, a[1]) ? 0 : -1;
+}
+
 static int step_unupx(struct mkr_job *j, char **a)
 {
     uint8_t *d, *o;
@@ -740,7 +749,7 @@ static const struct {
 } steps[] = {
     { "root", 1, step_root },       { "decrypt", 3, step_decrypt }, { "copy", 2, step_copy },
     { "unupx", 2, step_unupx },     { "poweron", 2, step_poweron }, { "loop", 2, step_loop },
-    { "assemble", 1, step_assemble }, { "mount", 2, step_mount },
+    { "assemble", 1, step_assemble }, { "mount", 2, step_mount },   { "link", 2, step_link },
 };
 
 static int run_steps(struct mkr_job *j, const char *recipe)

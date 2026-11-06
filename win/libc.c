@@ -1062,6 +1062,10 @@ static float l_powf(float x, float y) { return powf(x, y); }
 static float l_expf(float x) { return expf(x); }
 static float l_logf(float x) { return logf(x); }
 static float l_log10f(float x) { return log10f(x); }
+static float l_log2f(float x) { return log2f(x); }
+static double l_log2(double x) { return log2(x); }
+static float l_modff(float x, float *i) { return modff(x, i); }
+static float l_exp2f(float x) { return exp2f(x); }
 
 /* ---- stdlib ----------------------------------------------------------------------------- */
 
@@ -1297,6 +1301,8 @@ static void *l___memset_chk(void *d, int c, size_t n, size_t dn) { (void)dn; ret
 static char *l___strcpy_chk(char *d, const char *s, size_t dn) { (void)dn; return strcpy(d, s); }
 static char *l___strcat_chk(char *d, const char *s, size_t dn) { (void)dn; return strcat(d, s); }
 static char *l___strncpy_chk(char *d, const char *s, size_t n, size_t dn) { (void)dn; return strncpy(d, s, n); }
+static char *l___strncat_chk(char *d, const char *s, size_t n, size_t dn) { (void)dn; return strncat(d, s, n); }
+static size_t l___fread_chk(void *p, size_t dn, size_t s, size_t n, LFILE *lf) { (void)dn; return l_fread(p, s, n, lf); }
 
 static int l___isinff(float f) { return isinf(f) ? (f > 0 ? 1 : -1) : 0; }
 static int l_finite(double d) { return isfinite(d); }
@@ -1729,7 +1735,8 @@ const struct nsym libc_syms[] = {
     NF(floor), NF(fmod), NF(frexp), NF(ldexp), NF(log), NF(log10), NF(modf), NF(pow), NF(sin),
     NF(sinh), NF(sqrt), NF(tan), NF(tanh), NF(hypot),
     N(sqrtf), N(sinf), N(cosf), N(tanf), N(atan2f), N(atanf), N(acosf), N(asinf), N(ceilf),
-    N(floorf), N(fmodf), N(powf), N(expf), N(logf), N(log10f), N(fabsf),
+    N(floorf), N(fmodf), N(powf), N(expf), N(logf), N(log10f), N(fabsf), N(log2f), N(log2),
+    N(modff), N(exp2f),
     N(__isnan), N(__isnanf), N(__isinf), N(__finite), NA(isnan, l___isnan), NA(isinf, l___isinf),
     N(sincosf), N(sincos), N(frexpl), N(powl), N(ldexpl), N(modfl), N(lrintf), N(lrint), N(round),
     N(roundf), N(trunc), N(truncf), N(rint), N(rintf), N(llrint), N(ldexpf), N(frexpf), N(cbrtf),
@@ -1746,6 +1753,6 @@ const struct nsym libc_syms[] = {
     N(fnmatch), N(localeconv), N(mallinfo), N(mbstowcs), N(wcscasecmp), N(vswprintf),
     N(iconv_open), N(iconv), N(iconv_close),
     N(__memcpy_chk), N(__memmove_chk), N(__memset_chk), N(__strcpy_chk), N(__strcat_chk),
-    N(__strncpy_chk),
+    N(__strncpy_chk), N(__strncat_chk), N(__fread_chk),
     { NULL, NULL },
 };

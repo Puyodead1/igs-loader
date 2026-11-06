@@ -13,6 +13,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <mmsystem.h>
+#include <tlhelp32.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -275,6 +276,9 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS *ep)
         return EXCEPTION_CONTINUE_EXECUTION;
     if (code == EXCEPTION_PRIV_INSTRUCTION && port_access(ep->ContextRecord))
         return EXCEPTION_CONTINUE_EXECUTION;
+    /* the game's SIGSEGV / SIGFPE / SIGILL handler (Mono's null references and divisions) */
+    if (lx_sig_fault(ep))
+        return EXCEPTION_CONTINUE_EXECUTION;
     /* ELF code has no exception handlers of its own: a fault there is fatal */
     if ((code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_ILLEGAL_INSTRUCTION ||
          code == EXCEPTION_PRIV_INSTRUCTION || code == EXCEPTION_INT_DIVIDE_BY_ZERO ||
@@ -301,10 +305,60 @@ static LONG WINAPI last_chance(EXCEPTION_POINTERS *ep)
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
+/* IGS_HANG_DUMP=N: after N seconds, every thread's place and ELF return addresses (a hang) */
+static DWORD WINAPI hang_dump(void *p)
+{
+    DWORD secs = (DWORD)(uintptr_t)p, me = GetCurrentThreadId();
+    HANDLE snap;
+    THREADENTRY32 te;
+
+    Sleep(secs * 1000);
+    snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    te.dwSize = sizeof(te);
+    for (BOOL ok = Thread32First(snap, &te); ok; ok = Thread32Next(snap, &te)) {
+        HANDLE h;
+        CONTEXT c;
+        char where[160];
+        uint32_t *sp;
+        int i, shown = 0;
+
+        if (te.th32OwnerProcessID != GetCurrentProcessId() || te.th32ThreadID == me ||
+            !(h = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, te.th32ThreadID)))
+            continue;
+        SuspendThread(h);
+        c.ContextFlags = CONTEXT_FULL;
+        if (GetThreadContext(h, &c)) {
+            elf_describe(c.Eip, where, sizeof(where));
+            LOG("thread %lu at %s (esp 0x%08lx)", te.th32ThreadID, where, c.Esp);
+            sp = (uint32_t *)c.Esp;
+            for (i = 0; i < 4096 && shown < 10; i++) {
+                MEMORY_BASIC_INFORMATION mbi;
+
+                if (!VirtualQuery(sp + i, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT ||
+                    (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+                    break;
+                if (elf_owns(sp[i])) {
+                    elf_describe(sp[i], where, sizeof(where));
+                    LOG("    +0x%03x: %s", i * 4, where);
+                    shown++;
+                }
+            }
+        }
+        ResumeThread(h);
+        CloseHandle(h);
+    }
+    CloseHandle(snap);
+    return 0;
+}
+
 void core_install_veh(void)
 {
+    const char *hd = getenv("IGS_HANG_DUMP");
+
     AddVectoredExceptionHandler(1, veh);
     SetUnhandledExceptionFilter(last_chance);
+    if (hd && atoi(hd) > 0)
+        CloseHandle(CreateThread(NULL, 0, hang_dump, (void *)(uintptr_t)atoi(hd), 0, NULL));
 }
 
 static void *core_mmio_map(size_t len, void *opaque, uint32_t (*read)(void *, uint32_t, int),
@@ -843,6 +897,18 @@ static void dsp_close(void)
     dsp.fd = -1;
 }
 
+/* the same stream for alsa.c (FMOD's ALSA output) */
+void core_pcm_config(int rate, int channels, int bits)
+{
+    dsp_close();
+    dsp.rate = rate;
+    dsp.channels = channels;
+    dsp.fmt = bits;
+}
+
+long core_pcm_write(const void *buf, size_t n) { return dsp_write(buf, n); }
+void core_pcm_close(void) { dsp_close(); }
+
 /* ---- device files ------------------------------------------------------------------------------------ */
 
 #define FD_MAX 16
@@ -1018,10 +1084,83 @@ int core_close(int fd)
     return 0;
 }
 
-/* files the cabinet's system provides (igs_machine.vfile) */
+/*
+ * /proc/self/maps and /proc/self/stat as Linux has them (Unity's Mono checks
+ * the first exists and reads it; Boehm GC takes the main stack's start from
+ * the second's field 28).  maps: the committed regions with their access.
+ */
+static char *proc_text;
+
+static const char *proc_vfile(const char *name)
+{
+    char self[32];
+    size_t cap = 1 << 16, len = 0;
+    uintptr_t a;
+    MEMORY_BASIC_INFORMATION mbi;
+
+    if (!strcmp(name, "/proc/stat")) {                /* Boehm counts the cpuN lines */
+        SYSTEM_INFO si;
+        DWORD i;
+
+        GetSystemInfo(&si);
+        free(proc_text);
+        if (!(proc_text = malloc(64 + 32 * si.dwNumberOfProcessors)))
+            return NULL;
+        len = sprintf(proc_text, "cpu  0 0 0 0 0 0 0\n");
+        for (i = 0; i < si.dwNumberOfProcessors; i++)
+            len += sprintf(proc_text + len, "cpu%lu 0 0 0 0 0 0 0\n", (unsigned long)i);
+        return proc_text;
+    }
+    snprintf(self, sizeof(self), "/proc/%lu/", GetCurrentProcessId());
+    if (!strncmp(name, self, strlen(self)))
+        name += strlen(self);
+    else if (!strncmp(name, "/proc/self/", 11))
+        name += 11;
+    else
+        return NULL;
+    if (strcmp(name, "maps") && strcmp(name, "stat"))
+        return NULL;
+    free(proc_text);
+    proc_text = malloc(cap);
+    if (!proc_text)
+        return NULL;
+    if (!strcmp(name, "maps")) {
+        for (a = 0x10000; a < 0x7fff0000 && VirtualQuery((void *)a, &mbi, sizeof(mbi)); a += mbi.RegionSize) {
+            DWORD p = mbi.Protect & 0xff;
+            int r = p != PAGE_NOACCESS, w = p == PAGE_READWRITE || p == PAGE_EXECUTE_READWRITE ||
+                                             p == PAGE_WRITECOPY || p == PAGE_EXECUTE_WRITECOPY;
+            int x = p == PAGE_EXECUTE || p == PAGE_EXECUTE_READ || p == PAGE_EXECUTE_READWRITE ||
+                    p == PAGE_EXECUTE_WRITECOPY;
+
+            if (mbi.State != MEM_COMMIT || mbi.RegionSize == 0)
+                continue;
+            if (len + 80 > cap && !(proc_text = realloc(proc_text, cap *= 2)))
+                return NULL;
+            len += sprintf(proc_text + len, "%08lx-%08lx %c%c%cp 00000000 00:00 0\n", (unsigned long)a,
+                           (unsigned long)(a + mbi.RegionSize), r ? 'r' : '-', w ? 'w' : '-', x ? 'x' : '-');
+        }
+        proc_text[len] = 0;
+        return proc_text;
+    }
+    if (!strcmp(name, "stat")) {
+        uint8_t *teb = (uint8_t *)NtCurrentTeb();
+        uint32_t i, top = *(uint32_t *)(teb + 4) - 64;    /* this thread's: the main one asks */
+
+        len = sprintf(proc_text, "%lu (game) R 1", GetCurrentProcessId());
+        for (i = 5; i <= 52; i++)
+            len += sprintf(proc_text + len, " %lu", i == 28 ? (unsigned long)top : 0ul);
+        strcpy(proc_text + len, "\n");
+        return proc_text;
+    }
+    return NULL;
+}
+
+/* files the cabinet's system provides (igs_machine.vfile), then /proc */
 const char *core_vfile(const char *name)
 {
-    return name && machine && machine->vfile ? machine->vfile(name) : NULL;
+    const char *t = name && machine && machine->vfile ? machine->vfile(name) : NULL;
+
+    return t ? t : name ? proc_vfile(name) : NULL;
 }
 
 /* data files the machine wants to know about (e.g. which stage is loading) */
@@ -1063,6 +1202,35 @@ static int core_hook(uint32_t addr, void *fn)
     return 0;
 }
 
+/* igs_core.hook_lib: hooks applied when elf_dlopen loads their library */
+static struct lib_hook { const char *soname, *sym; void *fn; } lib_hooks[32];
+static int nlib_hooks;
+
+static int core_hook_lib(const char *soname, const char *sym, void *fn)
+{
+    if (nlib_hooks == (int)(sizeof(lib_hooks) / sizeof(lib_hooks[0])))
+        return -1;
+    lib_hooks[nlib_hooks++] = (struct lib_hook){ soname, sym, fn };
+    return 0;
+}
+
+void core_lib_loaded(void *mod, const char *name)
+{
+    const char *base = strrchr(name, '/') ? strrchr(name, '/') + 1 : name;
+    int i;
+
+    for (i = 0; i < nlib_hooks; i++) {
+        void *a;
+
+        if (!strstr(base, lib_hooks[i].soname) || !(a = elf_dlsym(mod, lib_hooks[i].sym)))
+            continue;
+        if (core_hook((uint32_t)(uintptr_t)a, lib_hooks[i].fn))
+            core.log("hook %s in %s failed", lib_hooks[i].sym, base);
+        else if (core.verbose)
+            core.log("hooked %s in %s", lib_hooks[i].sym, base);
+    }
+}
+
 void core_init(void)
 {
     const char *path = getenv("IGS_MACHINE");
@@ -1083,6 +1251,7 @@ void core_init(void)
     core.font_h = FONT_H;
     core.present = sdl_present;
     core.hook = core_hook;
+    core.hook_lib = core_hook_lib;
     if (!path)
         return;
     h = LoadLibraryA(path);

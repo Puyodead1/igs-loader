@@ -22,6 +22,7 @@
 #include "XzCrc64.h"
 #include "zlib.h"
 #include "zstd.h"
+#include "lzokay-c.h"
 
 #define META 8192
 
@@ -105,6 +106,12 @@ static long long unpack(struct sq *s, const uint8_t *src, size_t n, uint8_t *dst
         size_t r = ZSTD_decompress(dst, cap, src, n);
 
         return ZSTD_isError(r) ? -1 : (long long)r;
+    }
+    case C_LZO: {
+        /* LZO1X, the kernel's lzo1x_decompress_safe (third_party/lzokay) */
+        size_t out = cap;
+
+        return lzokay_decompress(src, n, dst, &out) == EResult_Success ? (long long)out : -1;
     }
     }
     return -1;
@@ -496,19 +503,13 @@ static int dir4(struct sq4 *q, const struct ino4 *d, struct mkr_node *node, int 
     return rc;
 }
 
-int fs_squashfs(struct mkr_job *j, struct mkr_img *m, uint64_t off, struct mkr_node *dir, int force)
+/* a SquashFS 4 image at off whose (standard) superblock is sb */
+static int sq4_run(struct mkr_job *j, struct mkr_img *m, uint64_t off, const uint8_t *sb, struct mkr_node *dir, int force)
 {
     struct sq4 q;
-    uint8_t sb[96];
     struct ino4 root;
     int rc;
 
-    if (img_read(j, m, off, sb, 96))
-        return -1;
-    if (rd32(sb) != SQFS_MAGIC)
-        return mkr_fail(j, "not a SquashFS filesystem");
-    if (rd16(sb + 28) != 4)
-        return mkr_fail(j, "SquashFS %u.%u is not supported (only 4.x)", rd16(sb + 28), rd16(sb + 30));
     memset(&q, 0, sizeof(q));
     sq_init(&q.s, j, m, off);
     q.force = force;
@@ -518,9 +519,10 @@ int fs_squashfs(struct mkr_job *j, struct mkr_img *m, uint64_t off, struct mkr_n
     q.inode_table = rd64(sb + 64);
     q.dir_table = rd64(sb + 72);
     q.frag_table = rd64(sb + 80);
-    if (q.s.comp != C_GZIP && q.s.comp != C_LZMA && q.s.comp != C_XZ && q.s.comp != C_ZSTD) {
+    if (q.s.comp != C_GZIP && q.s.comp != C_LZMA && q.s.comp != C_LZO && q.s.comp != C_XZ && q.s.comp != C_ZSTD) {
         sq_free(&q.s);
-        return mkr_fail(j, "SquashFS compression %s is not supported (gzip, lzma, xz, zstd are)", comp_name(q.s.comp));
+        return mkr_fail(j, "SquashFS compression %s is not supported (gzip, lzma, lzo, xz, zstd are)",
+                        comp_name(q.s.comp));
     }
     if (q.s.block_size < 4096 || q.s.block_size > (1u << 20)) {
         sq_free(&q.s);
@@ -539,6 +541,44 @@ int fs_squashfs(struct mkr_job *j, struct mkr_img *m, uint64_t off, struct mkr_n
         mkr_log(j, MKR_INFO, "SquashFS: %d device nodes, fifos or sockets left out", q.s.other);
     sq_free(&q.s);
     return rc;
+}
+
+int fs_squashfs(struct mkr_job *j, struct mkr_img *m, uint64_t off, struct mkr_node *dir, int force)
+{
+    uint8_t sb[96];
+
+    if (img_read(j, m, off, sb, 96))
+        return -1;
+    if (rd32(sb) != SQFS_MAGIC)
+        return mkr_fail(j, "not a SquashFS filesystem");
+    if (rd16(sb + 28) != 4)
+        return mkr_fail(j, "SquashFS %u.%u is not supported (only 4.x)", rd16(sb + 28), rd16(sb + 30));
+    return sq4_run(j, m, off, sb, dir, force);
+}
+
+/*
+ * IGS_SHFS on SquashFS 4 (Crazy Shoot's p3): the IGS magic and text, then
+ * SquashFS 4's fields reordered: 0x44 root inode, 0x4C bytes used, 0x54..0x63
+ * four obfuscated words (the kernel's version checks), 0x64 inodes, mkfs
+ * time, block size, fragments, compression, block log, flags, ids, 0x7C the
+ * id table, xattr, inode, directory, fragment and lookup tables (u64 each).
+ * Recognised by block size = 1 << block log.  Rebuilt into a standard
+ * superblock for the SquashFS 4 reader.
+ */
+static int shfs4(const uint8_t *h, uint8_t *sb)
+{
+    uint32_t bs = rd32(h + 0x6C);
+    unsigned lg = rd16(h + 0x76);
+
+    if (lg < 12 || lg > 20 || bs != 1u << lg)
+        return 0;
+    memset(sb, 0, 96);
+    memcpy(sb, "hsqs", 4);
+    memcpy(sb + 4, h + 0x64, 24);           /* inodes, mkfs time, block size, fragments, comp, log, flags, ids */
+    sb[28] = 4;                              /* version 4.0 */
+    memcpy(sb + 32, h + 0x44, 16);          /* root inode, bytes used */
+    memcpy(sb + 48, h + 0x7C, 48);          /* id, xattr, inode, directory, fragment, lookup tables */
+    return 1;
 }
 
 /* ======================================================================================== */
@@ -766,6 +806,7 @@ int fs_shfs(struct mkr_job *j, struct mkr_img *m, uint64_t off, struct mkr_node 
 {
     struct shfs f;
     uint8_t h[0x8B], *raw;
+    uint8_t h4[0xAC], sb4[96];
     uint32_t mo, nidx, i, major, minor;
     int rc, game;
     char head[96] = "";
@@ -774,6 +815,11 @@ int fs_shfs(struct mkr_job *j, struct mkr_img *m, uint64_t off, struct mkr_node 
         return -1;
     if (rd32(h) != SHFS_MAGIC)
         return mkr_fail(j, "not an IGS_SHFS partition (magic 0x%08X)", rd32(h));
+    if (!memcmp(h + 4, " <Intern", 8) && !img_read(j, m, off, h4, sizeof(h4)) && shfs4(h4, sb4)) {
+        mkr_log(j, MKR_TOOL, "IGS_SHFS on SquashFS 4 (%s), checks %08X %08X %08X %08X", comp_name(rd16(sb4 + 20)),
+                rd32(h4 + 0x54), rd32(h4 + 0x58), rd32(h4 + 0x5C), rd32(h4 + 0x60));
+        return sq4_run(j, m, off, sb4, dir, 1);
+    }
     memset(&f, 0, sizeof(f));
     sq_init(&f.s, j, m, off);
     f.s.comp = C_GZIP;

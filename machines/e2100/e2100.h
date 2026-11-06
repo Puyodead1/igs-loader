@@ -144,7 +144,13 @@ struct e2100_game {
 };
 
 enum { E2100_LAYOUT_RUNNING, E2100_LAYOUT_TRAILING };
-enum { E2100_HS_SESSION, E2100_HS_NOSUM };
+/*
+ * E2100_HS_ADV (Fish Hunter SKL2): the P2A LoaderAdv: after the session keys
+ * the ASIC sends "ready" (0x55AA55AA) and "done" (0xAA55AA55, word 1 the
+ * upload's sum), each also in plain in BAR1 words 0..7; the host answers
+ * 0x5A5A5A5A and 0xFFFF.
+ */
+enum { E2100_HS_SESSION, E2100_HS_NOSUM, E2100_HS_ADV };
 
 /* exported by a game plugin .so */
 #define E2100_GAME_ENTRY "e2100_game_entry"

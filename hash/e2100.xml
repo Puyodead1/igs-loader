@@ -629,6 +629,238 @@ verification (the loaders' verify option; mkromset.py checks them too).
 		</part>
 	</software>
 
+	<software name="fishhunterplus6p_m602cn">
+		<description>Fish Hunter Plus 6P (M602CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M602CN"/>
+		<info name="usage" value="Fish-Hunter-Plus-6P"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 lucky wheel, 3 fish-hunt task, 4 depth bomb, 5 super golden fish"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter6"/>
+			<!-- Fish6Pv2-OS (M607CN's kernel): its channel, messages 38/43/44 for 37/42/43, the lobster -->
+			<feature name="variant" value="plus"/>
+			<feature name="data" value="/Fish6P"/>
+			<feature name="binary" value="FH6P"/>
+			<feature name="rofs_profile" value="fish6pv2"/>
+			<feature name="rofs_key" value="Fish6PHunterV2.0"/>
+			<!-- the kernel runs /usr/bin/info /Fish6P/fish /Fish6P.bin/fish Hello-Fish6PV2.0; /etc/X11/IGS copies asic36.bin -->
+			<feature name="exe_mask" value="3af00e36a3aa82d3751050d1c5989932"/>
+			<feature name="asset_mask" value="a526c869480914e0bb9be3ef8972888d"/>
+			<feature name="build" value="root p2; decrypt /Fish6P/fish /Fish6P.bin/fish 2703776; copy /Fish6P/asic36.bin /Fish6P.bin/asic36.bin; mount p3 /Fish6P"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunterplus6p_m602cn" sha1="c7882b91047323681a5e5ad9143fc3a0a3c9b864"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Fish6P.bin/fish" size="2703776" sha1="3ff12f34a5771e68ad031263a66a33e66bea4bed"/>
+				<rom name="/Fish6P/asic36.bin" size="524288" sha1="321d441d311a2a6886e2a04077d8815023d8a0a3"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="fishhunterskl_m104cn">
+		<description>Fish Hunter SKL (M104CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M104CN"/>
+		<info name="usage" value="Fish-Hunter-SKL"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 lucky wheel, 3 fish-hunt task, 4 depth bomb, 5 super golden fish"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter6"/>
+			<!-- FishSKL-OS; M607CN's re-keyed XOR channel, 14 fish kinds -->
+			<feature name="variant" value="skl"/>
+			<feature name="data" value="/FishSKL"/>
+			<feature name="binary" value="FHSKL"/>
+			<feature name="rofs_profile" value="fishskl"/>
+			<feature name="rofs_key" value="SKLHunterFish-V1"/>
+			<feature name="asset_mask" value="d120871f9dd7078780c64b8915e1ee1f"/>
+			<!-- /etc/X11/IGS: cd /FishSKL; ./FHSKL  (FHSKL -> ../FishSKL.bin/fish) -->
+			<feature name="build" value="root p2; mount p3 /FishSKL"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunterskl_m104cn" sha1="8f48f2f161e1f493bbd26a7276ea4d50f053b85e"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/FishSKL.bin/fish" size="2695392" sha1="ffa0df34e6942552c8830e7bbaeaa511c804162f"/>
+				<rom name="/FishSKL/asic36.bin" size="524288" sha1="dd28f37b73019f98cc0dcced187dccf20c2be4ff"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="fishhunterskl_m103cn" cloneof="fishhunterskl_m104cn">
+		<description>Fish Hunter SKL (M103CN)</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M103CN"/>
+		<info name="usage" value="Fish-Hunter-SKL"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb or super golden fish); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5 0 [Testing] the chance game to start: 0 any, 1 lucky wheel, 3 fish-hunt task, 4 depth bomb, 5 super golden fish"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter6"/>
+			<!-- FishSKL-OS; Fish Hunter 6 M606CN's RC4 channel, 14 fish kinds; plain sounds and animations -->
+			<feature name="variant" value="sklcn"/>
+			<feature name="data" value="/FishSKL"/>
+			<feature name="binary" value="FHSKL"/>
+			<feature name="rofs_profile" value="fishskl"/>
+			<feature name="rofs_key" value="SKLHunterFish-V1"/>
+			<feature name="build" value="root p2; mount p3 /FishSKL"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunterskl_m103cn" sha1="51c07d4e21ddf5b01f2c9e936ed5da09e470a342"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/FishSKL.bin/fish" size="2684008" sha1="a4400447961f3a23cad9145ac42e7e36f9770944"/>
+				<rom name="/FishSKL/asic36.bin" size="524288" sha1="dd28f37b73019f98cc0dcced187dccf20c2be4ff"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="fishhunterskl2_m105cn">
+		<description>Fish Hunter SKL2 (M105CN)</description>
+		<year>2013</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M105CN"/>
+		<info name="usage" value="Fish-Hunter-SKL2"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (lucky wheel, fish-hunt task, depth bomb, super golden fish or searchlight); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|3|4|5|6 0 [Testing] the chance game to start: 0 any, 1 lucky wheel, 3 fish-hunt task, 4 depth bomb, 5 super golden fish, 6 searchlight"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter6"/>
+			<!-- FishSKL2-OS: M607CN's channel with 17-byte catches, a Sentinel dongle, the P2A LoaderAdv; the executable is assembled at boot (E2000 style) and FPGA-encrypted -->
+			<feature name="variant" value="skl2"/>
+			<feature name="asset_mask" value="182df00e9cc1618f814d39387e5f4c5a"/>
+			<feature name="rofs_profile" value="fishskl2"/>
+			<feature name="rofs_key" value="OSFSFishSKLv2-RF"/>
+			<feature name="data" value="/FishSKLv2"/>
+			<feature name="binary" value="FishHunterSKLv2"/>
+			<feature name="exe_mask" value="002f982b91490ee237fce79e01212cd0"/>
+			<feature name="head_part" value="p3"/>
+			<feature name="head_sector" value="1921665"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="137865429"/>
+			<feature name="piece_file" value="/usr/lib/libqtx%s.so"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="6"/>
+			<feature name="trim_step" value="2"/>
+			<feature name="cut_kb" value="30"/>
+			<feature name="cut_step" value="-1"/>
+			<!-- the kernel: spfdisk writes /mnt/head (p3 sector 1921665) and /mnt/GECA; GECA cats head + the cut libqtx pieces into /FishSKLv2/fish; /bin/bzcat /FishSKLv2/fish Start_FishSKL-v2 decrypts it into the /FishSKLv2.bin tmpfs -->
+			<feature name="build" value="root p2; assemble /FishSKLv2/fish; decrypt /FishSKLv2/fish /FishSKLv2.bin/FishHunterSKLv2 3091292; copy /boot/boot.b /FishSKLv2.bin/asic36.bin; mount p3 /FishSKLv2"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_fishhunterskl2_m105cn" sha1="ae82b3834643352b1603da9b92046f7aca753428"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/FishSKLv2.bin/FishHunterSKLv2" size="3091292" sha1="64355bfb71ba4d5ae3db9b76a8e0e09c3b05bb87"/>
+				<rom name="/FishSKLv2/asic36.bin" size="524288" sha1="1444d4c6620ddf07fcf4b22aef91a2115933d099"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="demonhunter_m202cn">
+		<description>Demon Hunter (M202CN)</description>
+		<year>2013</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M202CN"/>
+		<info name="usage" value="Demon-Hunter"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (one of the three station games, or the bonus); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|2|3|4 0 [Testing] the chance game to start: 0 any, 1..3 the station games, 4 the bonus"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter6"/>
+			<!-- Hunter_Demon OS: M607CN's re-keyed XOR channel with its own keys, the messages from 24 up one lower, 14 fish kinds, four stations -->
+			<feature name="variant" value="demon"/>
+			<feature name="data" value="/Zombie"/>
+			<feature name="binary" value="zombie"/>
+			<feature name="asset_mask" value="b687a2c38f874bcdfd98278e458c1332"/>
+			<feature name="rofs_profile" value="demonhunter"/>
+			<feature name="rofs_key" value="Hunter_DemonV1.0"/>
+			<!-- /etc/X11/IGS: cd /Zombie; ./zombie -->
+			<feature name="build" value="root p2; mount p3 /Zombie"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_demonhunter_m202cn" sha1="5b51a30778bc5bb89628acb43c600d6489427393"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Zombie/zombie" size="2690696" sha1="33680f1583df79060dbcc14c7f88f9f3fe28006c"/>
+				<rom name="/Zombie/asic36.bin" size="524288" sha1="8923af896b75785a50c1ded67353ed7a5b565585"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="demonhunter_m100cn" cloneof="demonhunter_m202cn">
+		<description>Demon Hunter (M100CN)</description>
+		<year>2013</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M100CN"/>
+		<info name="usage" value="Demon-Hunter"/>
+		<info name="tunable" value="FISH_RTP str 0.95 expected return of a shot at difficulty 5 (each level up takes 0.02 off)"/>
+		<info name="tunable" value="FISH_CHANCE int 300 one shot in n starts a chance game (one of the three station games, or the bonus); 0 = never"/>
+		<info name="tunable" value="FISH_CREDITS int 0 starting credits per station"/>
+		<info name="tunable" value="FISH_CHANCE_KIND enum:0|1|2|3|4 0 [Testing] the chance game to start: 0 any, 1..3 the station games, 4 the bonus"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="fishhunter6"/>
+			<!-- M202CN's channel; the chip's next key is 40, no asset key or push-to-pay, 13 fish kinds -->
+			<feature name="variant" value="demon100"/>
+			<feature name="data" value="/Zombie"/>
+			<feature name="binary" value="zombie"/>
+			<feature name="asset_mask" value="ed81f69cefa75699ff91a782050c3e22"/>
+			<feature name="rofs_profile" value="demonhunter"/>
+			<feature name="rofs_key" value="Hunter_DemonV1.0"/>
+			<feature name="build" value="root p2; mount p3 /Zombie"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_demonhunter_m100cn" sha1="f9d4d215e38683d75ce194768a914a86120e1d29"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/Zombie/zombie" size="2651560" sha1="f7a41e4c14472cd292184bdbb1f98c4fa8a05bef"/>
+				<rom name="/Zombie/asic36.bin" size="524288" sha1="8923af896b75785a50c1ded67353ed7a5b565585"/>
+			</dataarea>
+		</part>
+	</software>
+	<software name="crazyshoot_m100cn">
+		<description>Crazy Shoot (M100CN)</description>
+		<year>2014</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M100CN"/>
+		<info name="usage" value="Crazy-Shoot"/>
+		<info name="tunable" value="CS_BULLETS int 0 [Testing] starting bullets per station"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="crazyshoot"/>
+			<!-- CrazyShoot-OS: a Unity 4.1 player; libPcShareram.so talks to the chip and a Sentinel HASP key -->
+			<feature name="data" value="/ShootBin"/>
+			<feature name="binary" value="CrazyShoot"/>
+			<!-- the cabinet's GT218 has 512 MB: Unity sizes its textures by the GL memory queries -->
+			<!-- Mono: process-private handles (no SysV semaphores or shared files needed) -->
+			<feature name="env" value="IGS_VRAM_MB=512 MONO_DISABLE_SHM=1"/>
+			<feature name="rofs_profile" value="crazyshoot"/>
+			<feature name="rofs_key" value="LsT9eNJaHQb2zmMw"/>
+			<feature name="exe_mask" value="11167e6fa2339b1548c1202838a65463"/>
+			<feature name="head_part" value="p3"/>
+			<feature name="head_sector" value="2001250"/>
+			<feature name="head_cipher" value="fpga"/>
+			<feature name="pieces" value="861574239"/>
+			<feature name="piece_file" value="/usr/lib/libjdf%s.so"/>
+			<feature name="piece_mode" value="cut"/>
+			<feature name="trim_kb" value="3"/>
+			<feature name="trim_step" value="5"/>
+			<feature name="cut_kb" value="32"/>
+			<feature name="cut_step" value="-2"/>
+			<!-- the kernel: /usr/sbin/pegan writes /mnt/head (p3 sector 2001250) and /mnt/GECA (p3 sector 1999160 + /usr/bin/urcod);
+			     GECA cats head + the cut libjdf pieces into /ShootBack/CrazyShoot; /usr/bin/robn ... Ny35TtMaPq29AoLL decrypts it into
+			     /ShootBin; /etc/X11/IGS links CrazyShoot_Data and asic36.bin there -->
+			<feature name="build" value="root p2; mount p3 /CrazyShoot; mount p4 /CrazyShoot/ScreenCutOff; assemble /ShootBack/CrazyShoot; decrypt /ShootBack/CrazyShoot /ShootBin/CrazyShoot 15479748; link /ShootBin/CrazyShoot_Data /CrazyShoot/ShootRope_Data; link /ShootBin/asic36.bin /CrazyShoot/asic36.bin"/>
+			<diskarea name="harddriv">
+				<disk name="e2100_crazyshoot_m100cn" sha1="1bd135aff4a0e9e048d9a11b81ed642685748c95"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/ShootBin/CrazyShoot" size="15479748" sha1="cdaec34aa321ae8506eda22da6bd0bd4a612fe0e"/>
+				<rom name="/CrazyShoot/ShootRope_Data/Plugins/libPcShareram.so" size="1511009" sha1="f13b32c4ee43379ced728e529aa76bb89548b83f"/>
+				<rom name="/CrazyShoot/asic36.bin" size="524288" sha1="9c4ad095598ec315b6889d349216f393e2ff8ccf"/>
+			</dataarea>
+		</part>
+	</software>
 	<software name="oceanparty_md105cn">
 		<description>Ocean Party (MD105CN)</description>
 		<year>2012</year>

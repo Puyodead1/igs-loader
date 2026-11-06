@@ -33,7 +33,7 @@ done
 # committed (ELF code has no stack probes: see libc_thread.c)
 $CC $CF -Wno-format-truncation -o "$OUT/igs-loader.exe" \
     win/main.c win/elf.c win/libc.c win/libc_sys.c win/libc_thread.c win/sdl.c win/gl.c win/x11.c \
-    win/net.c win/core_win.c $RS \
+    win/net.c win/alsa.c win/core_win.c $RS \
     -static -Wl,--large-address-aware -Wl,--disable-dynamicbase -Xlinker --stack -Xlinker 16777216,16777216 \
     -lopengl32 -lgdi32 -lwinmm -lws2_32
 # plugins: the Linux sources unchanged, with dlfcn.h / sys/mman.h from win/compat
@@ -41,7 +41,7 @@ PF="$CF -shared -static -Iwin/compat -include win/compat/igs_plugin.h"
 for m in e2100 e2000 e1000 e2200; do
     $CC $PF -o "$OUT/$m.dll" "machines/$m/$m.c"
 done
-for g in harpoonlagoon fishhunter4 fishhunter6 fishhunterfinal6 oceanparty scratch heroofrobots goldcaptain piraterevenge gogoball2 speedrider pandafamily speeddriver2 wedanceonline2 percussionkids percussionmaster3; do
+for g in harpoonlagoon fishhunter4 fishhunter6 fishhunterfinal6 oceanparty scratch heroofrobots goldcaptain piraterevenge gogoball2 speedrider pandafamily speeddriver2 wedanceonline2 percussionkids percussionmaster3 crazyshoot; do
     $CC $PF -o "$OUT/$g.dll" "games/$g/$g.c" $(cat "games/$g/sources" 2>/dev/null) || echo "($g.dll not built)"
 done
 # the preloaded libraries (feature "preload"): build/<name>.so on Linux, <name>.dll here

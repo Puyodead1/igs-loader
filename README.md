@@ -32,6 +32,13 @@ data is included.
 | `fishhunterfinal6_fish6` | Fish Hunter Final 6 (U102CN, fish6) | E2100 | ✓ | ✓ |
 | `fishhunterfinal6_fish6p` | Fish Hunter Final 6 (U102CN, fish6p) | E2100 | ✓ | ✓ |
 | `fishhunterfinal6_fish44` | Fish Hunter Final 6 (U102CN, fish44) | E2100 | ✓ | ✓ |
+| `fishhunterplus6p_m602cn` | Fish Hunter Plus 6P (M602CN) | E2100 | ✓ | ✓ |
+| `fishhunterskl_m104cn` | Fish Hunter SKL (M104CN) | E2100 | ✓ | ✓ |
+| `fishhunterskl_m103cn` | Fish Hunter SKL (M103CN) | E2100 | ✓ | ✓ |
+| `fishhunterskl2_m105cn` | Fish Hunter SKL2 (M105CN) | E2100 | ✓ | ✓ |
+| `demonhunter_m202cn` | Demon Hunter (M202CN) | E2100 | ✓ | ✓ |
+| `demonhunter_m100cn` | Demon Hunter (M100CN) | E2100 | ✓ | ✓ |
+| `crazyshoot_m100cn` | Crazy Shoot (M100CN) | E2100 | ✓ | ✓ |
 | `oceanparty_md105cn` | Ocean Party (MD105CN) | E2100 | ✓ | ✓ |
 | `scratch_m101cn` | Scratch (M101CN) | E2100 | ✓ | ✓ |
 | `heroofrobots_m100fa` | Hero of Robots (M100FA) | E2100 | ✓ | ✓ |
@@ -46,10 +53,11 @@ data is included.
 | `percussionmaster3_m107fa` | Percussion Master 3 (M107FA) (offline; online with `IGS_NET`) | E2200 | ✓ | ✓ |
 
 Where the protection chip runs game logic whose code has not been dumped
-(Fish Hunter 4's and 6's catches, chance games and payouts, Ocean Party's odds, Scratch's prizes, the E2000 games' weapon tables and
+(Fish Hunter 4's, 6's, Plus 6P's, SKL's, SKL2's and Demon Hunter's catches, chance games and payouts, Ocean Party's odds, Scratch's prizes, the E2000 games' weapon tables and
 game flow, Speed Rider's AI riders and lost archive bytes, Speed Driver 2's
 screens and AI throttle, all of Percussion Kids' game flow and judging,
-Percussion Master 3's screen flow), the plugin reconstructs or invents it,
+Percussion Master 3's screen flow, Crazy Shoot's prize odds, ported from the
+developers' own stand-in in the game), the plugin reconstructs or invents it,
 so gameplay may not be completely identical to the real cabinet.
 
 ## Getting the loader
@@ -292,6 +300,7 @@ The documentation is on the [wiki](https://github.com/Puyodead1/igs-loader/wiki)
 | `third_party/lzma/` | LZMA SDK 23.01 subset (public domain) |
 | `third_party/zlib/` | zlib 1.3.1 and minizip (zlib licence) |
 | `third_party/libchdr/` | libchdr (BSD-3-Clause) with zstd 1.5.7 (BSD) and dr_flac (public domain / MIT-0) |
+| `third_party/lzokay/` | lzokay's LZO1X decoder, commit `db2df1f` (MIT) |
 | `third_party/imgui/` | Dear ImGui 1.92.9b (MIT) |
 | `third_party/stb/` | stb_image 2.28 and stb_image_write 1.16 (public domain / MIT) |
 | `debs/` | ncurses 5 (i386) from Ubuntu 22.04 |

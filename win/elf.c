@@ -25,6 +25,7 @@ typedef struct {
     uint16_t e_ehsize, e_phentsize, e_phnum, e_shentsize, e_shnum, e_shstrndx;
 } Ehdr;
 typedef struct { uint32_t p_type, p_offset, p_vaddr, p_paddr, p_filesz, p_memsz, p_flags, p_align; } Phdr;
+typedef struct { uint32_t sh_name, sh_type, sh_flags, sh_addr, sh_offset, sh_size, sh_link, sh_info, sh_addralign, sh_entsize; } Shdr;
 typedef struct { int32_t d_tag; uint32_t d_val; } Dyn;
 typedef struct { uint32_t st_name, st_value, st_size; uint8_t st_info, st_other; uint16_t st_shndx; } Sym;
 typedef struct { uint32_t r_offset, r_info; } Rel;
@@ -206,7 +207,7 @@ static int is_native_lib(const char *name)
         "libSDL-1.2.so", "libGL.so", "libXxf86vm.so", "libpci.so", "libncurses.so",
         "libtinfo.so", "libX11.so", "libXext.so", "libXmu.so", "libXi.so", "libXt.so",
         "libSM.so", "libICE.so", "libXrandr.so", "libXrender.so", "libXau.so", "libXdmcp.so",
-        "libxcb.so", "libXaw.so", "libXpm.so", "libXfont.so", NULL,
+        "libxcb.so", "libXaw.so", "libXpm.so", "libXfont.so", "libXcursor.so", "libasound.so", NULL,
     };
     int i;
 
@@ -373,13 +374,29 @@ void elf_reserve_low(void)
     low_reserve = VirtualAlloc((void *)0x08000000, 0x08000000, MEM_RESERVE, PAGE_NOACCESS);
 }
 
-/* rewrite the stack protector's %gs:0x14 reads to %fs:0x14 */
+/*
+ * The thread pointer (%gs:0 on Linux) of a statically linked TLS user (Unity's
+ * libstdc++ __cxa_get_globals: %gs:0 - 8): a TLS slot, fs:[0xE10 + 4 slot],
+ * holding the end of this thread's block of the executable's TLS.
+ */
+static DWORD tp_slot = TLS_OUT_OF_INDEXES;
+
+static uint32_t tp_disp(void)
+{
+    if (tp_slot == TLS_OUT_OF_INDEXES && ((tp_slot = TlsAlloc()) == TLS_OUT_OF_INDEXES || tp_slot >= 64))
+        return 0;
+    return 0xE10 + 4 * tp_slot;
+}
+
+/* rewrite the stack protector's %gs:0x14 reads to %fs:0x14, and %gs:0 to the thread-pointer slot */
 static int fix_gs(uint8_t *p, size_t n)
 {
     size_t i;
     int count = 0;
 
     for (i = 0; i + 7 <= n; i++) {
+        uint32_t d;
+
         if (p[i] != 0x65)
             continue;
         if (p[i + 1] == 0xa1 && !memcmp(p + i + 2, "\x14\0\0\0", 4)) {
@@ -389,9 +406,33 @@ static int fix_gs(uint8_t *p, size_t n)
                    !memcmp(p + i + 3, "\x14\0\0\0", 4)) {
             p[i] = 0x64;
             count++;
+        } else if (p[i + 1] == 0xa1 && !memcmp(p + i + 2, "\0\0\0\0", 4) && (d = tp_disp())) {
+            p[i] = 0x64;                   /* mov eax, gs:0 -> mov eax, fs:[slot] */
+            memcpy(p + i + 2, &d, 4);
+            count++;
+        } else if (p[i + 1] == 0x8b && (p[i + 2] & 0xc7) == 0x05 && !memcmp(p + i + 3, "\0\0\0\0", 4) &&
+                   (d = tp_disp())) {
+            p[i] = 0x64;                   /* mov reg, gs:0 */
+            memcpy(p + i + 3, &d, 4);
+            count++;
         }
     }
     return count;
+}
+
+/* this thread's thread pointer: set on every thread before it runs ELF code */
+void elf_thread_tp(void)
+{
+    struct elf_mod *m = exe_mod;
+    uint32_t ti[2];
+    uint8_t *block;
+
+    if (tp_slot == TLS_OUT_OF_INDEXES || !m || !m->tls_id || TlsGetValue(tp_slot))
+        return;
+    ti[0] = m->tls_id;
+    ti[1] = 0;
+    if ((block = elf_tls_get_addr(ti)))
+        TlsSetValue(tp_slot, block + ((m->tls_memsz + m->tls_align - 1) & ~(m->tls_align - 1)));
 }
 
 static uint32_t tls_next_id = 1;
@@ -505,7 +546,7 @@ static struct elf_mod *map_elf(const char *path, int is_exe)
     struct elf_mod *m;
     uint32_t lo = 0xffffffff, hi = 0, i;
     uint8_t *base;
-    int gs = 0;
+    int gs = 0, by_section = 0;
 
     if (!d) {
         snprintf(dl_error, sizeof(dl_error), "%s: cannot read", path);
@@ -571,8 +612,6 @@ static struct elf_mod *map_elf(const char *path, int is_exe)
 
         if (p->p_type == PT_LOAD) {
             memcpy((void *)(m->bias + p->p_vaddr), d + p->p_offset, p->p_filesz);
-            if (p->p_flags & PF_X)
-                gs += fix_gs((uint8_t *)(m->bias + p->p_vaddr), p->p_filesz);
         } else if (p->p_type == PT_DYNAMIC) {
             m->dyn = (Dyn *)(m->bias + p->p_vaddr);
         } else if (p->p_type == PT_PHDR) {
@@ -588,6 +627,22 @@ static struct elf_mod *map_elf(const char *path, int is_exe)
             }
         }
     }
+    /* %gs rewrites: in the code sections (SHF_EXECINSTR), else the executable segments; the
+       segments also hold .gnu.hash, .dynsym and .dynstr, whose bytes may look like the patterns */
+    if (eh->e_shoff && eh->e_shentsize == sizeof(Shdr) && eh->e_shnum &&
+        (uint64_t)eh->e_shoff + (uint64_t)eh->e_shnum * sizeof(Shdr) <= len) {
+        Shdr *sh = (Shdr *)(d + eh->e_shoff);
+
+        for (i = 0; i < eh->e_shnum; i++)
+            if (sh[i].sh_type == 1 && (sh[i].sh_flags & 4) && sh[i].sh_addr >= lo &&
+                sh[i].sh_addr + sh[i].sh_size <= hi) {   /* PROGBITS, EXECINSTR */
+                gs += fix_gs((uint8_t *)(m->bias + sh[i].sh_addr), sh[i].sh_size);
+                by_section = 1;
+            }
+    }
+    for (i = 0; !by_section && i < eh->e_phnum; i++)
+        if (ph[i].p_type == PT_LOAD && (ph[i].p_flags & PF_X))
+            gs += fix_gs((uint8_t *)(m->bias + ph[i].p_vaddr), ph[i].p_filesz);
     m->phnum = eh->e_phnum;
     if (!m->phdr) {
         /* program headers inside the first segment, or a copy */
@@ -1298,6 +1353,7 @@ void *elf_dlopen(const char *name, int flags)
     if (!m->native) {
         load_deps(first_new ? first_new : mods);
         link_new();
+        core_lib_loaded(m, m->name);
         init_mod(m);
     }
     LeaveCriticalSection(&dl_lock);

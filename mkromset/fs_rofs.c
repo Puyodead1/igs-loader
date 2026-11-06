@@ -30,6 +30,9 @@ struct profile {
     /* plaintext profiles (key NULL): name length = (field & mask) * unit,
        names padded to 4 */
     uint32_t nl_mask, nl_unit;
+    /* compressed pages longer than this have their first enc_head bytes
+       AES-CBC encrypted (zero IV, the same key); 0: none */
+    uint32_t enc_head;
 };
 
 static const struct profile profiles[] = {
@@ -65,6 +68,25 @@ static const struct profile profiles[] = {
        the init constants +/- 0xC7; page ends are word 3. */
     { "fish6pv2", "Fish6PHunterV2.0", 0xD0, 1, 0x150, 0x78, 0x72,
       { 0x00, 0, 0x683CD4AC }, { 0x30, 0, 0x67CC9C41 }, { 0x50, 3, 0xC2693974 }, 1, 1, 1, 3 },
+    /* Fish Hunter SKL (FishSKL-OS).  Ocean Party's design; XORs are the
+       init constants - 0x85D0; page ends are word 1. */
+    { "fishskl", "SKLHunterFish-V1", 0xD8, 0, 0x150, 0x78, 0x74,
+      { 0x20, 0, 0x01655DAF }, { 0x50, 0, 0xACA3EBBD }, { 0x40, 1, 0xA4BFC10A }, 1, 1, 1, 1 },
+    /* Fish Hunter SKL2 (FishSKL2-OS).  Ocean Party's design; XORs are the
+       init constants +/- 0xAADE; page ends are word 0; the first 0xA0
+       bytes of a longer page are encrypted. */
+    { "fishskl2", "OSFSFishSKLv2-RF", 0xD0, 2, 0x150, 0x78, 0x72,
+      { 0x00, 0, 0x25B70D1E }, { 0x30, 1, 0x2A4581CF }, { 0x50, 3, 0x8FE433E6 }, 1, 1, 1, 0, 0, 0, 0xA0 },
+    /* Demon Hunter (DemonHunter-OS).  Ocean Party's superblock and record
+       size, Harpoon's plain names and page table; XORs are the init
+       constants - 0xA37E. */
+    { "demonhunter", "Hunter_DemonV1.0", 0xD8, 3, 0x150, 0x78, 0x74,
+      { 0x20, 1, 0xD02D3979 }, { 0x50, 1, 0xBEEF2E50 }, { 0x40, 2, 0x7587D5D4 }, 0, 0, 0, 0 },
+    /* Crazy Shoot (CrazyShoot-OS).  SKL2's design with its own positions:
+       encrypted names and page table (page ends word 2), blanked zlib
+       header, the first 0xA0 bytes of a longer page encrypted. */
+    { "crazyshoot", "LsT9eNJaHQb2zmMw", 0x100, 3, 0x150, 0x78, 0x74,
+      { 0x50, 1, 0x1F011239 }, { 0x30, 3, 0xA1075718 }, { 0x00, 1, 0xBAA513A0 }, 1, 1, 1, 2, 0, 0, 0xA0 },
 };
 
 #define NPROF ((int)(sizeof(profiles) / sizeof(profiles[0])))
@@ -304,6 +326,8 @@ static int content(struct rofs *f, const struct rec *r, struct mkr_w *w, uint8_t
             break;
         }
         memcpy(comp, f->d + start, end - start);
+        if (f->p->enc_head && end - start > f->p->enc_head)
+            cbc0(f, comp, f->p->enc_head);
         if (f->p->blanked) {
             comp[0] = 0x78;
             comp[1] = 0x9C;
@@ -465,7 +489,7 @@ int fs_rofs(struct mkr_job *j, uint64_t off, uint64_t size, struct mkr_node *dir
             for (i = 0; i < NPROF && strcmp(profile, profiles[i].name); i++)
                 ;
             if (i == NPROF)
-                mkr_fail(j, "unknown ROFS profile '%s' (known: fish4p, oceanparty, heroofrobots, scratch, pmaster3, fish4p_m400, fish, fish6pv2)",
+                mkr_fail(j, "unknown ROFS profile '%s' (known: fish4p, oceanparty, heroofrobots, scratch, pmaster3, fish4p_m400, fish, fish6pv2, fishskl, fishskl2, demonhunter, crazyshoot)",
                          profile);
         }
         mkr_fail(j, "not an IGS ROFS v2 image for any known profile (no key decodes the superblock magic)");

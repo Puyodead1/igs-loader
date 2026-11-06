@@ -39,6 +39,7 @@ void thread_init(void);
 void elf_reserve_low(void);
 int elf_owns(uint32_t addr);
 extern char **lx_environ;
+extern const char *lx_argv0;  /* the game's argv[0] (readlink /proc/self/exe) */
 void l_exit(int code) __attribute__((noreturn));
 void *lx_thread_create(void *fn, void *arg, size_t stack);
 void lx_thread_wait(void *t, int *ret);
@@ -92,6 +93,7 @@ int elf_dlclose(void *h);
 const char *elf_dlerror(void);
 int elf_iterate_phdr(void *cb, void *data);
 void *elf_tls_get_addr(uint32_t *ti);
+void elf_thread_tp(void);      /* this thread's %gs:0 stand-in, before it runs ELF code */
 int elf_describe(uint32_t addr, char *buf, size_t n);   /* "module+0x1234" */
 void *native_lookup(const char *name);
 void *stub_alloc(size_t n);                   /* executable memory */
@@ -141,6 +143,10 @@ int lx_net_ioctl(int fd, unsigned long req, void *arg);
 int lx_net_select(int n, const uint32_t *rd, const uint32_t *wr, uint32_t *ord, uint32_t *owr);
 int lx_net_poll(struct l_pollfd *p, unsigned n, int timeout);
 extern const struct nsym net_syms[];
+extern const struct nsym alsa_syms[];
+void core_pcm_config(int rate, int channels, int bits);
+long core_pcm_write(const void *buf, size_t n);
+void core_pcm_close(void);
 
 /* stdio FILE stand-in */
 typedef struct LFILE {
@@ -155,6 +161,17 @@ FILE *lfile_crt(LFILE *lf);
 /* ---- core (core_win.c) ------------------------------------------------------------- */
 
 void core_init(void);                         /* load the machine plugin */
+
+/* signals (libc_thread.c) */
+void *lx_signal(int sig, void *h);
+int lx_sigaction(int sig, const uint8_t *act, uint8_t *old);
+int lx_sigmask(int how, const uint32_t *set, uint32_t *old);
+void *lx_sig_handler(int sig);
+int lx_raise(int sig);                        /* 1 when a handler ran */
+int lx_sig_fault(EXCEPTION_POINTERS *ep);     /* VEH: 1 when the fault became a signal */
+void lx_sleep_ms(DWORD ms);                   /* alertable once signals are in use */
+void lx_wait(HANDLE h);
+void core_lib_loaded(void *mod, const char *name);   /* elf_dlopen: apply igs_core.hook_lib hooks */
 int core_route_open(const char *path, int *fd);
 int core_ioctl(int fd, unsigned long req, void *arg, int *ret);   /* 1 if handled */
 int core_mmap(int fd, size_t len, int64_t off, void **ret);

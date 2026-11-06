@@ -28,7 +28,8 @@ The software list (hash/e2000.xml) supplies the features geca_sector,
 head_sector, pieces, trim_kb, trim_step and, where they differ from Gold
 Captain's, head_part (default p2), geca_part (p1) or geca_head, geca_file
 (/lib/libdb0.a), piece_file (/lib/libdb%s.a), piece_mode (trim), and for
-cut cut_kb, cut_step; see
+cut cut_kb, cut_step; head_cipher fpga when the pieces are FPGA-encrypted
+(E2100 Fish Hunter SKL2: no ELF checks here, the decrypt step follows); see
 wiki Keys.
 
 This is the development workspace layout (root/, game/, <BINARY>.bin,
@@ -70,7 +71,10 @@ def build_executable(image, parts, root, m):
     with open(image, 'rb') as f:
         f.seek((parts[part_index(m, 'HEAD_PART', 'p2')][0] + int(m['HEAD_SECTOR'])) * 512)
         out = f.read(1024)
-    if out[:4] != b'\x7fELF':
+    # HEAD_CIPHER fpga (Fish Hunter SKL2): the pieces are the FPGA-encrypted
+    # executable; the build's decrypt step checks the result
+    plain = m.get('HEAD_CIPHER', '') != 'fpga'
+    if plain and out[:4] != b'\x7fELF':
         sys.exit('HEAD_SECTOR does not point at an ELF header')
     n, step = int(m['TRIM_KB']), int(m['TRIM_STEP'])
     pieces, mode = m['PIECES'], m.get('PIECE_MODE', 'trim')
@@ -99,6 +103,8 @@ def build_executable(image, parts, root, m):
         else:
             out += piece[:(len(piece) // 1024 - n) * 1024]
         n += step
+    if not plain:
+        return out
     # the section header table ends the file: a cheap integrity check
     shoff, = struct.unpack_from('<I', out, 0x20)
     shnum, = struct.unpack_from('<H', out, 0x30)

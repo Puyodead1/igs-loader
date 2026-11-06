@@ -68,6 +68,34 @@ PROFILES = {
     'fish6pv2': ('Fish6PHunterV2.0', 0xD0, 1, 0x150, 0x78, 0x72,
                  (0x00, 0, 0x683CD4AC), (0x30, 0, 0x67CC9C41), (0x50, 3, 0xC2693974),
                  True, True, True, 3),
+    # Fish Hunter SKL (FishSKL-OS).  Ocean Party's design; XORs are the
+    # init constants - 0x85D0; page ends are word 1.
+    'fishskl': ('SKLHunterFish-V1', 0xD8, 0, 0x150, 0x78, 0x74,
+                (0x20, 0, 0x01655DAF), (0x50, 0, 0xACA3EBBD), (0x40, 1, 0xA4BFC10A),
+                True, True, True, 1),
+    # Fish Hunter SKL2 (FishSKL2-OS).  Ocean Party's design; XORs are the
+    # init constants +/- 0xAADE; page ends are word 0; ENC_HEAD below.
+    'fishskl2': ('OSFSFishSKLv2-RF', 0xD0, 2, 0x150, 0x78, 0x72,
+                 (0x00, 0, 0x25B70D1E), (0x30, 1, 0x2A4581CF), (0x50, 3, 0x8FE433E6),
+                 True, True, True, 0),
+    # Demon Hunter (DemonHunter-OS).  Ocean Party's superblock and record
+    # size, Harpoon's plain names and page table; XORs are the init
+    # constants - 0xA37E.
+    'demonhunter': ('Hunter_DemonV1.0', 0xD8, 3, 0x150, 0x78, 0x74,
+                    (0x20, 1, 0xD02D3979), (0x50, 1, 0xBEEF2E50), (0x40, 2, 0x7587D5D4),
+                    False, False, False, 0),
+    # Crazy Shoot (CrazyShoot-OS).  SKL2's design (ENC_HEAD below) with its
+    # own positions; page ends are word 2.
+    'crazyshoot': ('LsT9eNJaHQb2zmMw', 0x100, 3, 0x150, 0x78, 0x74,
+                   (0x50, 1, 0x1F011239), (0x30, 3, 0xA1075718), (0x00, 1, 0xBAA513A0),
+                   True, True, True, 2),
+}
+
+# profiles whose compressed pages longer than n bytes have their first n
+# bytes AES-CBC encrypted (zero IV, the same key)
+ENC_HEAD = {
+    'fishskl2': 0xA0,
+    'crazyshoot': 0xA0,
 }
 
 # plaintext profiles: (name length mask, unit, name alignment); the name
@@ -205,6 +233,7 @@ class Rofs:
         self.data, self.profile = data, name
         self.aes = Aes(effective_key(key)) if key else None
         self.plain = PLAIN.get(name)
+        self.enc_head = ENC_HEAD.get(name, 0)
         self.magic = self._word(mblock, mword)
 
     def _word(self, off, word):
@@ -265,6 +294,8 @@ class Rofs:
             if end <= start or end - start > 0x2000 or end > len(self.data):
                 raise ValueError('bad compressed extent for %s, page %d: 0x%X-0x%X' % (r['name'], p, start, end))
             comp = self.data[start:end]
+            if self.enc_head and len(comp) > self.enc_head:
+                comp = self.aes.cbc0(comp[:self.enc_head]) + comp[self.enc_head:]
             if self.blanked:
                 comp = b'\x78\x9c' + comp[2:]
             want = min(0x1000, r['size'] - p * 0x1000)

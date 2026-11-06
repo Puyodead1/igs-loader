@@ -59,12 +59,12 @@ void lx_usleep(int64_t us)
         hrtimer = CreateWaitableTimerExW(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
                                          TIMER_ALL_ACCESS);
     if (!hrtimer) {
-        Sleep((DWORD)((us + 999) / 1000));
+        lx_sleep_ms((DWORD)((us + 999) / 1000));
         return;
     }
     due.QuadPart = -us * 10;
     SetWaitableTimer(hrtimer, &due, 0, NULL, NULL, FALSE);
-    WaitForSingleObject(hrtimer, INFINITE);
+    lx_wait(hrtimer);
 }
 
 void lx_sleep_until(double t)
@@ -301,7 +301,7 @@ static void linux_form(const char *win, char *out, size_t n)
 
 /* ---- the fd table ------------------------------------------------------------------------ */
 
-enum { FD_FREE, FD_CRT, FD_NULL, FD_DIR, FD_SOCK };
+enum { FD_FREE, FD_CRT, FD_NULL, FD_DIR, FD_SOCK, FD_ZERO, FD_RANDOM };
 #define NFD 1024
 static struct { int type, crt; } fds[NFD] = {
     { FD_CRT, 0 }, { FD_CRT, 1 }, { FD_CRT, 2 },
@@ -376,8 +376,25 @@ static int l_open(const char *path, int flags, ...)
     }
     if (core_route_open(path, &fd))
         return fd;
-    if (!strcmp(path, "/dev/null") || !strcmp(path, "/dev/zero"))
+    if (!strcmp(path, "/dev/null"))
         return lx_fd_new_null();
+    if (!strcmp(path, "/dev/zero"))
+        return fd_alloc(FD_ZERO, -1);
+    /* Mono's RNG (Guid.NewGuid, Random seeds) */
+    if (!strcmp(path, "/dev/urandom") || !strcmp(path, "/dev/random"))
+        return fd_alloc(FD_RANDOM, -1);
+    /* the machine's or the core's text files (/proc/stat, /proc/self/maps): a temporary copy */
+    if ((flags & L_O_ACCMODE) == 0) {
+        const char *txt = core_vfile(path);
+        char dir[MAX_PATH], tmp[MAX_PATH];
+
+        if (txt && GetTempPathA(sizeof(dir), dir) && GetTempFileNameA(dir, "igs", 0, tmp) &&
+            (c = _open(tmp, _O_RDWR | _O_BINARY | _O_TEMPORARY | _O_NOINHERIT)) >= 0) {
+            _write(c, txt, (unsigned)strlen(txt));
+            _lseek(c, 0, SEEK_SET);
+            return lx_fd_from_crt(c);
+        }
+    }
     if (lx_path(path, win, sizeof(win))) {
         LOG("open %s: no such device or file", path);
         SET_ERRNO(ENOENT);
@@ -432,6 +449,20 @@ static ssize_t l_read(int fd, void *buf, size_t n)
         return c;
     case FD_NULL:
         return 0;
+    case FD_ZERO:
+        memset(buf, 0, n);
+        return (ssize_t)n;
+    case FD_RANDOM: {
+        static BOOLEAN (WINAPI *gen)(void *, ULONG);
+
+        if (!gen)
+            gen = (BOOLEAN (WINAPI *)(void *, ULONG))(void *)GetProcAddress(LoadLibraryA("advapi32.dll"), "SystemFunction036");
+        if (!gen || !gen(buf, (ULONG)n)) {
+            SET_ERRNO(EIO);
+            return -1;
+        }
+        return (ssize_t)n;
+    }
     case FD_SOCK:
         return lx_net_read(fd, buf, n);
     default:
@@ -458,7 +489,7 @@ static ssize_t l_write(int fd, const void *buf, size_t n)
         if (c < 0)
             SET_ERRNO(lx_errno_from_crt(errno));
         return c;
-    case FD_NULL:
+    case FD_NULL: case FD_ZERO: case FD_RANDOM:
         return n;
     case FD_SOCK:
         return lx_net_write(fd, buf, n);
@@ -830,7 +861,7 @@ static int l_access(const char *path, int mode)
     char win[MAX_PATH];
 
     (void)mode;
-    if (!strncmp(path, "/dev/", 5))
+    if (!strncmp(path, "/dev/", 5) || core_vfile(path))
         return 0;
     if (lx_path(path, win, sizeof(win)) || !exists(win)) {
         SET_ERRNO(ENOENT);
@@ -962,6 +993,12 @@ static void *l_opendir(const char *path)
     struct ldir *d;
     DWORD a;
 
+    /* Linux always has /dev, /proc and /sys: empty here (Unity lists /dev/input, ...) */
+    if (!strncmp(path, "/dev", 4) || !strncmp(path, "/proc", 5) || !strncmp(path, "/sys", 4)) {
+        d = calloc(1, sizeof(*d));
+        d->h = INVALID_HANDLE_VALUE;
+        return d;
+    }
     if (lx_path(path, win, sizeof(win)) || (a = GetFileAttributesA(win)) == INVALID_FILE_ATTRIBUTES) {
         SET_ERRNO(ENOENT);
         return NULL;
@@ -1000,6 +1037,8 @@ static struct l_dirent *l_readdir(struct ldir *d)
 {
     uint32_t ino;
 
+    if (!d)
+        return NULL;
     memset(&d->e, 0, sizeof(d->e));
     if (!next_entry(d, &d->e.d_type, &ino, d->e.d_name))
         return NULL;
@@ -1013,6 +1052,8 @@ static struct l_dirent64 *l_readdir64(struct ldir *d)
 {
     uint32_t ino;
 
+    if (!d)
+        return NULL;
     memset(&d->e64, 0, sizeof(d->e64));
     if (!next_entry(d, &d->e64.d_type, &ino, d->e64.d_name))
         return NULL;
@@ -1262,14 +1303,40 @@ static void tm_from_crt(const struct tm *c, struct l_tm *t, int32_t gmtoff)
     t->tm_zone = tzname_std;
 }
 
+/* any time as UTC fields (the CRT refuses those before 1970; glibc does not: Mono's time-zone
+   scan walks back hour by hour) */
+static void tm_civil(int64_t v, struct l_tm *out)
+{
+    int64_t days = v >= 0 ? v / 86400 : -((-v + 86399) / 86400), s = v - days * 86400;
+    int64_t z = days + 719468, era = (z >= 0 ? z : z - 146096) / 146097;
+    unsigned doe = (unsigned)(z - era * 146097), yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    int64_t y = (int64_t)yoe + era * 400;
+    unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100), mp = (5 * doy + 2) / 153;
+    unsigned d = doy - (153 * mp + 2) / 5 + 1, m = mp < 10 ? mp + 3 : mp - 9;
+    int leap;
+
+    y += m <= 2;
+    leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    memset(out, 0, sizeof(*out));
+    out->tm_sec = (int)(s % 60);
+    out->tm_min = (int)(s / 60 % 60);
+    out->tm_hour = (int)(s / 3600);
+    out->tm_mday = (int)d;
+    out->tm_mon = (int)m - 1;
+    out->tm_year = (int)(y - 1900);
+    out->tm_wday = (int)(((days % 7) + 11) % 7);       /* 1970-01-01 was a Thursday */
+    out->tm_yday = (int)((m > 2 ? (153 * (m - 3) + 2) / 5 + 59 + leap : (m == 2 ? 31 : 0)) + d - 1);
+}
+
 static struct l_tm *l_gmtime_r(const int32_t *t, struct l_tm *out)
 {
     __time64_t v = *t;
     struct tm c;
 
     if (_gmtime64_s(&c, &v))
-        return NULL;
-    tm_from_crt(&c, out, 0);
+        tm_civil(v, out);
+    else
+        tm_from_crt(&c, out, 0);
     out->tm_zone = "GMT";
     return out;
 }
@@ -1279,10 +1346,21 @@ static struct l_tm *l_localtime_r(const int32_t *t, struct l_tm *out)
     __time64_t v = *t;
     struct tm c, g;
 
-    if (_localtime64_s(&c, &v) || _gmtime64_s(&g, &v))
-        return NULL;
-    g.tm_isdst = c.tm_isdst;
-    tm_from_crt(&c, out, (int32_t)(_mkgmtime64(&c) - v));
+    if (_localtime64_s(&c, &v) || _gmtime64_s(&g, &v)) {
+        __time64_t now = _time64(NULL);
+        int32_t off = 0;
+
+        if (!_localtime64_s(&c, &now)) {               /* today's standard offset */
+            c.tm_isdst = 0;
+            off = (int32_t)(_mkgmtime64(&c) - now);
+        }
+        tm_civil(v + off, out);
+        out->tm_gmtoff = off;
+        out->tm_zone = tzname_std;
+        return out;
+    }
+    g = c;                                  /* _mkgmtime64 clears tm_isdst */
+    tm_from_crt(&c, out, (int32_t)(_mkgmtime64(&g) - v));
     return out;
 }
 
@@ -1291,7 +1369,7 @@ static struct l_tm *l_localtime(const int32_t *t) { static __thread struct l_tm 
 
 static int32_t l_mktime(struct l_tm *t)
 {
-    struct tm c;
+    struct tm c, g;
     __time64_t v;
 
     memset(&c, 0, sizeof(c));
@@ -1305,7 +1383,8 @@ static int32_t l_mktime(struct l_tm *t)
     v = _mktime64(&c);
     if (v == -1)
         return -1;
-    tm_from_crt(&c, t, t->tm_gmtoff);
+    g = c;                                  /* glibc fills tm_gmtoff: Mono's time-zone scan reads it */
+    tm_from_crt(&c, t, (int32_t)(_mkgmtime64(&g) - v));
     return (int32_t)v;
 }
 
@@ -1340,56 +1419,29 @@ static int l_settimeofday(const void *tv, const void *tz) { (void)tv; (void)tz; 
 static int l_stime(const int32_t *t) { (void)t; return 0; }
 static void l_tzset(void) { }
 
-/* ---- signals: recorded, never delivered ------------------------------------------------------- */
+/* ---- signals: libc_thread.c delivers them ------------------------------------------------------- */
 
-static void *sig_handler[65];
-
-static void *l_signal(int sig, void *h)
-{
-    void *old;
-
-    if (sig <= 0 || sig > 64)
-        return (void *)-1;
-    old = sig_handler[sig];
-    sig_handler[sig] = h;
-    if (lx_verbose)
-        LOG("signal(%d, %p) recorded", sig, h);
-    return old;
-}
-
-/* struct sigaction (i386): handler 0, mask 4 (128 bytes), flags 132, restorer 136 */
-static int l_sigaction(int sig, const void *act, void *old)
-{
-    if (sig <= 0 || sig > 64)
-        return -1;
-    if (old) {
-        memset(old, 0, 140);
-        *(void **)old = sig_handler[sig];
-    }
-    if (act)
-        sig_handler[sig] = *(void *const *)act;
-    return 0;
-}
+static void *l_signal(int sig, void *h) { return lx_signal(sig, h); }
+static int l_sigaction(int sig, const void *act, void *old) { return lx_sigaction(sig, act, old); }
 
 static int l_sigemptyset(uint32_t *s) { memset(s, 0, 128); return 0; }
 static int l_sigfillset(uint32_t *s) { memset(s, 0xff, 128); return 0; }
 static int l_sigaddset(uint32_t *s, int sig) { if (sig > 0 && sig <= 64) s[(sig - 1) / 32] |= 1u << ((sig - 1) % 32); return 0; }
 static int l_sigdelset(uint32_t *s, int sig) { if (sig > 0 && sig <= 64) s[(sig - 1) / 32] &= ~(1u << ((sig - 1) % 32)); return 0; }
 static int l_sigismember(const uint32_t *s, int sig) { return sig > 0 && sig <= 64 && (s[(sig - 1) / 32] >> ((sig - 1) % 32) & 1); }
-static int l_sigprocmask(int how, const void *set, void *old) { (void)how; (void)set; if (old) memset(old, 0, 128); return 0; }
+static int l_sigprocmask(int how, const void *set, void *old) { return lx_sigmask(how, set, old); }
 
 static int l_raise(int sig)
 {
-    void *h = sig > 0 && sig <= 64 ? sig_handler[sig] : NULL;
+    void *h = lx_sig_handler(sig);
 
     LOG("raise(%d)", sig);
-    if (h && h != (void *)1)           /* SIG_IGN */
-        elf_call1(h, sig);
-    else if (!h && sig != 17 && sig != 28 && sig != 23)   /* not CHLD/WINCH/URG */
+    if (lx_raise(sig) || h == (void *)1)    /* a handler ran, or SIG_IGN */
+        return 0;
+    if (sig != 17 && sig != 28 && sig != 23)   /* not CHLD/WINCH/URG */
         ExitProcess(128 + sig);
     return 0;
 }
-
 static int l_getpid(void) { return (int)GetCurrentProcessId(); }
 
 static int l_kill(int pid, int sig)
@@ -1579,6 +1631,169 @@ static void *l_getmntent(void *f) { (void)f; return NULL; }
 static int l_endmntent(void *f) { (void)f; return 1; }
 static void *l_getpwnam(const char *n) { (void)n; return NULL; }
 static void *l_getpwuid(int u) { (void)u; return NULL; }
+/* the _r forms: no entry (Mono then takes $HOME) */
+static int l_getpw_r(int u, void *pw, char *buf, size_t n, void **res) { (void)u; (void)pw; (void)buf; (void)n; *res = NULL; return 0; }
+static int l_getresuid(uint32_t *r, uint32_t *e, uint32_t *s) { *r = *e = *s = 0; return 0; }
+static int l_setresuid(uint32_t r, uint32_t e, uint32_t s) { (void)r; (void)e; (void)s; return 0; }
+
+/* readlink: /proc/self/exe is the game's executable; the sets' links are copies */
+const char *lx_argv0;
+
+static int l_readlink(const char *path, char *buf, size_t n)
+{
+    char res[1024];
+    size_t l;
+
+    if (strcmp(path, "/proc/self/exe") || !lx_argv0) {
+        SET_ERRNO(EINVAL);
+        return -1;
+    }
+    if (lx_argv0[0] == '/') {
+        snprintf(res, sizeof(res), "%s", lx_argv0);
+    } else {
+        char cwd[MAX_PATH];
+
+        l_getcwd(cwd, sizeof(cwd));
+        snprintf(res, sizeof(res), "%s/%s", cwd, lx_argv0[0] == '.' && lx_argv0[1] == '/' ? lx_argv0 + 2 : lx_argv0);
+    }
+    l = strlen(res);
+    if (l > n)
+        l = n;
+    memcpy(buf, res, l);                   /* no terminator, as the kernel's */
+    return (int)l;
+}
+
+/* glob (glob_t: pathc, pathv, offs, flags): * ? in the last component */
+static int glob_match(const char *p, const char *s)
+{
+    for (; *p; p++, s++) {
+        if (*p == '*') {
+            for (; *s; s++)
+                if (glob_match(p + 1, s))
+                    return 1;
+            return glob_match(p + 1, s);
+        }
+        if (!*s || (*p != '?' && tolower((unsigned char)*p) != tolower((unsigned char)*s)))
+            return 0;
+    }
+    return !*s;
+}
+
+static int l_glob(const char *pat, int flags, void *errf, uint32_t *g)
+{
+    const char *slash = strrchr(pat, '/');
+    char dir[1024], win[MAX_PATH], spec[MAX_PATH];
+    char **v = NULL;
+    size_t n = 0;
+    WIN32_FIND_DATAA fd;
+    HANDLE h;
+
+    (void)flags;
+    (void)errf;
+    snprintf(dir, sizeof(dir), "%.*s", slash ? (int)(slash - pat) : 1, slash ? pat : ".");
+    memset(g, 0, 16);
+    if (!lx_path(dir[0] ? dir : "/", win, sizeof(win))) {
+        snprintf(spec, sizeof(spec), "%s\\*", win);
+        if ((h = FindFirstFileA(spec, &fd)) != INVALID_HANDLE_VALUE) {
+            do {
+                if (fd.cFileName[0] != '.' && glob_match(slash ? slash + 1 : pat, fd.cFileName)) {
+                    v = realloc(v, (n + 2) * sizeof(char *));
+                    v[n] = l_malloc(strlen(dir) + strlen(fd.cFileName) + 2);
+                    sprintf(v[n++], "%s/%s", dir, fd.cFileName);
+                    v[n] = NULL;
+                }
+            } while (FindNextFileA(h, &fd));
+            FindClose(h);
+        }
+    }
+    if (!n)
+        return 3;                          /* GLOB_NOMATCH */
+    g[0] = (uint32_t)n;
+    g[1] = (uint32_t)(uintptr_t)v;
+    return 0;
+}
+
+static void l_globfree(uint32_t *g)
+{
+    char **v = (char **)(uintptr_t)g[1];
+    uint32_t i;
+
+    for (i = 0; v && i < g[0]; i++)
+        free(v[i]);
+    free(v);
+    g[0] = g[1] = 0;
+}
+
+/* ftw: nothing walked (the games only clean their own temporary folders) */
+static int l_ftw(const char *d, void *fn, int n) { (void)d; (void)fn; (void)n; return 0; }
+
+/* struct sysinfo (i386, 64 bytes), memory in 4 KiB units */
+static int l_sysinfo(uint32_t *s)
+{
+    MEMORYSTATUSEX m;
+
+    memset(s, 0, 64);
+    m.dwLength = sizeof(m);
+    GlobalMemoryStatusEx(&m);
+    s[0] = GetTickCount() / 1000;
+    s[4] = (uint32_t)(m.ullTotalPhys >> 12);
+    s[5] = (uint32_t)(m.ullAvailPhys >> 12);
+    s[8] = (uint32_t)(m.ullTotalPageFile >> 12);
+    s[9] = (uint32_t)(m.ullAvailPageFile >> 12);
+    ((uint16_t *)s)[20] = 1;               /* procs */
+    s[13] = 4096;                          /* mem_unit */
+    return 0;
+}
+
+static int l_truncate(const char *path, long len)
+{
+    char win[MAX_PATH];
+    HANDLE h;
+    LARGE_INTEGER at;
+    int ok;
+
+    if (lx_path(path, win, sizeof(win)) ||
+        (h = CreateFileA(win, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL)) ==
+            INVALID_HANDLE_VALUE) {
+        SET_ERRNO(ENOENT);
+        return -1;
+    }
+    at.QuadPart = len;
+    ok = SetFilePointerEx(h, at, NULL, FILE_BEGIN) && SetEndOfFile(h);
+    CloseHandle(h);
+    return ok ? 0 : -1;
+}
+
+static int l_sched_cpucount(size_t size, const uint8_t *set)
+{
+    int n = 0;
+    size_t i;
+
+    for (i = 0; i < size; i++)
+        n += __builtin_popcount(set[i]);
+    return n;
+}
+
+/* not here: epoll, SysV semaphores, POSIX shared memory, sendfile (Mono falls back) */
+static int l_enosys(void) { SET_ERRNO(L_ENOSYS); return -1; }
+static int l_zero(void) { return 0; }
+static int l_getdtablesize(void) { return 1024; }
+static int l_sigrtmin(void) { return 34; }
+static int l_sigrtmax(void) { return 64; }
+
+/* struct statvfs64 (i386): bsize, frsize, 6 x u64 counts, fsid, pad, flag, namemax */
+static int l_statvfs64(const char *p, uint32_t *s)
+{
+    uint64_t *c = (uint64_t *)(s + 2);
+
+    (void)p;
+    memset(s, 0, 96);
+    s[0] = s[1] = 4096;
+    c[0] = c[1] = c[2] = 1u << 20;
+    c[3] = c[4] = c[5] = 1u << 16;
+    s[17] = 255;
+    return 0;
+}
 
 /* We Dance Online 2's network code: no interfaces here */
 static int l_getifaddrs(void **ifa) { *ifa = NULL; SET_ERRNO(L_ENOSYS); return -1; }
@@ -1830,6 +2045,16 @@ const struct nsym sys_syms[] = {
     N(getifaddrs), N(freeifaddrs), N(ftruncate), N(ftruncate64), N(utimes), N(__xpg_basename),
     NA(shmget, l_shm_fail), N(shmat), NA(shmdt, l_shm_fail), NA(shmctl, l_shm_fail), N(tmpnam),
     N(mremap),
+    NA(getpwuid_r, l_getpw_r), NA(getpwnam_r, l_getpw_r), NA(getgrgid_r, l_getpw_r), NA(getgrnam_r, l_getpw_r),
+    N(getresuid), N(setresuid), N(readlink), N(glob), N(globfree), N(ftw), N(sysinfo), N(truncate),
+    NA(__sched_cpucount, l_sched_cpucount), NA(epoll_create, l_enosys), NA(epoll_ctl, l_enosys),
+    NA(epoll_wait, l_enosys), NA(semget, l_enosys), NA(semctl, l_enosys), NA(semop, l_enosys),
+    NA(shm_open, l_enosys), NA(shm_unlink, l_enosys), NA(ftok, l_enosys), NA(sendfile64, l_enosys),
+    NA(sendfile, l_enosys), NA(setitimer, l_zero), NA(sched_setaffinity, l_zero),
+    NA(posix_fadvise64, l_zero), NA(posix_fadvise, l_zero), N(statvfs64),
+    NA(__libc_current_sigrtmin, l_sigrtmin), NA(__libc_current_sigrtmax, l_sigrtmax),
+    NA(__realpath_chk, l_realpath), NA(execl, l_execv), NA(__sysv_signal, l_signal),
+    NA(getservbyname, l_net_null), N(getdtablesize),
     /* socket, connect, send, recv...: net.c */
     NA(bind, l_net_fail), NA(listen, l_net_fail), NA(accept, l_net_fail),
     NA(gethostbyname, l_net_null), NA(gethostbyaddr, l_net_null), NA(if_nameindex, l_net_null), N(if_freenameindex), N(inet_ntoa),

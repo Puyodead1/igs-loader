@@ -19,7 +19,7 @@ NATIVE_LIBS = {
     "libSDL-1.2.so.0", "libGL.so.1", "libXxf86vm.so.1", "libpci.so.3",
     "libncurses.so.5", "libX11.so.6", "libXext.so.6", "libXmu.so.6", "libXi.so.6",
     "libtinfo.so.5", "libXt.so.6", "ld-linux.so.2", "libXaw.so.7", "libXpm.so.4",
-    "libXfont.so.1", "libSM.so.6", "libICE.so.6", "libXrandr.so.2",
+    "libXfont.so.1", "libSM.so.6", "libICE.so.6", "libXrandr.so.2", "libXcursor.so.1", "libasound.so.2",
 }
 
 

@@ -53,6 +53,11 @@
 #define ASIC_CMD_HELLO    0xF0F0F0F0u
 #define ASIC_CMD_DONE     0x90909090u
 #define HOST_REPLY_RETRY  0x0A0A0A0Au
+/* P2A LoaderAdv (Fish Hunter SKL2): its own command words */
+#define ADV_CMD_READY     0x55AA55AAu /* the host answers 0x5A5A5A5A */
+#define ADV_REPLY_READY   0x5A5A5A5Au
+#define ADV_CMD_DONE      0xAA55AA55u /* word 1: the upload's sum; the host answers 0xFFFF */
+#define ADV_REPLY_DONE    0x0000FFFFu
 #define HOST_REPLY_DONE   0x0C0C0C0Cu
 #define ASIC_MAX_WORDS    (BAR0_SIZE / 4)
 #define ASIC_RUNTIME_PERIOD_MS 16
@@ -426,6 +431,15 @@ static void asic_fire(void)
         __sync_fetch_and_add(&s.events, 1);
 }
 
+/* LoaderAdv: the host reads the command back from BAR1 words 0..7 (plain) */
+static void adv_command(uint32_t cmd)
+{
+    int i;
+
+    for (i = 0; i < 8; i++)
+        memcpy(s.bar1 + 4 * i, &cmd, 4);
+}
+
 static void asic_reset(void)
 {
     LOG("ASIC reset");
@@ -452,12 +466,28 @@ static void asic_notify(void)
         asic_post(1, 0, 0, 0, ASIC_REPLY_DELAY_MS);
         break;
     case ASIC_WAIT_KEYS:
-        /* the host wrote (r ^ 0x08080808, r) and four session keys at 0x108 */
+        /* the host wrote (r ^ 0x08080808, r) and four session keys at 0x108
+           (LoaderAdv: (r ^ 0xAA55AA55, r), the keys, key 0 ^ 2 at 0x118) */
         s.session_key = k = s.mbox_out[2];
         s.asic_state = ASIC_HS_SENT;
+        if (game->handshake == E2100_HS_ADV) {
+            /* "ready": the command, masked, and in plain in BAR1 words 0..7 */
+            adv_command(ADV_CMD_READY);
+            asic_post(1, 1, ADV_CMD_READY ^ k, (uint32_t)rand() ^ k, ASIC_REPLY_DELAY_MS);
+            break;
+        }
         asic_post(1, 1, ASIC_CMD_HELLO ^ k, (uint32_t)rand() ^ k, ASIC_REPLY_DELAY_MS);
         break;
     case ASIC_HS_SENT:
+        if (game->handshake == E2100_HS_ADV) {
+            if ((cmd ^ k) != ADV_REPLY_READY)
+                LOG("unexpected handshake reply 0x%08x", cmd ^ k);
+            /* skip the firmware upload: done, with the upload's sum (none: 0) */
+            s.asic_state = ASIC_DONE_SENT;
+            adv_command(ADV_CMD_DONE);
+            asic_post(1, 1, ADV_CMD_DONE ^ k, k, ASIC_REPLY_DELAY_MS);
+            break;
+        }
         if ((cmd ^ k) != HOST_REPLY_RETRY)
             LOG("unexpected handshake reply 0x%08x", cmd ^ k);
         /* skip the firmware upload: report done straight away */
@@ -467,7 +497,7 @@ static void asic_notify(void)
                   ASIC_REPLY_DELAY_MS);
         break;
     case ASIC_DONE_SENT:
-        if ((cmd ^ k) != HOST_REPLY_DONE)
+        if ((cmd ^ k) != (game->handshake == E2100_HS_ADV ? ADV_REPLY_DONE : HOST_REPLY_DONE))
             LOG("unexpected done reply 0x%08x", cmd ^ k);
         LOG("handshake complete");
         s.asic_state = ASIC_RUNTIME_WAIT;

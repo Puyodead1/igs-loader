@@ -1875,6 +1875,54 @@ static int l_XDefineCursor(void *d, XID w, XID c)
 
 static int l_XUndefineCursor(void *d, XID w) { return l_XDefineCursor(d, w, 0); }
 
+/* Xcursor (Unity's cursors): images and cursor sets; a cursor made from an image is a normal one */
+struct l_xcursor_image { uint32_t version, size, width, height, xhot, yhot, delay; uint32_t *pixels; };
+struct l_xcursor_set { void *dpy; int ref, ncursor; XID *cursors; };
+
+static struct l_xcursor_image *l_XcursorImageCreate(int w, int h)
+{
+    struct l_xcursor_image *im = calloc(1, sizeof(*im) + (size_t)w * h * 4);
+
+    if (!im)
+        return NULL;
+    im->version = 1;
+    im->size = w > h ? w : h;
+    im->width = w;
+    im->height = h;
+    im->pixels = (uint32_t *)(im + 1);
+    return im;
+}
+
+static void l_XcursorImageDestroy(struct l_xcursor_image *im) { free(im); }
+static XID l_XcursorImageLoadCursor(void *d, const void *im) { (void)d; (void)im; return new_xid(); }
+
+static struct l_xcursor_set *l_XcursorCursorsCreate(void *d, int n)
+{
+    struct l_xcursor_set *s = calloc(1, sizeof(*s) + (size_t)n * sizeof(XID));
+
+    if (!s)
+        return NULL;
+    s->dpy = d;
+    s->ref = 1;
+    s->cursors = (XID *)(s + 1);
+    return s;
+}
+
+static void l_XcursorCursorsDestroy(struct l_xcursor_set *s) { free(s); }
+
+/* fonts, selections, the cut buffer, the screen saver: none */
+static char **l_XListFonts(void *d, const char *pat, int max, int *n) { (void)d; (void)pat; (void)max; *n = 0; return NULL; }
+static char **l_XGetFontPath(void *d, int *n) { (void)d; *n = 0; return NULL; }
+static char *l_XFetchBytes(void *d, int *n) { (void)d; *n = 0; return NULL; }
+static int l_XkbSetDetectableAutoRepeat(void *d, int on, int *supported)
+{
+    (void)d;
+    (void)on;
+    if (supported)
+        *supported = 1;
+    return 1;
+}
+
 static void *l_XCreateGC(void)
 {
     uint32_t *gc = l_calloc(1, 96);
@@ -2955,6 +3003,10 @@ const struct nsym x11_syms[] = {
     N(XCreatePixmap), NA(XCreateBitmapFromData, l_XCreatePixmap),
     NA(XCreatePixmapFromBitmapData, l_XCreatePixmap), NOK(XFreePixmap), N(XCreatePixmapCursor),
     N(XCreateFontCursor), N(XDefineCursor), N(XUndefineCursor), NOK(XFreeCursor), NOK(XRecolorCursor),
+    N(XcursorImageCreate), N(XcursorImageDestroy), N(XcursorImageLoadCursor), N(XcursorCursorsCreate),
+    N(XcursorCursorsDestroy),
+    N(XListFonts), NOK(XFreeFontNames), N(XGetFontPath), NOK(XFreeFontPath), NZ(XGetSelectionOwner),
+    NOK(XStoreBytes), N(XFetchBytes), N(XkbSetDetectableAutoRepeat), NOK(XForceScreenSaver),
     N(XCreateGC), NA(XFreeGC, l_XFree), NOK(XChangeGC), NOK(XSetForeground), NOK(XSetBackground),
     NOK(XSetFunction), NOK(XFillRectangle), NOK(XCopyArea), NOK(XDrawLine),
     N(XCreateColormap), NOK(XFreeColormap), NOK(XInstallColormap), N(XAllocColor), N(XAllocNamedColor),

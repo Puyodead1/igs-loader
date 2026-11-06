@@ -5,7 +5,8 @@
 MKR_LZ=third_party/lzma
 MKR_ZL=third_party/zlib
 MKR_CH=third_party/libchdr
-MKR_INC="-Imkromset -Iromset -I$MKR_LZ -I$MKR_ZL -I$MKR_ZL/minizip -I$MKR_CH/include -I$MKR_CH/deps/zstd-1.5.7"
+MKR_LO=third_party/lzokay
+MKR_INC="-Imkromset -Iromset -I$MKR_LZ -I$MKR_ZL -I$MKR_ZL/minizip -I$MKR_CH/include -I$MKR_CH/deps/zstd-1.5.7 -I$MKR_LO/lzokay-c"
 # libchdr: zlib from third_party/zlib, zstd and its LZMA decoder (renamed CHDR_*) bundled
 MKR_DEF="-DCHDR_SYSTEM_ZLIB -DWANT_RAW_DATA_SECTOR=1 -DWANT_SUBCODE=1 -DVERIFY_BLOCK_CRC=1 -DLOWRAM_TARGET=0 \
 -D_LARGEFILE64_SOURCE"
@@ -22,20 +23,29 @@ MKR_SRC="mkromset/build.c mkromset/vfs.c mkromset/image.c mkromset/fs_rofs.c mkr
     $MKR_CH/src/libchdr_codec_cdzl.c $MKR_CH/src/libchdr_codec_cdzs.c $MKR_CH/src/libchdr_codec_flac.c
     $MKR_CH/src/libchdr_codec_huff.c $MKR_CH/src/libchdr_codec_lzma.c $MKR_CH/src/libchdr_codec_zlib.c
     $MKR_CH/src/libchdr_codec_zstd.c $MKR_CH/src/libchdr_flac.c $MKR_CH/src/libchdr_huffman.c
-    $MKR_CH/deps/lzma-26.02/src/LzmaDec.c $MKR_CH/deps/zstd-1.5.7/zstddeclib.c"
+    $MKR_CH/deps/lzma-26.02/src/LzmaDec.c $MKR_CH/deps/zstd-1.5.7/zstddeclib.c
+    $MKR_LO/lzokay.cpp $MKR_LO/lzokay-c/lzokay-c.cpp"
 
-# mkr_objs <compiler> <flags> <object dir>: compile what changed, print the objects
+# mkr_objs <compiler> <flags> <object dir>: compile what changed, print the objects.
+# C++ sources (lzokay) use the matching g++ ($MKR_CXX, else the C compiler's
+# name with gcc -> g++), without C-only flags and the C++ runtime's exceptions
+# and RTTI, so the C link needs no libstdc++.
 mkr_objs() {
-    local s o objs=
+    local s o objs= cc fl
+    local cxx=${MKR_CXX:-$(echo "$1" | sed 's/gcc/g++/')}
     mkdir -p "$3"
     for s in $MKR_SRC; do
         o=$3/$(echo "${s%.*}" | tr '/' '_').o
         # third-party code gets no warnings of ours
         case $s in mkromset/*) w="-Wall";; *) w="-w";; esac
+        case $s in
+        *.cpp) cc=$cxx; fl="$(echo " $2 " | sed 's/ -std=[^ ]*//g') -std=c++14 -fno-exceptions -fno-rtti";;
+        *) cc=$1; fl=$2;;
+        esac
         # ours include mkr.h, mkromset.h and romset.h
         if [ ! "$o" -nt "$s" ] || { [ "${s#mkromset/}" != "$s" ] && { [ ! "$o" -nt mkromset/mkr.h ] ||
             [ ! "$o" -nt mkromset/mkromset.h ] || [ ! "$o" -nt romset/romset.h ]; }; }; then
-            $1 $2 $w $MKR_INC $MKR_DEF -c -o "$o" "$s" || return 1
+            $cc $fl $w $MKR_INC $MKR_DEF -c -o "$o" "$s" || return 1
         fi
         objs="$objs $o"
     done

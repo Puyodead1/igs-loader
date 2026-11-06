@@ -34,6 +34,19 @@ MAGIC = 0xD4AA2682
 META = 8192
 
 
+def squashfs4_superblock(h):
+    """IGS_SHFS on SquashFS 4 (Crazy Shoot): the "Game Image" text, then
+    SquashFS 4's fields reordered (0x44 root inode, 0x4C bytes used, four
+    obfuscated words, 0x64 inodes ... 0x7C the tables).  The standard 96-byte
+    superblock for the same image, or None when h (0xAC bytes) is not one."""
+    if len(h) < 0xAC or h[4:12] != b' <Intern':
+        return None
+    bs, lg = struct.unpack_from('<I', h, 0x6C)[0], struct.unpack_from('<H', h, 0x76)[0]
+    if not 12 <= lg <= 20 or bs != 1 << lg:
+        return None
+    return (b'hsqs' + h[0x64:0x7C] + struct.pack('<HH', 4, 0) + h[0x44:0x54] + h[0x7C:0xAC])
+
+
 class Shfs:
     def __init__(self, path, base=0):
         self.f, self.base = open(path, 'rb'), base

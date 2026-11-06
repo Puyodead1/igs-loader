@@ -11,9 +11,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Install the 32-bit toolchain
+        # g++: the GUI and igs-mkromset's LZO decoder (third_party/lzokay)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gcc-multilib libsdl2-dev
+          sudo apt-get install -y --no-install-recommends gcc-multilib g++ libsdl2-dev
       - name: Build
         # core/font.h is committed; keep build.sh from regenerating it (needs PIL and a font)
         run: |

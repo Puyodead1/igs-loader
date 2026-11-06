@@ -52,7 +52,10 @@ sealed record RofsProfile(
     bool EncryptedPageTable,
     bool BlankedZlibHeader,
     int PageTableWord = 0,
-    uint NameMask = 0xFF, int NameUnit = 1)
+    uint NameMask = 0xFF, int NameUnit = 1,
+    // compressed pages longer than this have their first EncryptedHead
+    // bytes AES-CBC encrypted (zero IV, the same key); 0: none
+    int EncryptedHead = 0)
 {
     public static readonly RofsProfile[] All =
     [
@@ -137,6 +140,47 @@ sealed record RofsProfile(
             Table: (0x50, 3, 0xC2693974),
             EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
             PageTableWord: 3),
+        // Fish Hunter SKL (FishSKL-OS).  Ocean Party's design; XORs are the
+        // init constants - 0x85D0; page ends are word 1.
+        new("fishskl", "SKLHunterFish-V1",
+            MagicBlock: 0xD8, MagicWord: 0,
+            FirstRecord: 0x150, HeaderSize: 0x78, ModeOffset: 0x74,
+            NameLength: (0x20, 0, 0x01655DAF),
+            Size: (0x50, 0, 0xACA3EBBD),
+            Table: (0x40, 1, 0xA4BFC10A),
+            EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
+            PageTableWord: 1),
+        // Fish Hunter SKL2 (FishSKL2-OS).  Ocean Party's design; XORs are the
+        // init constants +/- 0xAADE; page ends are word 0; the first 0xA0
+        // bytes of a longer page are encrypted.
+        new("fishskl2", "OSFSFishSKLv2-RF",
+            MagicBlock: 0xD0, MagicWord: 2,
+            FirstRecord: 0x150, HeaderSize: 0x78, ModeOffset: 0x72,
+            NameLength: (0x00, 0, 0x25B70D1E),
+            Size: (0x30, 1, 0x2A4581CF),
+            Table: (0x50, 3, 0x8FE433E6),
+            EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
+            PageTableWord: 0, EncryptedHead: 0xA0),
+        // Demon Hunter (DemonHunter-OS).  Ocean Party's superblock and record
+        // size, Harpoon's plain names and page table; XORs are the init
+        // constants - 0xA37E.
+        new("demonhunter", "Hunter_DemonV1.0",
+            MagicBlock: 0xD8, MagicWord: 3,
+            FirstRecord: 0x150, HeaderSize: 0x78, ModeOffset: 0x74,
+            NameLength: (0x20, 1, 0xD02D3979),
+            Size: (0x50, 1, 0xBEEF2E50),
+            Table: (0x40, 2, 0x7587D5D4),
+            EncryptedNames: false, EncryptedPageTable: false, BlankedZlibHeader: false),
+        // Crazy Shoot (CrazyShoot-OS).  SKL2's design with its own positions;
+        // page ends are word 2.
+        new("crazyshoot", "LsT9eNJaHQb2zmMw",
+            MagicBlock: 0x100, MagicWord: 3,
+            FirstRecord: 0x150, HeaderSize: 0x78, ModeOffset: 0x74,
+            NameLength: (0x50, 1, 0x1F011239),
+            Size: (0x30, 3, 0xA1075718),
+            Table: (0x00, 1, 0xBAA513A0),
+            EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
+            PageTableWord: 2, EncryptedHead: 0xA0),
     ];
 }
 
@@ -304,6 +348,9 @@ sealed class RofsImage
             if (end <= start || end - start > 0x2000 || end > _image.Length)
                 throw new InvalidDataException($"Invalid compressed extent for {record.Name}, page {page}: 0x{start:X}-0x{end:X}");
             var compressed = _image.AsSpan((int)start, (int)(end - start)).ToArray();
+            if (Profile.EncryptedHead > 0 && compressed.Length > Profile.EncryptedHead)
+                _aes.DecryptCbc(compressed.AsSpan(0, Profile.EncryptedHead), new byte[16],
+                    compressed.AsSpan(0, Profile.EncryptedHead), PaddingMode.None);
             if (Profile.BlankedZlibHeader)
             {
                 // The kernel restores the zlib header before inflating.

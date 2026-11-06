@@ -77,7 +77,7 @@ int main(int argc, char **argv)
     const char *game = NULL, *v, *bin;
     int check = 0, listing = 0, verify = 0, i, n, missing;
     struct elf_mod *em;
-    const struct nsym *tables[9];
+    const struct nsym *tables[10];
 
     /* first of all: keep the executable's link address range free */
     elf_reserve_low();
@@ -179,7 +179,8 @@ int main(int argc, char **argv)
     tables[5] = gl_syms;
     tables[6] = x11_syms;
     tables[7] = net_syms;
-    tables[8] = NULL;
+    tables[8] = alsa_syms;
+    tables[9] = NULL;
     elf_set_native(tables);
 
     /*
@@ -249,10 +250,10 @@ int main(int argc, char **argv)
     bin = mget("binary", "");
     set_path(rootfs, data, bin, exe, sizeof(exe));
     lx_resolve(exe, sizeof(exe));
+    core_install_veh();                    /* faults while loading are reported too */
     em = elf_load_exe(exe);
     if (!em)
         return 1;
-    core_install_veh();
     if (!check)
         core_init();
     missing = elf_link_all(check);
@@ -263,7 +264,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    /* argv / environ for the game */
+    /* argv / environ for the game; a Linux session has $HOME (Unity builds its settings
+       path from it): the set's /root */
+    if (!getenv("HOME"))
+        _putenv_s("HOME", "/root");
     for (n = 0; _environ[n]; n++)
         ;
     envp = l_malloc((n + 1) * sizeof(char *));
@@ -274,8 +278,10 @@ int main(int argc, char **argv)
     snprintf(buf, sizeof(buf), "%s%s", bin[0] == '/' ? "" : "./", bin);
     eargv[0] = l_strdup(buf);
     eargv[1] = NULL;
+    lx_argv0 = eargv[0];
 
     _control87(_PC_64, _MCW_PC);           /* x87 extended precision, as on Linux */
+    elf_thread_tp();
     elf_run_inits(1, eargv, envp);
     elf_start(em, 1, eargv, envp);
 }

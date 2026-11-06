@@ -63,6 +63,14 @@ struct igs_core {
      * statically (Fish Hunter Final 6's Sentinel dongle client).
      */
     int (*hook)(uint32_t addr, void *fn);
+
+    /*
+     * The same for a function the game's library soname exports (its
+     * file name contains soname): applied when the game loads that
+     * library (dlopen; Crazy Shoot's Unity plugin with its linked-in
+     * HASP client), or at once if it is loaded.  0 if recorded.
+     */
+    int (*hook_lib)(const char *soname, const char *sym, void *fn);
 };
 
 /* what a machine plugin provides */

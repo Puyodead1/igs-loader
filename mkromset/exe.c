@@ -468,7 +468,13 @@ int e2000_assemble(struct mkr_job *j, uint8_t **out, size_t *outn)
     size_t len = 0, cap = 1 << 20, i, np;
     int hp = 2;
     uint32_t shoff, shnum;
+    /* head_cipher fpga (Fish Hunter SKL2): the pieces are the FPGA-encrypted
+       executable; the build's decrypt step checks the result */
+    const char *cipher = mkr_feature(j, "head_cipher", "");
+    int plain = strcmp(cipher, "fpga") != 0;
 
+    if (*cipher && plain)
+        return mkr_fail(j, "bad head_cipher '%s'", cipher);
     if (part_feature(j, "head_part", "p2", &hp) || int_feature(j, "head_sector", &sector) ||
         int_feature(j, "trim_kb", &n) || int_feature(j, "trim_step", &step))
         return -1;
@@ -490,7 +496,7 @@ int e2000_assemble(struct mkr_job *j, uint8_t **out, size_t *outn)
             return -1;
         }
         got = at + 1024 <= j->img.size ? 1024 : 0;
-        if (got < 4 || memcmp(head, "\x7f" "ELF", 4)) {
+        if (got < 4 || (plain && memcmp(head, "\x7f" "ELF", 4))) {
             free(o);
             return mkr_fail(j, "HEAD_SECTOR does not point at an ELF header");
         }
@@ -538,7 +544,7 @@ int e2000_assemble(struct mkr_job *j, uint8_t **out, size_t *outn)
     /* the section header table ends the file: a cheap integrity check */
     shoff = rd32(o + 0x20);
     shnum = rd16(o + 0x30);
-    if ((uint64_t)shoff + 40ull * shnum != len) {
+    if (plain && (uint64_t)shoff + 40ull * shnum != len) {
         mkr_fail(j, "assembled executable is %zu bytes, ELF header expects %llu", len,
                  (unsigned long long)shoff + 40ull * shnum);
         goto bad;

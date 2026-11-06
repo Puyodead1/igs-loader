@@ -259,6 +259,13 @@ class Builder:
         with open(self.path(src), 'rb') as f:
             self.write(dst, f.read())
 
+    def step_link(self, op, path, target):
+        p = self.path(path)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        if os.path.lexists(p):
+            os.remove(p)
+        os.symlink(target, p)
+
     def step_unupx(self, op, src, dst):
         with open(self.path(src), 'rb') as f:
             self.write(dst, igs_upx.unpack(f.read()))
@@ -322,7 +329,23 @@ class Builder:
             subprocess.run(['unsquashfs', '-q', '-n', '-f', '-o', str(off), '-d', d, self.image],
                            check=True, stdout=subprocess.DEVNULL)
         elif struct.unpack('<I', magic)[0] == igs_shfs.MAGIC:
-            igs_shfs.extract(self.image, d, off)
+            with open(self.image, 'rb') as f:
+                f.seek(off)
+                sb = igs_shfs.squashfs4_superblock(f.read(0xAC))
+                if sb:
+                    # SquashFS 4 behind the IGS header: the image with a standard superblock
+                    f.seek(off)
+                    data = bytearray(f.read(struct.unpack_from('<Q', sb, 40)[0]))
+            if sb:
+                data[:96] = sb
+                img = os.path.join(os.path.dirname(os.path.abspath(self.stage)), '.shfs4.img')
+                with open(img, 'wb') as f:
+                    f.write(data)
+                subprocess.run(['unsquashfs', '-q', '-n', '-f', '-d', d, img], check=True,
+                               stdout=subprocess.DEVNULL)
+                os.remove(img)
+            else:
+                igs_shfs.extract(self.image, d, off)
         elif ext_magic == b'\x53\xef':
             spec = '%s?offset=%d' % (self.image, off)
             names = subprocess.run(['debugfs', '-R', 'ls -p /', spec], check=True, capture_output=True,

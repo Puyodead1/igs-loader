@@ -49,6 +49,9 @@ static const struct e2100_api *api;
 #define RX_KEY 0x82675251u     /* chip -> game */
 static const uint8_t school[12] = { 10, 10, 8, 8, 6, 6, 5, 5, 4, 4, 3, 3 };
 
+/* the data object: 49, Fish Hunter SKL2 47 */
+static uint32_t dongle_object = 49;
+
 static void dongle(void)
 {
     static const uint32_t check[3] = { 0x100002D0, 0x10000300, 0x10000320 };
@@ -58,7 +61,7 @@ static void dongle(void)
 
     memset(&k, 0, sizeof(k));
     k.developer_id = 0x5E07A0E1;
-    k.raw_feature = 49;
+    k.raw_feature = dongle_object;
     k.aes_feature = 43;
     memcpy(k.aes_key, "IGS-FHF6-SNTL-43", 16);       /* invented: the key's own */
     k.raw_len = 80;
@@ -163,6 +166,7 @@ enum { D_IN, D_OUT, D_TICKETS };
 
 static struct {
     int hooked;
+    int skl2;                         /* variant skl2 (Fish Hunter SKL2): data object 47, read before the card opens */
     uint32_t rx_key, tx_key, rx_next_key, rx_next_idx;
     int rekey, reidx;
 
@@ -901,6 +905,15 @@ const struct e2100_game *e2100_game_entry(const struct e2100_api *a)
     int i;
 
     api = a;
+    g.skl2 = v && !strcmp(v, "skl2");
+    if (g.skl2) {
+        dongle_object = 47;
+        /* the game reads the dongle before it opens the card: the executable is mapped already */
+        g.hooked = 1;
+        dongle();
+        game.name = "Fish Hunter SKL2";
+        game.handshake = E2100_HS_ADV;
+    }
     g.help = 1;
     g.stations = atoi(CORE->env("FISH_STATIONS", v && !strcmp(v, "4") ? "4" : "6")) == 4 ? 4 : 6;
     memcpy(g.set, set_default, sizeof(g.set));

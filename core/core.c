@@ -362,6 +362,50 @@ static int core_hook(uint32_t addr, void *fn)
     return 0;
 }
 
+/* igs_core.hook_lib: hooks applied when their library is dlopened */
+static struct lib_hook { const char *soname, *sym; void *fn; } lib_hooks[32];
+static int nlib_hooks;
+
+static void lib_hooks_apply(void *h, const char *file)
+{
+    const char *base = strrchr(file, '/') ? strrchr(file, '/') + 1 : file;
+    int i;
+
+    for (i = 0; i < nlib_hooks; i++) {
+        void *a;
+
+        if (!strstr(base, lib_hooks[i].soname) || !(a = dlsym(h, lib_hooks[i].sym)))
+            continue;
+        if (core_hook((uint32_t)(uintptr_t)a, lib_hooks[i].fn))
+            core_log("hook %s in %s failed", lib_hooks[i].sym, base);
+        else if (core.verbose)
+            core_log("hooked %s in %s", lib_hooks[i].sym, base);
+    }
+}
+
+void *dlopen(const char *file, int mode)
+{
+    REAL(void *, dlopen, (const char *, int));
+    void *h = real_dlopen(file, mode);
+
+    if (h && file && nlib_hooks)
+        lib_hooks_apply(h, file);
+    return h;
+}
+
+static int core_hook_lib(const char *soname, const char *sym, void *fn)
+{
+    REAL(void *, dlopen, (const char *, int));
+    void *h;
+
+    if (nlib_hooks == (int)(sizeof(lib_hooks) / sizeof(lib_hooks[0])))
+        return -1;
+    lib_hooks[nlib_hooks++] = (struct lib_hook){ soname, sym, fn };
+    if ((h = real_dlopen(soname, RTLD_NOW | RTLD_NOLOAD)))
+        lib_hooks_apply(h, soname);
+    return 0;
+}
+
 /* port I/O is the machine's (port_in/port_out): the trap handler takes in/out */
 int iopl(int level)
 {
@@ -599,6 +643,7 @@ __attribute__((constructor)) static void core_init(void)
         .font_h = FONT_H,
         .present = core_present,
         .hook = core_hook,
+        .hook_lib = core_hook_lib,
     };
     /* the games' own diagnostics go to stdout: keep them in order with ours */
     setvbuf(stdout, NULL, _IOLBF, 0);
@@ -2244,23 +2289,56 @@ static int is_swap_interval(const char *name)
     return !strcmp(name, "glXSwapIntervalSGI") || !strcmp(name, "glXSwapIntervalMESA");
 }
 
+/*
+ * $IGS_VRAM_MB: the video memory the GL memory queries report at least
+ * (NVX_gpu_memory_info, ATI_meminfo, in KiB).  Unity 4 sizes its texture
+ * budget from them; a host driver reporting little makes it shrink every
+ * large texture, and its compressed ones come out striped (Crazy Shoot: the
+ * cabinet's GT218 has 512 MB).
+ */
+void glGetIntegerv(unsigned pname, int *v)
+{
+    REAL(void, glGetIntegerv, (unsigned, int *));
+    static long vram = -1;
+
+    real_glGetIntegerv(pname, v);
+    if (vram < 0)
+        vram = core.env_long ? core.env_long("IGS_VRAM_MB", 0) : 0;
+    if (!vram || !v)
+        return;
+    switch (pname) {
+    case 0x9047: case 0x9048: case 0x9049:   /* dedicated, total, current (NVX), KiB */
+    case 0x87FB: case 0x87FC: case 0x87FD:   /* VBO, texture, renderbuffer free (ATI), KiB */
+        if (v[0] < vram * 1024)
+            v[0] = (int)(vram * 1024);
+        break;
+    }
+}
+
+static void *gl_override(const char *name)
+{
+    if (is_swap_interval(name))
+        return (void *)noop_swap_interval;
+    if (!strcmp(name, "glGetIntegerv"))
+        return (void *)glGetIntegerv;
+    return NULL;
+}
+
 /* the same entry points asked for by name from GLX */
 void *glXGetProcAddressARB(const unsigned char *name)
 {
     REAL(void *, glXGetProcAddressARB, (const unsigned char *));
+    void *o = gl_override((const char *)name);
 
-    if (is_swap_interval((const char *)name))
-        return (void *)noop_swap_interval;
-    return real_glXGetProcAddressARB(name);
+    return o ? o : real_glXGetProcAddressARB(name);
 }
 
 void *glXGetProcAddress(const unsigned char *name)
 {
     REAL(void *, glXGetProcAddress, (const unsigned char *));
+    void *o = gl_override((const char *)name);
 
-    if (is_swap_interval((const char *)name))
-        return (void *)noop_swap_interval;
-    return real_glXGetProcAddress(name);
+    return o ? o : real_glXGetProcAddress(name);
 }
 
 /*
@@ -2292,6 +2370,8 @@ void *dlsym(void *h, const char *name)
     }
     if (is_swap_interval(name))
         return real(h, name) ? (void *)noop_swap_interval : NULL;
+    if (!strcmp(name, "glGetIntegerv") && h != RTLD_NEXT)
+        return real(h, name) ? (void *)glGetIntegerv : NULL;
     return real(h, name);
 }
 
