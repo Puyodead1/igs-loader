@@ -285,6 +285,7 @@ struct xwin {
     XID cmap, cursor;
     int mapped, override;
     int pinned;                        /* kept windowed: moves are ignored */
+    int framed;                        /* override-redirect shown as a normal window (no other top-level) */
     struct { struct xdpy *d; long mask; } sel[MAXSEL];
     int nsel;
     HWND hwnd;
@@ -827,11 +828,32 @@ static LRESULT ui_op(struct uireq *r)
     case OP_SHOW:
         if (!w->hwnd)
             return 0;
-        if (w->parent)
+        if (w->parent) {
             ShowWindow(w->hwnd, SW_SHOWNA);
-        else if (w->override && !lx_env("IGS_FULLSCREEN", NULL))
-            return 0;                      /* SDL's fullscreen window: windowed instead */
-        else if (background())               /* behind everything, without the focus */
+            return 1;
+        }
+        if (w->override && !lx_env("IGS_FULLSCREEN", NULL)) {
+            /*
+             * SDL's fullscreen window beside its normal one: hidden, the game
+             * stays windowed.  The only top-level (Ogre's GLX window, e.g.
+             * Speed Rider): framed as a normal window instead.
+             */
+            int i;
+
+            for (i = 0; i < nwins; i++)
+                if (wins[i] != w && !wins[i]->parent && wins[i]->mapped && !wins[i]->override)
+                    return 0;
+            if (!w->framed) {
+                w->framed = 1;
+                SetWindowLongA(w->hwnd, GWL_EXSTYLE, 0);
+                SetWindowLongA(w->hwnd, GWL_STYLE, TOP_STYLE);
+                SetRect(&rc, 0, 0, w->w, w->h);
+                AdjustWindowRect(&rc, TOP_STYLE, FALSE);
+                SetWindowPos(w->hwnd, NULL, 0, 0, rc.right - rc.left, rc.bottom - rc.top,
+                             SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+            }
+        }
+        if (background())                    /* behind everything, without the focus */
             SetWindowPos(w->hwnd, HWND_BOTTOM, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
         else
@@ -852,7 +874,7 @@ static LRESULT ui_op(struct uireq *r)
             return 0;
         if (fullscreen_top(w)) {
             MoveWindow(w->hwnd, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), TRUE);
-        } else if (w->parent || w->override) {
+        } else if (w->parent || (w->override && !w->framed)) {
             MoveWindow(w->hwnd, w->x, w->y, w->w, w->h, TRUE);
         } else {
             SetRect(&rc, 0, 0, w->w, w->h);
@@ -952,7 +974,7 @@ int x11_window_title(const char *s)
     if (!x_inited)
         return -1;
     for (i = 0; !w && i < nwins; i++)
-        if (!wins[i]->parent && wins[i]->mapped && !wins[i]->override)
+        if (!wins[i]->parent && wins[i]->mapped && (!wins[i]->override || wins[i]->framed))
             w = wins[i];
     if (!w)
         return -1;

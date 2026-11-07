@@ -1097,6 +1097,20 @@ static void l_seekdir(struct ldir *d, long pos)
 
 static int l_dirfd(struct ldir *d) { (void)d; return -1; }
 
+/* readdir_r (Speed Driver 3): the entry copied out, *res NULL at the end */
+static int l_readdir_r(struct ldir *d, struct l_dirent *entry, struct l_dirent **res)
+{
+    struct l_dirent *e = l_readdir(d);
+
+    if (e) {
+        memcpy(entry, e, sizeof(*entry));
+        *res = entry;
+    } else {
+        *res = NULL;
+    }
+    return 0;
+}
+
 /* scandir: the game's filter and compare are i386 cdecl, called directly; entries from l_malloc
    so the game frees them */
 static int l_alphasort(const struct l_dirent **a, const struct l_dirent **b)
@@ -1886,6 +1900,38 @@ static int l_iopl(int level)
     SET_ERRNO(EPERM);
     return -1;
 }
+/* Speed Driver 3's odds and ends: no login name, no passwd entries, no
+   configuration strings (0: none), no symbolic links on the sets */
+static const char *l_getlogin(void) { return NULL; }
+static void l_endpwent(void) { }
+static size_t l_confstr(int name, char *buf, size_t n) { (void)name; (void)buf; (void)n; SET_ERRNO(EINVAL); return 0; }
+static int l_symlink(const char *from, const char *to) { (void)from; (void)to; SET_ERRNO(EPERM); return -1; }
+
+/* fegetround / fesetround: the x87 and SSE rounding modes (glibc FE_* = x87 RC bits) */
+static int l_fegetround(void)
+{
+    unsigned short cw;
+
+    __asm__ volatile ("fnstcw %0" : "=m"(cw));
+    return cw & 0xc00;
+}
+
+static int l_fesetround(int mode)
+{
+    unsigned short cw;
+    unsigned mx;
+
+    if (mode & ~0xc00)
+        return -1;
+    __asm__ volatile ("fnstcw %0" : "=m"(cw));
+    cw = (cw & ~0xc00) | mode;
+    __asm__ volatile ("fldcw %0" : : "m"(cw));
+    __asm__ volatile ("stmxcsr %0" : "=m"(mx));
+    mx = (mx & ~0x6000u) | (unsigned)mode << 3;
+    __asm__ volatile ("ldmxcsr %0" : : "m"(mx));
+    return 0;
+}
+
 static int l_shm_fail(void) { SET_ERRNO(L_ENOSYS); return -1; }
 static void *l_shmat(int id, const void *a, int f) { (void)id; (void)a; (void)f; SET_ERRNO(L_ENOSYS); return (void *)-1; }
 
@@ -2068,7 +2114,8 @@ const struct nsym sys_syms[] = {
     N(__xstat), N(__xstat64), NA(__lxstat, l___xstat), NA(__lxstat64, l___xstat64),
     N(__fxstat), N(__fxstat64), N(stat), NA(lstat, l_stat), N(fstat), N(access), N(unlink),
     N(mkdir), N(rmdir), N(chdir), N(getcwd), N(realpath),
-    N(opendir), N(readdir), N(readdir64), N(closedir), N(rewinddir), N(telldir), N(seekdir), N(dirfd),
+    N(opendir), N(readdir), N(readdir64), N(readdir_r), N(closedir),
+    N(getlogin), N(endpwent), N(confstr), N(symlink), N(fegetround), N(fesetround), N(rewinddir), N(telldir), N(seekdir), N(dirfd),
     N(scandir), N(alphasort),
     N(mmap), N(mmap64), N(munmap), N(mprotect), N(msync), N(madvise), N(mlock), NA(munlock, l_mlock),
     N(time), N(gettimeofday), N(clock_gettime), N(clock_getres), N(clock), N(times), N(ftime),

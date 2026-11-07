@@ -265,7 +265,7 @@ static const Opt opts[] = {
     { "IGS_AUDIO_CHUNK", "int", "-", "audio buffer in samples (default: the game's)", H_ALL },
     { "IGS_AUDIO_LOG", "bool", "0", "log the game's audio calls", H_ALL },
     { "IGS_NO_AUDIO", "bool", "0", "no audio device; audio drains at the real rate", H_ALL },
-    { "IGS_DSP_LATENCY_MS", "int", "60", "OSS /dev/dsp latency, ms", H_ALL },
+    { "IGS_DSP_LATENCY_MS", "int", "-", "OSS /dev/dsp latency, ms (default 60; Linux 150)", H_ALL },
     { "IGS_SHOT_EVERY", "int", "600", "frames between snapshots (Snapshots below)", H_ALL },
     { "IGS_SCRIPT", "str", "-", "press keys on a timetable, sec:key[+],... (testing)", H_ALL },
     { "IGS_MISSING_OK", "bool", "0", "start even with unresolved symbols", H_WIN },

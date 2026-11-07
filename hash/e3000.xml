@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<!DOCTYPE softwarelist SYSTEM "softwarelist.dtd">
+<!--
+  E3000 (IGS) disk images: E2100-generation software (the FPGA card behind
+  /dev/pccard0, the IGS036) on a newer cabinet PC.  Machine plugin
+  machines/e3000 (machines/e2100 under its own name).  wiki E3000.
+-->
+<softwarelist name="e3000" description="IGS E3000 hard disks">
+
+	<software name="speeddriver3_m109cn">
+		<description>Speed Driver 3 (M109CN)</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="version" value="M109CN"/>
+		<info name="usage" value="Speed-Driver-3"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="speeddriver3"/>
+			<!-- /etc/X11/IGS: cd /SD3/readwrite; ./sd3 24836 7056 3728 (p3 on /SD3, p4 on /SD3/readwrite) -->
+			<feature name="data" value="/SD3/readwrite"/>
+			<feature name="binary" value="sd3"/>
+			<!-- the byte offset and sizes of the two Lua blocks the chip serves from its image -->
+			<feature name="args" value="24836 7056 3728"/>
+			<!-- its own Ogre 1.6.1, Cg, Theora plugin and the NVPerfSDK stub; the cabinet's libtheoradec -->
+			<feature name="libs" value="libOgreMain-1.6.1.so libCg.so libNVPerfSDK.so.1 libzzip-0.so.13 Plugin_TheoraVideoSystem.so /usr/lib/libtheoradec.so.1"/>
+			<!-- the smart-card reader, no card -->
+			<feature name="preload" value="libcasmcard-nocard.so"/>
+			<!-- Ogre uses Xlib from several threads; its Cg shaders want NVIDIA's vp40/fp40 (Mesa: ARB) -->
+			<feature name="env" value="IGS_X11_LOCKS=1 IGS_CG_ARB=1"/>
+			<!-- p2 a plaintext Game Image v2 root; p3 SquashFS on /SD3, p4 ext on /SD3/readwrite; sd3 is UPX-packed -->
+			<feature name="rofs_profile" value="speeddriver3"/>
+			<feature name="build" value="root p2; mount p3 /SD3; mount p4 /SD3/readwrite; unupx /SD3/readwrite/sd3 /SD3/readwrite/sd3"/>
+			<!-- the FPGA key the chip hands out (scripts *.lua.enc): solved from the files' trailers -->
+			<feature name="asset_mask" value="832c2bbde379fe571e8c39b0bb988dd7"/>
+			<diskarea name="harddriv">
+				<disk name="e3000_speeddriver3_m109cn" sha1="07e58131e390ce892fc390f1fa64ed65ec68e4eb"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/SD3/readwrite/sd3" size="59464630" sha1="b7d5fa0f666e5d57b07259eba3e56b2f2b3abbf1"/>
+				<rom name="/SD3.bin/sd3.bin" size="524288" sha1="5b27b5d7df070354824ad2c6ae153ccfa8df91e8"/>
+			</dataarea>
+		</part>
+	</software>
+
+</softwarelist>

@@ -165,6 +165,9 @@ int img_hash(struct mkr_job *j, const char *path, char hex[41]);
 int fs_rofs(struct mkr_job *j, uint64_t off, uint64_t size, struct mkr_node *dir, const char *profile);
 /* E2000 plaintext ROFS */
 int fs_rofs24(struct mkr_job *j, uint64_t off, uint64_t size, struct mkr_node *dir);
+/* E3000 plaintext Game Image v2 (Speed Driver 3), keys by profile */
+int fs_gimg(struct mkr_job *j, uint64_t off, uint64_t size, struct mkr_node *dir, const char *profile);
+int fs_gimg_known(const char *profile);
 /* E2000 IGS_SHFS */
 int fs_shfs(struct mkr_job *j, struct mkr_img *m, uint64_t off, struct mkr_node *dir);
 /* SquashFS 4 (unsquashfs semantics: force = -f) */

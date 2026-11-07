@@ -59,6 +59,7 @@
 #define ADV_CMD_DONE      0xAA55AA55u /* word 1: the upload's sum; the host answers 0xFFFF */
 #define ADV_REPLY_DONE    0x0000FFFFu
 #define HOST_REPLY_DONE   0x0C0C0C0Cu
+#define LADDER_HOST_START 0x08080808u /* plain LoaderAdv (Speed Driver 3) */
 #define ASIC_MAX_WORDS    (BAR0_SIZE / 4)
 #define ASIC_RUNTIME_PERIOD_MS 16
 #define ASIC_REPLY_DELAY_MS    2
@@ -107,6 +108,13 @@ static struct {
     uint32_t rr_len;
     double rr_time;
     uint8_t rr_reply[E2100_REQRESP_MAX];
+
+    /* ring transport: slot positions, data pointers (words), queued actions */
+    int ring;
+    uint32_t ring_tx, ring_rx, ring_counter, ring_in, ring_out;
+    double ring_tick_at;
+    struct ring_act { uint32_t id, value, n, *data; } ring_q[256];
+    uint32_t ring_head, ring_len;
 } s = { .lock = PTHREAD_MUTEX_INITIALIZER, .fd = -1 };
 
 /* serial ports with a peripheral (the game plugin's e2100_serial table) */
@@ -180,6 +188,14 @@ static void cipher_encrypt_block(uint8_t *blk, const uint8_t *mask)
     st64(u + 8, rol64(ld64(u + 8), 3));
     for (i = 0; i < 16; i++)
         blk[i] = u[i] ^ mask[i];
+}
+
+static void asset_encrypt(void *buf, uint32_t len)
+{
+    uint32_t i;
+
+    for (i = 0; i + 16 <= len; i += 16)
+        cipher_encrypt_block((uint8_t *)buf + i, cipher_mask);
 }
 
 /* ---- runtime channel framing ------------------------------------------------ */
@@ -356,6 +372,110 @@ static void reg_send(void)
     memcpy(s.reg_rx, r.w, sizeof(r.w));
 }
 
+/* ---- ring transport (E3000 Real36) ---------------------------------------------- */
+
+#define RING_IN_END   0xC000u     /* game input blocks: words 0 .. 0xBFFF */
+#define RING_OUT_BASE 0xC000u     /* ASIC output blocks: words 0xC000 .. 0x17FFF */
+#define RING_OUT_END  0x18000u
+#define RING_PERIOD_MS 1
+
+static void ring_mask(uint32_t *w, uint32_t n, uint32_t ptr)
+{
+    uint32_t v = ptr + n + E2100_RING_KEY, k;
+
+    for (k = n; k-- > 0;)
+        w[k] ^= ++v;
+}
+
+static void ring_reset(void)
+{
+    uint32_t i;
+
+    s.ring_tx = s.ring_rx = s.ring_counter = 0;
+    s.ring_in = 0;
+    s.ring_out = RING_OUT_BASE;
+    for (i = 0; i < s.ring_len; i++)
+        free(s.ring_q[(s.ring_head + i) % 256].data);
+    s.ring_head = s.ring_len = 0;
+}
+
+static void ring_action(uint32_t id, uint32_t value, const uint32_t *data, uint32_t n)
+{
+    struct ring_act *a;
+
+    if (s.ring_len == 256) {
+        LOG("ring: action queue full, dropping %u", id);
+        return;
+    }
+    a = &s.ring_q[(s.ring_head + s.ring_len++) % 256];
+    a->id = id;
+    a->value = value;
+    a->n = n;
+    a->data = NULL;
+    if (n) {
+        a->data = malloc(4 * n);
+        memcpy(a->data, data, 4 * n);
+    }
+}
+
+/* game -> ASIC: the slot at the game's position, its data at the input pointer */
+static void ring_receive(void)
+{
+    uint32_t p = s.ring_tx, cmd = s.reg_tx[p], a = s.reg_tx[p + 1], n = s.reg_tx[p + 2];
+    uint32_t sum = cmd + a + n + s.ring_counter;
+    static uint32_t buf[RING_IN_END];
+
+    if (s.reg_tx[p + 4] != sum)
+        LOG("ring: slot %u checksum %08x, want %08x", p / 5, s.reg_tx[p + 4], sum);
+    s.ring_counter += sum + 3;
+    s.ring_tx = p + 5 < 5 * E2100_RING_SLOTS ? p + 5 : 0;
+    if (n > RING_IN_END)
+        n = 0;
+    if (n) {
+        if (s.ring_in + n > RING_IN_END)
+            s.ring_in = 0;
+        memcpy(buf, s.bar0 + 4 * s.ring_in, 4 * n);
+        ring_mask(buf, n, s.ring_in);
+        s.ring_in += n;
+    }
+    game->ring_cmd(cmd, a, buf, n);
+}
+
+/* ASIC -> game: the next queued action, one per event */
+static void ring_pump(void)
+{
+    double now = core->now();
+    struct ring_act *a;
+    uint32_t q;
+
+    if (now >= s.ring_tick_at) {
+        s.ring_tick_at = now + 0.016;
+        if (game->ring_tick)
+            game->ring_tick();
+    }
+    if (s.events || !s.ring_len)
+        return;
+    a = &s.ring_q[s.ring_head];
+    s.ring_head = (s.ring_head + 1) % 256;
+    s.ring_len--;
+    if (a->n) {
+        if (s.ring_out + a->n > RING_OUT_END)
+            s.ring_out = RING_OUT_BASE;
+        ring_mask(a->data, a->n, s.ring_out);
+        memcpy(s.bar0 + 4 * s.ring_out, a->data, 4 * a->n);
+        s.ring_out += a->n;
+        free(a->data);
+    }
+    q = s.ring_rx;
+    s.reg_rx[q] = a->id;
+    s.reg_rx[q + 1] = 0;
+    s.reg_rx[q + 2] = a->n;
+    s.reg_rx[q + 3] = a->value;
+    s.reg_rx[q + 4] = 0;
+    s.ring_rx = q + 5 < 5 * E2100_RING_SLOTS ? q + 5 : 0;
+    __sync_fetch_and_add(&s.events, 1);
+}
+
 /* ---- request/response transport ------------------------------------------------ */
 
 /* game -> ASIC: byte length in BAR1 word 0, the bytes from BAR0 0 */
@@ -411,6 +531,12 @@ static void asic_post(int event, int mbox, uint32_t w0, uint32_t w1, int delay_m
 
 static void asic_fire(void)
 {
+    if (s.asic_state == ASIC_RUNTIME && s.ring) {
+        /* actions go out one per event; keep polling */
+        ring_pump();
+        asic_post(0, 0, 0, 0, RING_PERIOD_MS);
+        return;
+    }
     if (s.asic_state == ASIC_RUNTIME && s.regtable) {
         reg_send();
     } else if (s.asic_state == ASIC_RUNTIME && s.reqresp) {
@@ -448,6 +574,7 @@ static void asic_reset(void)
     s.session_key = 0;
     s.running_sum = 0;
     s.rr_pending = 0;
+    ring_reset();
     s.ch.rx_idx = s.ch.tx_idx = 0;
     game->reset(&s.ch);
     /* ASIC boot hello; the game echoes it without checking the content */
@@ -470,6 +597,15 @@ static void asic_notify(void)
            (LoaderAdv: (r ^ 0xAA55AA55, r), the keys, key 0 ^ 2 at 0x118) */
         s.session_key = k = s.mbox_out[2];
         s.asic_state = ASIC_HS_SENT;
+        if (game->handshake == E2100_HS_LADDER) {
+            /* the host's 0x08080808: the sum check, unmasked, nothing uploaded */
+            if (cmd != LADDER_HOST_START)
+                LOG("unexpected loader start 0x%08x", cmd);
+            s.session_key = 0;
+            s.asic_state = ASIC_DONE_SENT;
+            asic_post(1, 1, ASIC_CMD_DONE, 0, ASIC_REPLY_DELAY_MS);
+            break;
+        }
         if (game->handshake == E2100_HS_ADV) {
             /* "ready": the command, masked, and in plain in BAR1 words 0..7 */
             adv_command(ADV_CMD_READY);
@@ -500,6 +636,13 @@ static void asic_notify(void)
         if ((cmd ^ k) != (game->handshake == E2100_HS_ADV ? ADV_REPLY_DONE : HOST_REPLY_DONE))
             LOG("unexpected done reply 0x%08x", cmd ^ k);
         LOG("handshake complete");
+        if (s.ring) {
+            /* the game re-opens the card for the runtime library; no event */
+            s.asic_state = ASIC_RUNTIME;
+            LOG("runtime channel up (%s)", game->name);
+            asic_post(0, 0, 0, 0, RING_PERIOD_MS);
+            break;
+        }
         s.asic_state = ASIC_RUNTIME_WAIT;
         asic_post(1, 0, 0, 0, ASIC_REPLY_DELAY_MS);
         break;
@@ -508,6 +651,12 @@ static void asic_notify(void)
         LOG("runtime channel up (%s)", game->name);
         /* fall through: the game's first runtime batch */
     case ASIC_RUNTIME:
+        if (s.ring) {
+            /* the reply goes out at once: the game waits on it every command */
+            ring_receive();
+            ring_pump();
+            break;
+        }
         if (s.reqresp) {
             /* one reply per message, never unsolicited */
             rr_receive();
@@ -558,7 +707,7 @@ static uint32_t bar1_read(void *opaque, uint32_t off, int size)
 
     (void)opaque;
     pthread_mutex_lock(&s.lock);
-    if (s.regtable && size == 4 && !(off & 3) && off < 4 * E2100_REG_WORDS)
+    if ((s.regtable || (s.ring && s.asic_state == ASIC_RUNTIME)) && size == 4 && !(off & 3) && off < 4 * E2100_REG_WORDS)
         v = s.reg_rx[off / 4];
     else if (is_mbox(off, size))
         v = s.mbox_in[(off - MBOX_BASE) / 4];
@@ -572,7 +721,7 @@ static void bar1_write(void *opaque, uint32_t off, int size, uint32_t v)
 {
     (void)opaque;
     pthread_mutex_lock(&s.lock);
-    if (s.regtable && size == 4 && !(off & 3) && off < 4 * E2100_REG_WORDS)
+    if ((s.regtable || (s.ring && s.asic_state == ASIC_RUNTIME)) && size == 4 && !(off & 3) && off < 4 * E2100_REG_WORDS)
         s.reg_tx[off / 4] = v;
     else if (is_mbox(off, size))
         s.mbox_out[(off - MBOX_BASE) / 4] = v;
@@ -782,7 +931,7 @@ static int dev_ioctl(int fd, unsigned long req, void *arg)
 static void *dev_mmap(int fd, size_t len)
 {
     (void)fd;
-    LOG("map BAR%d (%zu bytes)", s.sel_bar, len);
+    LOG("map BAR%d (%zu bytes) -> %p", s.sel_bar, len, s.sel_bar ? (void *)s.bar1_map : (void *)s.bar0);
     if (s.sel_bar == 0 && len <= BAR0_SIZE)
         return s.bar0;
     if (s.sel_bar == 1 && len <= BAR1_SIZE)
@@ -825,9 +974,16 @@ static void machine_status(char *buf, size_t n)
 
 /* ---- plugin entry --------------------------------------------------------------- */
 
+/* without the lock: every fopen asks, plugin callbacks (holding it) included */
+static const char *machine_vfile(const char *name)
+{
+    return game && game->vfile ? game->vfile(name) : NULL;
+}
+
 static const struct igs_machine machine = {
     .version = IGS_API_VERSION,
     .name = MACHINE_NAME,
+    .vfile = machine_vfile,
     .handles = dev_handles,
     .open = dev_open,
     .ioctl = dev_ioctl,
@@ -845,6 +1001,8 @@ static struct e2100_api api = {
     .batch_add = batch_add,
     .reg_put = reg_put,
     .reg_block = reg_block,
+    .ring_action = ring_action,
+    .asset_encrypt = asset_encrypt,
 };
 
 __attribute__((visibility("default")))
@@ -866,7 +1024,8 @@ const struct igs_machine *igs_machine_entry(const struct igs_core *c)
     }
     s.regtable = game->transport == E2100_TRANSPORT_REGTABLE;
     s.reqresp = game->transport == E2100_TRANSPORT_REQRESP;
+    s.ring = game->transport == E2100_TRANSPORT_RING;
     LOG("game plugin %s%s", game->name, s.regtable ? " (register-table transport)" :
-        s.reqresp ? " (request/response transport)" : "");
+        s.reqresp ? " (request/response transport)" : s.ring ? " (ring transport)" : "");
     return &machine;
 }

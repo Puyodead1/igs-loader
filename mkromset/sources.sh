@@ -10,7 +10,7 @@ MKR_INC="-Imkromset -Iromset -I$MKR_LZ -I$MKR_ZL -I$MKR_ZL/minizip -I$MKR_CH/inc
 # libchdr: zlib from third_party/zlib, zstd and its LZMA decoder (renamed CHDR_*) bundled
 MKR_DEF="-DCHDR_SYSTEM_ZLIB -DWANT_RAW_DATA_SECTOR=1 -DWANT_SUBCODE=1 -DVERIFY_BLOCK_CRC=1 -DLOWRAM_TARGET=0 \
 -D_LARGEFILE64_SOURCE"
-MKR_SRC="mkromset/build.c mkromset/vfs.c mkromset/image.c mkromset/fs_rofs.c mkromset/fs_rofs24.c
+MKR_SRC="mkromset/build.c mkromset/vfs.c mkromset/image.c mkromset/fs_rofs.c mkromset/fs_rofs24.c mkromset/fs_gimg.c
     mkromset/fs_squashfs.c mkromset/fs_ext2.c mkromset/exe.c mkromset/pack_7z.c mkromset/pack_zip.c
     $MKR_LZ/LzmaEnc.c $MKR_LZ/Lzma2Enc.c $MKR_LZ/LzFind.c $MKR_LZ/LzFindMt.c $MKR_LZ/LzFindOpt.c
     $MKR_LZ/MtCoder.c $MKR_LZ/MtDec.c $MKR_LZ/Threads.c $MKR_LZ/Alloc.c $MKR_LZ/Aes.c $MKR_LZ/AesOpt.c

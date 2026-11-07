@@ -469,7 +469,28 @@ static void screenshot(void)
     if (!px)
         return;
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, vp[2], vp[3], GL_RGB, GL_UNSIGNED_BYTE, px);
+    {
+        /* the window's back buffer, not a render target left bound (Ogre's FBOs) */
+        static void (APIENTRY *bind_fb)(GLenum, GLuint);
+        static int looked;
+        GLint fbo = 0, rb = 0;
+
+        if (!looked++) {
+            *(PROC *)&bind_fb = wglGetProcAddress("glBindFramebuffer");
+            if (!bind_fb)
+                *(PROC *)&bind_fb = wglGetProcAddress("glBindFramebufferEXT");
+        }
+        if (bind_fb) {
+            glGetIntegerv(0x8CAA, &fbo);                  /* GL_READ_FRAMEBUFFER_BINDING */
+            bind_fb(0x8CA8, 0);                           /* GL_READ_FRAMEBUFFER */
+        }
+        glGetIntegerv(GL_READ_BUFFER, &rb);
+        glReadBuffer(GL_BACK);
+        glReadPixels(0, 0, vp[2], vp[3], GL_RGB, GL_UNSIGNED_BYTE, px);
+        glReadBuffer(rb);
+        if (bind_fb)
+            bind_fb(0x8CA8, fbo);
+    }
     snprintf(path, sizeof(path), "%s%d.ppm", prefix, n++);
     if ((f = fopen(path, "wb"))) {
         fprintf(f, "P6\n%d %d\n255\n", vp[2], vp[3]);

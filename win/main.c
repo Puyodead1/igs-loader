@@ -73,7 +73,8 @@ static void section_line(const char *k, const char *v, void *ctx)
 int main(int argc, char **argv)
 {
     char exedir[MAX_PATH], root[MAX_PATH], data[MAX_PATH], rootfs[MAX_PATH], buf[MAX_PATH * 2];
-    char exe[MAX_PATH], *p, **envp, *eargv[2];
+    char exe[MAX_PATH], *p, **envp, *eargv[16];
+    int eargc;
     const char *game = NULL, *v, *bin;
     int check = 0, listing = 0, verify = 0, i, n, missing;
     struct elf_mod *em;
@@ -281,11 +282,16 @@ int main(int argc, char **argv)
     lx_environ = envp;
     snprintf(buf, sizeof(buf), "%s%s", bin[0] == '/' ? "" : "./", bin);
     eargv[0] = l_strdup(buf);
-    eargv[1] = NULL;
+    eargc = 1;
+    /* args: the words the cabinet passes after the binary */
+    snprintf(buf, sizeof(buf), "%s", mget("args", ""));
+    for (p = strtok(buf, " "); p && eargc < 15; p = strtok(NULL, " "))
+        eargv[eargc++] = l_strdup(p);
+    eargv[eargc] = NULL;
     lx_argv0 = eargv[0];
 
     _control87(_PC_64, _MCW_PC);           /* x87 extended precision, as on Linux */
     elf_thread_tp();
-    elf_run_inits(1, eargv, envp);
-    elf_start(em, 1, eargv, envp);
+    elf_run_inits(eargc, eargv, envp);
+    elf_start(em, eargc, eargv, envp);
 }

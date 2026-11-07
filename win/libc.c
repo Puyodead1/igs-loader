@@ -1789,7 +1789,7 @@ const struct nsym libc_syms[] = {
     N(__snprintf_chk), N(__vsnprintf_chk), N(__vsprintf_chk), N(__vfprintf_chk),
     N(sscanf), N(vsscanf), N(fscanf), N(vfscanf), N(scanf), NA(__isoc99_sscanf, l_sscanf),
     NA(__isoc99_fscanf, l_fscanf), NA(__isoc99_scanf, l_scanf), N(perror), N(remove), N(rename),
-    N(tmpfile),
+    N(tmpfile), NA(tmpfile64, l_tmpfile),
     /* ctype, locale, wide characters */
     N(__ctype_b_loc), N(__ctype_tolower_loc), N(__ctype_toupper_loc),
     ND(__ctype_b, &ctype_b_p), ND(__ctype_toupper, &uc_toupper_p),

@@ -691,62 +691,117 @@ static int l_sched_getaffinity(int pid, size_t size, uint8_t *mask)
     return 0;
 }
 
-/* ---- mutexes ------------------------------------------------------------------------------ */
+/*
+ * ---- mutexes: glibc's, not Win32's ---------------------------------------------------------
+ *
+ * A glibc mutex of the default kind belongs to no thread: Speed Driver 3
+ * locks its chip mutex sending a command and its interrupt thread unlocks it
+ * when the reply comes.  A CRITICAL_SECTION is owned (and recursive), so
+ * that unlock did nothing.  Here: a futex-style word (0 free, 1 locked,
+ * 2 waiters) waited on with WaitOnAddress, recursive only for the recursive
+ * kind (the attribute, or __kind in word 3 from glibc's static initializer).
+ * The first word points to it, zero being the static initializer.
+ */
+struct lmutex {
+    volatile LONG lock;
+    LONG kind;                                     /* 1: recursive */
+    volatile DWORD owner;
+    LONG count;
+};
 
-static CRITICAL_SECTION *mtx(void *m)
+static struct lmutex *mtx(void *m)
 {
-    CRITICAL_SECTION *volatile *slot = m, *cs = *slot;
+    struct lmutex *volatile *slot = m, *x = *slot;
 
-    if (cs)
-        return cs;
-    cs = malloc(sizeof(*cs));
-    InitializeCriticalSectionAndSpinCount(cs, 1000);
-    if (InterlockedCompareExchangePointer((void *volatile *)slot, cs, NULL) != NULL) {
-        DeleteCriticalSection(cs);
-        free(cs);
-    }
+    if (x)
+        return x;
+    x = calloc(1, sizeof(*x));
+    x->kind = ((uint32_t *)m)[3] & 3;
+    if (InterlockedCompareExchangePointer((void *volatile *)slot, x, NULL) != NULL)
+        free(x);
     return *slot;
 }
 
-static int l_pthread_mutex_init(void *m, const void *attr)
+static int l_pthread_mutex_init(void *m, const uint32_t *attr)
 {
-    (void)attr;
     memset(m, 0, 24);
+    ((uint32_t *)m)[3] = attr ? *attr & 3 : 0;
     mtx(m);
     return 0;
 }
 
 static int l_pthread_mutex_destroy(void *m)
 {
-    CRITICAL_SECTION **slot = m;
+    struct lmutex **slot = m;
 
-    if (*slot) {
-        DeleteCriticalSection(*slot);
-        free(*slot);
-        *slot = NULL;
-    }
+    free(*slot);
+    *slot = NULL;
     return 0;
 }
 
-/* with signals in use, a contended lock waits alertably (a GC's suspend reaches the waiter) */
+/* wait while *word == val; with signals in use, alertably in slices (a GC's suspend reaches the waiter) */
+static void word_wait(volatile LONG *word, LONG val, DWORD ms)
+{
+    if (!signals_live) {
+        WaitOnAddress(word, &val, sizeof(val), ms);
+        return;
+    }
+    WaitOnAddress(word, &val, sizeof(val), ms < 10 ? ms : 10);
+    wait_begin();
+    SleepEx(0, TRUE);
+    wait_end();
+}
+
 static int l_pthread_mutex_lock(void *m)
 {
-    CRITICAL_SECTION *cs = mtx(m);
-    int spins = 0;
+    struct lmutex *x = mtx(m);
+    DWORD me = GetCurrentThreadId();
+    LONG c;
 
-    if (!signals_live) {
-        EnterCriticalSection(cs);
+    if (x->kind == 1 && x->owner == me) {
+        x->count++;
         return 0;
     }
-    while (!TryEnterCriticalSection(cs)) {
-        wait_begin();
-        SleepEx(spins++ < 50 ? 0 : 1, TRUE);
-        wait_end();
+    if ((c = InterlockedCompareExchange(&x->lock, 1, 0)) != 0) {
+        if (c != 2)
+            c = InterlockedExchange(&x->lock, 2);
+        while (c != 0) {
+            word_wait(&x->lock, 2, INFINITE);
+            c = InterlockedExchange(&x->lock, 2);
+        }
     }
+    x->owner = me;
+    x->count = 1;
     return 0;
 }
-static int l_pthread_mutex_unlock(void *m) { LeaveCriticalSection(mtx(m)); return 0; }
-static int l_pthread_mutex_trylock(void *m) { return TryEnterCriticalSection(mtx(m)) ? 0 : 16; }
+
+static int l_pthread_mutex_unlock(void *m)
+{
+    struct lmutex *x = mtx(m);
+
+    if (x->kind == 1 && x->owner == GetCurrentThreadId() && --x->count > 0)
+        return 0;
+    x->owner = 0;
+    if (InterlockedExchange(&x->lock, 0) == 2)
+        WakeByAddressSingle((void *)&x->lock);
+    return 0;
+}
+
+static int l_pthread_mutex_trylock(void *m)
+{
+    struct lmutex *x = mtx(m);
+    DWORD me = GetCurrentThreadId();
+
+    if (x->kind == 1 && x->owner == me) {
+        x->count++;
+        return 0;
+    }
+    if (InterlockedCompareExchange(&x->lock, 1, 0) != 0)
+        return 16;                                 /* EBUSY */
+    x->owner = me;
+    x->count = 1;
+    return 0;
+}
 static int l_pthread_mutex_timedlock(void *m, const struct l_timespec *ts)
 {
     (void)ts;
@@ -757,7 +812,7 @@ static int l_pthread_mutexattr_destroy(uint32_t *a) { (void)a; return 0; }
 static int l_pthread_mutexattr_settype(uint32_t *a, int t) { *a = t; return 0; }
 static int l_pthread_mutexattr_gettype(const uint32_t *a, int *t) { *t = *a; return 0; }
 
-/* ---- condition variables: [0] CONDITION_VARIABLE, [1] clock ------------------------------- */
+/* ---- condition variables: [0] a wakeup sequence (WaitOnAddress), [1] clock --------------- */
 
 static int l_pthread_condattr_init(uint32_t *a) { *a = 0; return 0; }
 static int l_pthread_condattr_destroy(uint32_t *a) { (void)a; return 0; }
@@ -772,27 +827,48 @@ static int l_pthread_cond_init(uint32_t *c, const uint32_t *attr)
 }
 
 static int l_pthread_cond_destroy(void *c) { (void)c; return 0; }
-static int l_pthread_cond_signal(void *c) { WakeConditionVariable(c); return 0; }
-static int l_pthread_cond_broadcast(void *c) { WakeAllConditionVariable(c); return 0; }
 
-/* with signals in use: 10 ms slices, a pending signal's handler run with the mutex released (a spurious wakeup) */
-static void cond_signals(void *m)
+static int l_pthread_cond_signal(volatile LONG *c)
 {
-    LeaveCriticalSection(mtx(m));
-    wait_begin();
-    SleepEx(0, TRUE);
-    wait_end();
-    l_pthread_mutex_lock(m);
+    InterlockedIncrement(c);
+    WakeByAddressSingle((void *)c);
+    return 0;
 }
 
-static int l_pthread_cond_wait(void *c, void *m)
+static int l_pthread_cond_broadcast(volatile LONG *c)
 {
-    if (!signals_live) {
-        SleepConditionVariableCS(c, mtx(m), INFINITE);
-        return 0;
+    InterlockedIncrement(c);
+    WakeByAddressAll((void *)c);
+    return 0;
+}
+
+/*
+ * The sequence is read before the mutex is released, so a signal between the
+ * two ends the wait at once.  Returns whether it timed out (wakeups may be
+ * spurious, as POSIX allows; with signals in use the wait is a 10 ms slice).
+ */
+static int cond_wait_ms(volatile LONG *c, void *m, DWORD ms)
+{
+    LONG seq = *c;
+    BOOL woke;
+
+    l_pthread_mutex_unlock(m);
+    if (signals_live) {
+        woke = WaitOnAddress(c, &seq, sizeof(seq), ms < 10 ? ms : 10);
+        wait_begin();
+        SleepEx(0, TRUE);
+        wait_end();
+        woke = woke || ms > 10;                    /* a slice, not the deadline: the caller checks its time */
+    } else {
+        woke = WaitOnAddress(c, &seq, sizeof(seq), ms);
     }
-    if (!SleepConditionVariableCS(c, mtx(m), 10))
-        cond_signals(m);
+    l_pthread_mutex_lock(m);
+    return !woke && GetLastError() == ERROR_TIMEOUT;
+}
+
+static int l_pthread_cond_wait(volatile LONG *c, void *m)
+{
+    cond_wait_ms(c, m, INFINITE);
     return 0;
 }
 
@@ -807,14 +883,7 @@ static int l_pthread_cond_timedwait(uint32_t *c, void *m, const struct l_timespe
     ms = (int64_t)(abst->tv_sec - now.tv_sec) * 1000 + (abst->tv_nsec - now.tv_nsec) / 1000000;
     if (ms < 0)
         ms = 0;
-    if (signals_live && ms > 10) {
-        if (!SleepConditionVariableCS((PCONDITION_VARIABLE)c, mtx(m), 10))
-            cond_signals(m);
-        return 0;                                  /* a spurious wakeup: the caller checks its time */
-    }
-    if (!SleepConditionVariableCS((PCONDITION_VARIABLE)c, mtx(m), (DWORD)ms))
-        return GetLastError() == ERROR_TIMEOUT ? L_ETIMEDOUT : 22;
-    return 0;
+    return cond_wait_ms((volatile LONG *)c, m, (DWORD)ms) ? L_ETIMEDOUT : 0;
 }
 
 /* ---- rwlocks: [0] SRWLOCK, [1] the exclusive owner ---------------------------------------- */

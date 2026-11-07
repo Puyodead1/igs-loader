@@ -22,6 +22,7 @@
  * See wiki Loader.
  */
 #define _GNU_SOURCE
+#include <ctype.h>
 #include <dirent.h>
 #include <dlfcn.h>
 #include <errno.h>
@@ -470,6 +471,7 @@ static struct {
     void (*ActiveTexture)(unsigned);
     void (*ReadPixels)(int, int, int, int, unsigned, unsigned, void *);
     void (*Viewport)(int, int, int, int);
+    void (*BindFramebuffer)(unsigned, unsigned), (*ReadBuffer)(unsigned);   /* optional */
 } gl;
 
 static int gl_load_from(void *(*gpa)(const char *))
@@ -481,6 +483,10 @@ static int gl_load_from(void *(*gpa)(const char *))
     L(Begin); L(End); L(Vertex2f); L(WindowPos2i); L(Bitmap); L(PixelStorei);
     L(UseProgram); L(ActiveTexture); L(ReadPixels); L(Viewport);
 #undef L
+    *(void **)&gl.BindFramebuffer = gpa("glBindFramebuffer");
+    if (!gl.BindFramebuffer)
+        *(void **)&gl.BindFramebuffer = gpa("glBindFramebufferEXT");
+    *(void **)&gl.ReadBuffer = gpa("glReadBuffer");
     return 0;
 }
 
@@ -548,7 +554,24 @@ static void screenshot(void)
     if (!px)
         return;
     gl.PixelStorei(0x0d05, 1);                            /* GL_PACK_ALIGNMENT */
-    gl.ReadPixels(0, 0, vp[2], vp[3], 0x1907, 0x1401, px);  /* GL_RGB, UNSIGNED_BYTE */
+    {
+        /* the window's back buffer, not a render target left bound (Ogre's FBOs) */
+        int fbo = 0, rb = 0;
+
+        if (gl.BindFramebuffer) {
+            gl.GetIntegerv(0x8CAA, &fbo);                  /* GL_READ_FRAMEBUFFER_BINDING */
+            gl.BindFramebuffer(0x8CA8, 0);                 /* GL_READ_FRAMEBUFFER */
+        }
+        if (gl.ReadBuffer) {
+            gl.GetIntegerv(0x0C02, &rb);                   /* GL_READ_BUFFER */
+            gl.ReadBuffer(0x0405);                         /* GL_BACK */
+        }
+        gl.ReadPixels(0, 0, vp[2], vp[3], 0x1907, 0x1401, px);  /* GL_RGB, UNSIGNED_BYTE */
+        if (gl.ReadBuffer && rb)
+            gl.ReadBuffer(rb);
+        if (gl.BindFramebuffer)
+            gl.BindFramebuffer(0x8CA8, fbo);
+    }
     snprintf(path, sizeof(path), "%s%d.ppm", prefix, n++);
     if ((f = fopen(path, "wb"))) {
         fprintf(f, "P6\n%d %d\n255\n", vp[2], vp[3]);
@@ -704,7 +727,8 @@ static void *dsp_thread(void *arg)
             struct pa_attr attr = { (uint32_t)-1, 0, (uint32_t)-1, (uint32_t)-1, (uint32_t)-1 };
 
             bps = dsp.rate * dsp.channels * (dsp.fmt == 16 ? 2 : 1);
-            attr.tlength = bps * core_env_long("IGS_DSP_LATENCY_MS", 60) / 1000;
+            /* 150 ms: software GL (WSLg) keeps every core busy; less underruns */
+            attr.tlength = bps * core_env_long("IGS_DSP_LATENCY_MS", 150) / 1000;
             pa = pa_new(NULL, "IGS", 1, NULL, "game", &spec, NULL, &attr, &err);
             LOG("dsp: %d Hz, %d ch, %d bit -> PulseAudio %s", dsp.rate, dsp.channels,
                 dsp.fmt == 16 ? 16 : 8, pa ? "ok" : "failed");
@@ -931,13 +955,48 @@ int ioctl(int fd, unsigned long req, ...)
     return real_ioctl(fd, req, arg);
 }
 
+/*
+ * Device mappings are the machine's own memory, handed out again on every
+ * mmap: a game that closes the card and opens it again (Speed Driver 3) must
+ * not unmap them.
+ */
+static struct { uint8_t *base; size_t len; } dev_maps[16];
+static int ndev_maps;
+
 void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off)
 {
     REAL(void *, mmap, (void *, size_t, int, int, int, off_t));
+    void *p;
+    int i;
 
-    if (is_machine_fd(fd))
-        return machine->mmap_at ? machine->mmap_at(fd, len, (uint32_t)off) : machine->mmap(fd, len);
-    return real_mmap(addr, len, prot, flags, fd, off);
+    if (!is_machine_fd(fd))
+        return real_mmap(addr, len, prot, flags, fd, off);
+    p = machine->mmap_at ? machine->mmap_at(fd, len, (uint32_t)off) : machine->mmap(fd, len);
+    if (p == MAP_FAILED)
+        return p;
+    for (i = 0; i < ndev_maps; i++)
+        if (dev_maps[i].base == p)
+            break;
+    if (i == ndev_maps && ndev_maps < (int)(sizeof(dev_maps) / sizeof(dev_maps[0])))
+        ndev_maps++;
+    if (i < ndev_maps) {
+        dev_maps[i].base = p;
+        if (len > dev_maps[i].len)
+            dev_maps[i].len = len;
+    }
+    return p;
+}
+
+int munmap(void *addr, size_t len)
+{
+    REAL(int, munmap, (void *, size_t));
+    uint8_t *a = addr;
+    int i;
+
+    for (i = 0; i < ndev_maps; i++)
+        if (a >= dev_maps[i].base && a < dev_maps[i].base + dev_maps[i].len)
+            return 0;
+    return real_munmap(addr, len);
 }
 
 off_t lseek(int fd, off_t off, int whence)
@@ -1339,24 +1398,35 @@ static int tmp_cmd(char **argv, int argc)
  * Master 3: "hwclock --systohc"), the network (fixed-IP setting: killall
  * dhclient, ifconfig, route), the disk (hdparm), power.
  */
+/*
+ * ...nor the downloads from the maker's servers (Speed Driver 3's own curl:
+ * news, settings, patches), which fail as offline, nor the host's mixer
+ * (aumix).  Returns the status to report, or -1 to run the command.
+ */
 static int host_cmd(const char *cmd)
 {
-    static const char *const deny[] = {
-        "hwclock", "date", "ifconfig", "route", "killall", "dhclient", "hdparm", "ntpdate",
-        "reboot", "shutdown", "halt", "poweroff", "init", "ip", "pppd", "pppoe",
+    static const struct { const char *name; int status; } deny[] = {
+        { "hwclock", 0 }, { "date", 0 }, { "ifconfig", 0 }, { "route", 0 }, { "killall", 0 },
+        { "dhclient", 0 }, { "hdparm", 0 }, { "ntpdate", 0 }, { "reboot", 0 }, { "shutdown", 0 },
+        { "halt", 0 }, { "poweroff", 0 }, { "init", 0 }, { "ip", 0 }, { "pppd", 0 }, { "pppoe", 0 },
+        { "aumix", 0 }, { "curl", 256 }, { "wget", 256 },
     };
+    const char *word, *end, *base;
     size_t i, n;
 
     while (*cmd == ' ' || *cmd == '\t')
         cmd++;
-    for (i = 0; i < sizeof(deny) / sizeof(deny[0]); i++) {
-        n = strlen(deny[i]);
-        if (!strncmp(cmd, deny[i], n) && (!cmd[n] || cmd[n] == ' ' || cmd[n] == '\t' || cmd[n] == ';'))
-            return 1;
-        if (cmd[0] == '/' && strstr(cmd, deny[i]) == strrchr(cmd, '/') + 1)   /* /sbin/hwclock ... */
-            return 1;
-    }
-    return 0;
+    /* the command's name: /sbin/hwclock, ./curl */
+    for (end = cmd; *end && *end != ' ' && *end != '\t' && *end != ';'; end++)
+        ;
+    for (word = base = cmd; word < end; word++)
+        if (*word == '/')
+            base = word + 1;
+    n = end - base;
+    for (i = 0; i < sizeof(deny) / sizeof(deny[0]); i++)
+        if (strlen(deny[i].name) == n && !strncmp(base, deny[i].name, n))
+            return deny[i].status;
+    return -1;
 }
 
 int system(const char *cmd)
@@ -1364,11 +1434,11 @@ int system(const char *cmd)
     REAL(int, system, (const char *));
     static int logged;
     char buf[1024], *argv[TMPCMD_MAX];
-    int argc;
+    int argc, st;
 
-    if (cmd && host_cmd(cmd)) {
-        LOG("system(\"%s\"): not run (configures the host)", cmd);
-        return 0;
+    if (cmd && (st = host_cmd(cmd)) >= 0) {
+        LOG("system(\"%s\"): not run (%s)", cmd, st ? "offline" : "configures the host");
+        return st;
     }
     if (getenv("IGS_NO_SYSTEM") && cmd) {
         if ((argc = tmpcmd_parse(cmd, buf, sizeof(buf), argv))) {
@@ -1386,23 +1456,33 @@ int system(const char *cmd)
 static FILE *vpipe[8];                 /* popen streams the machine provided */
 static int nvpipe;
 
+/*
+ * popen: the output the machine provides for the command ("|cmd": the
+ * cabinet's ifconfig), else the command itself; never one host_cmd keeps
+ * from running (empty output) nor any under IGS_NO_SYSTEM.
+ */
 FILE *popen(const char *cmd, const char *mode)
 {
     REAL(FILE *, popen, (const char *, const char *));
+    char name[512];
+    FILE *f;
 
+    snprintf(name, sizeof(name), "|%s", cmd ? cmd : "");
+    if (mode && mode[0] == 'r' && nvpipe < (int)(sizeof(vpipe) / sizeof(vpipe[0])) &&
+        (f = vfile_open(name))) {
+        vpipe[nvpipe++] = f;
+        return f;
+    }
     if (getenv("IGS_NO_SYSTEM")) {
-        char name[512];
-        FILE *f;
-
-        snprintf(name, sizeof(name), "|%s", cmd ? cmd : "");
-        if (mode && mode[0] == 'r' && nvpipe < (int)(sizeof(vpipe) / sizeof(vpipe[0])) &&
-            (f = vfile_open(name))) {
-            vpipe[nvpipe++] = f;
-            return f;
-        }
         LOG("popen(\"%s\"): not run", cmd);
         errno = ENOENT;
         return NULL;
+    }
+    if (cmd && host_cmd(cmd) >= 0 && mode && mode[0] == 'r' &&
+        nvpipe < (int)(sizeof(vpipe) / sizeof(vpipe[0])) && (f = fmemopen(NULL, 1, "w+"))) {
+        LOG("popen(\"%s\"): not run (no output)", cmd);
+        vpipe[nvpipe++] = f;
+        return f;
     }
     return real_popen(cmd, mode);
 }
@@ -2258,19 +2338,162 @@ const unsigned char *glGetString(unsigned name)
     return ext ? (const unsigned char *)ext : s;
 }
 
+/*
+ * What vp40 / fp40 have and the ARB profiles lack (Speed Driver 3): 256
+ * constants (bone palettes, light arrays; Cg's arbvp1 / arbfp1 defaults are
+ * 96 / 32, Mesa takes thousands), and tex2Dlod & co. in fragment programs,
+ * sampled at the base level instead (arbfp1 has no explicit LOD).
+ */
+#define CG_SOURCE 4112
+static const char cg_arbfp1_lod[] =
+    "#define tex1Dlod(s, t) tex1D(s, (t).x)\n"
+    "#define tex2Dlod(s, t) tex2D(s, (t).xy)\n"
+    "#define tex3Dlod(s, t) tex3D(s, (t).xyz)\n"
+    "#define texCUBElod(s, t) texCUBE(s, (t).xyz)\n"
+    "#line 1\n";
+
+/*
+ * Loops whose trip count is a uniform (GlowObjects' blur: -samplePixel/2 ..
+ * samplePixel/2) cannot be unrolled for arbfp1, which has no flow control.
+ * The retry gives each `for (int i = A; cond; i++) body` a fixed count:
+ * `for (int k = 0; k < 32; k++) { int i = A + k; if (cond) body }`, which Cg
+ * unrolls and flattens.
+ */
+#define CG_LOOP_MAX 32
+
+static const char *cg_skip(const char *p, int open, int close)
+{
+    int depth = 0;
+
+    for (; *p; p++) {
+        if (*p == open)
+            depth++;
+        else if (*p == close && --depth == 0)
+            return p + 1;
+    }
+    return NULL;
+}
+
+static char *cg_bound_loops(const char *src)
+{
+    size_t cap = strlen(src) * 2 + 4096, len = 0;
+    char *out = malloc(cap);
+    const char *p = src;
+    int nloop = 0;
+
+    if (!out)
+        return NULL;
+#define CG_PUT(s, n) do { size_t n_ = (n); if (len + n_ + 1 > cap) { free(out); return NULL; } \
+                          memcpy(out + len, (s), n_); len += n_; } while (0)
+    while (*p) {
+        const char *f = strstr(p, "for"), *h, *e, *s1, *s2, *body, *end;
+        char name[64], init[256], cond[512], incr[128], buf[1024];
+        int ok = 0;
+
+        if (!f) {
+            CG_PUT(p, strlen(p));
+            break;
+        }
+        CG_PUT(p, f - p);
+        h = f + 3;
+        while (*h == ' ' || *h == '\t')
+            h++;
+        if ((f == src || !(isalnum((unsigned char)f[-1]) || f[-1] == '_')) && *h == '(' &&
+            (e = cg_skip(h, '(', ')')) && (s1 = memchr(h, ';', e - h)) && (s2 = memchr(s1 + 1, ';', e - s1 - 1)) &&
+            s1 - h - 1 < (long)sizeof(init) && s2 - s1 - 1 < (long)sizeof(cond) && e - s2 - 2 < (long)sizeof(incr)) {
+            memcpy(init, h + 1, s1 - h - 1), init[s1 - h - 1] = 0;
+            memcpy(cond, s1 + 1, s2 - s1 - 1), cond[s2 - s1 - 1] = 0;
+            memcpy(incr, s2 + 1, e - s2 - 2), incr[e - s2 - 2] = 0;
+            char start[256], inc_name[64];
+
+            body = e;
+            while (isspace((unsigned char)*body))
+                body++;
+            end = *body == '{' ? cg_skip(body, '{', '}') : strchr(body, ';');
+            if (end && *body != '{')
+                end++;
+            if (end && sscanf(init, " int %63[A-Za-z0-9_] = %255[^\n]", name, start) == 2 &&
+                (sscanf(incr, " %63[A-Za-z0-9_] ++", inc_name) == 1 || sscanf(incr, " ++ %63[A-Za-z0-9_]", inc_name) == 1) &&
+                !strcmp(name, inc_name)) {
+                snprintf(buf, sizeof(buf), "for (int igs_k%d = 0; igs_k%d < %d; igs_k%d++) { int %s = (int)(%s) + igs_k%d; if (%s) ",
+                         nloop, nloop, CG_LOOP_MAX, nloop, name, start, nloop, cond);
+                CG_PUT(buf, strlen(buf));
+                CG_PUT(body, end - body);
+                CG_PUT(" }", 2);
+                nloop++;
+                p = end;
+                ok = 1;
+            }
+        }
+        if (!ok) {
+            CG_PUT(f, 3);
+            p = f + 3;
+        }
+    }
+#undef CG_PUT
+    out[len] = 0;
+    if (!nloop) {
+        free(out);
+        return NULL;
+    }
+    return out;
+}
+
 void *cgCreateProgram(void *ctx, int type, const char *src, int profile, const char *entry, const char **args)
 {
     static void *(*real)(void *, int, const char *, int, const char *, const char **);
+    static int (*real_get_error)(void);
+    const char *argv[72], **a = args;
+    char *patched = NULL, *bounded;
+    void *p;
+    int n = 0, fp = 0;
 
     if (!real)
         *(void **)&real = real_next("cgCreateProgram");
+    if (!real)
+        return NULL;
     if (getenv("IGS_CG_ARB") && atoi(getenv("IGS_CG_ARB"))) {
-        if (profile == 7001)                   /* CG_PROFILE_VP40 -> ARBVP1 */
+        int vp = profile == 7001 || profile == 6150;
+
+        fp = profile == 6151 || profile == 7000;
+        if (vp)                                             /* CG_PROFILE_VP40 -> ARBVP1 */
             profile = 6150;
-        else if (profile == 6151)              /* CG_PROFILE_FP40 -> ARBFP1 */
+        if (fp) {                                           /* CG_PROFILE_FP40 -> ARBFP1 */
             profile = 7000;
+            if (type == CG_SOURCE && src && strstr(src, "lod(") &&
+                asprintf(&patched, "%s%s", cg_arbfp1_lod, src) >= 0)
+                src = patched;
+        }
+        if (vp || fp) {
+            for (; args && args[n] && n < 60; n++)
+                argv[n] = args[n];
+            argv[n++] = "-po";
+            argv[n++] = "MaxLocalParams=256";
+            argv[n] = NULL;
+            a = argv;
+        }
     }
-    return real ? real(ctx, type, src, profile, entry, args) : NULL;
+    p = real(ctx, type, src, profile, entry, a);
+    if (!p && fp && type == CG_SOURCE && src && (bounded = cg_bound_loops(src))) {
+        /* the unrolled loops are long: arbfp1's slot limits as the GL's (Mesa: thousands) */
+        static const char *const slots[] = {
+            "-po", "NumInstructionSlots=4096", "-po", "NumMathInstructionSlots=4096",
+            "-po", "NumTexInstructionSlots=4096", "-po", "MaxTexIndirections=4096",
+        };
+        size_t i;
+
+        if (!real_get_error)
+            *(void **)&real_get_error = real_next("cgGetError");
+        for (i = 0; i < sizeof(slots) / sizeof(slots[0]) && n < 70; i++)
+            argv[n++] = slots[i];
+        argv[n] = NULL;
+        p = real(ctx, type, bounded, profile, entry, argv);
+        if (p && real_get_error)
+            real_get_error();                  /* the first attempt's error */
+        free(bounded);
+    }
+    free(patched);
+    return p;
 }
 
 /*

@@ -54,9 +54,30 @@ struct e2100_api {
     /* register-table transport: an immediate word, or a data block in BAR0 */
     void (*reg_put)(struct e2100_regs *r, uint32_t word, uint32_t value);
     void (*reg_block)(struct e2100_regs *r, uint32_t word, const void *data, uint32_t len);
+    /*
+     * ring transport: queue one ASIC action (id, value, n data words); the
+     * machine delivers them in order, one per event.  The game takes the
+     * next action as the reply to a command it waits on.
+     */
+    void (*ring_action)(uint32_t id, uint32_t value, const uint32_t *data, uint32_t n);
+    /* the FPGA asset cipher under the runtime mask, in place (len % 16 == 0) */
+    void (*asset_encrypt)(void *buf, uint32_t len);
 };
 
-enum { E2100_TRANSPORT_BATCH, E2100_TRANSPORT_REGTABLE, E2100_TRANSPORT_REQRESP };
+enum { E2100_TRANSPORT_BATCH, E2100_TRANSPORT_REGTABLE, E2100_TRANSPORT_REQRESP, E2100_TRANSPORT_RING };
+
+/*
+ * Ring transport (E3000 "Real36", Speed Driver 3 and its siblings): no
+ * cipher on the registers.  Game -> ASIC: a 5-word slot in a ring of 12 in
+ * BAR1 words 0..59 (command, a, n, -, cmd + a + n + a running counter),
+ * then a notify; its n data words are in BAR0 at the game's input pointer
+ * (words 0..0xBFFF).  ASIC -> game: a slot [id, -, n, value, -] in the read
+ * side of the same words, then one event; its n data words at the output
+ * pointer (words 0xC000..0x17FFF).  Each block is masked: word k of n ^=
+ * ptr + n + 0x5CF9B5E9 + (n - k).  The machine keeps both pointers.
+ */
+#define E2100_RING_SLOTS 12
+#define E2100_RING_KEY   0x5CFA37E9u
 
 /*
  * Request/response transport (Hero of Robots and other Ogre-era games):
@@ -116,6 +137,14 @@ struct e2100_game {
      */
     uint32_t (*exchange)(const uint8_t *req, uint32_t len, uint8_t *reply, uint32_t max);
 
+    /*
+     * E2100_TRANSPORT_RING: one game command (its data unmasked, n words);
+     * answer with api->ring_action.  ring_tick runs every 16 ms (inputs,
+     * unsolicited actions).
+     */
+    void (*ring_cmd)(uint32_t cmd, uint32_t a, const uint32_t *data, uint32_t n);
+    void (*ring_tick)(void);
+
     /* optional: serial peripherals, ended by a NULL path */
     const struct e2100_serial *serial;
 
@@ -141,6 +170,10 @@ struct e2100_game {
      * checksum of its upload, so it carries 0 (nothing was uploaded).
      */
     int handshake;
+
+    /* optional: igs_machine.vfile, files and command output ("|cmd") the
+       cabinet provides; called without the machine lock, from any fopen */
+    const char *(*vfile)(const char *name);
 };
 
 enum { E2100_LAYOUT_RUNNING, E2100_LAYOUT_TRAILING };
@@ -149,8 +182,13 @@ enum { E2100_LAYOUT_RUNNING, E2100_LAYOUT_TRAILING };
  * the ASIC sends "ready" (0x55AA55AA) and "done" (0xAA55AA55, word 1 the
  * upload's sum), each also in plain in BAR1 words 0..7; the host answers
  * 0x5A5A5A5A and 0xFFFF.
+ * E2100_HS_LADDER (Speed Driver 3): the plain LoaderAdv: after the reset the
+ * host writes 0x08080808 and steps through ASIC commands in the mailbox,
+ * unmasked (0xF0.. ready, 0xD0.. upload, 0xB0.. received, 0x90.. sum check,
+ * word 1 the upload's IGScrc32); the ASIC goes straight to the check with sum
+ * 0, which matches the host's sum of no upload, and the host ends 0x0C0C0C0C.
  */
-enum { E2100_HS_SESSION, E2100_HS_NOSUM, E2100_HS_ADV };
+enum { E2100_HS_SESSION, E2100_HS_NOSUM, E2100_HS_ADV, E2100_HS_LADDER };
 
 /* exported by a game plugin .so */
 #define E2100_GAME_ENTRY "e2100_game_entry"

@@ -4,7 +4,8 @@
  * cabinet's boot (wiki Loader, "Building sets"):
  *
  *   root p2               the root fs (E2100/E2200 igs_rofs with the entry's
- *                         rofs_profile; E2000 plaintext ROFS)
+ *                         rofs_profile; E2000 plaintext ROFS; E3000 plaintext
+ *                         Game Image v2 for its profiles, fs_gimg.c)
  *   decrypt SRC DST SIZE  FPGA-cipher decrypt SRC to DST with exe_mask (or
  *                         asset_mask when the entry has none)
  *   copy SRC DST          copy a file inside the tree
@@ -479,6 +480,8 @@ static int step_root(struct mkr_job *j, char **a)
         return -1;
     if (!strcmp(j->machine, "e2000"))
         return fs_rofs24(j, off, size, j->root);
+    if (fs_gimg_known(mkr_feature(j, "rofs_profile", NULL)))
+        return fs_gimg(j, off, size, j->root, mkr_feature(j, "rofs_profile", NULL));
     return fs_rofs(j, off, size, j->root, mkr_feature(j, "rofs_profile", NULL));
 }
 

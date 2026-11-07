@@ -1,0 +1,220 @@
+/*
+ * Speed Driver 3: the two Lua chunks its IGS036 serves from the chip image
+ * (cmd 9; the image's own copy is encrypted with the chip's ROM key).  Ours,
+ * written against the engine's scripts: chunk 0 is lib.machine, the FSM
+ * layer every machine module (speed.main, game.sd3_main, ...) is written in
+ * and the only module missing from the disk; chunk 1 boots the game and
+ * defines the globals the C side calls: update(frameTime) every frame (the
+ * coin counter, speed.update: the engine, the FSMs, events; autotest),
+ * pushFlashCmd(cmd) per UI command, pushNetCmd(cmd) per command from the
+ * cabinet network (and our own), pushLocalCmd(cmd) from the debug console:
+ * Lua source, run; setNextState(state) on the chip's
+ * action 5.  A Lua error goes to the log instead of the game's assert.
+ *
+ * lib.machine, as the scripts use it (lib/entry.lua, lib/event.lua, the
+ * speed/test suites):
+ *   Machine(...)            the module is a machine: its env, `_` the run
+ *   State "name" {enter, update(frameTime), exit, on = {Event = f(e)},
+ *                 timer = {[seconds in the state] = f}}
+ *   Group(names...) {...}   enter/exit when the run enters/leaves the set
+ *   Finalize {exit}         when the run is turned off
+ *   create(class), turnOn(m, component), turnOff([component]),
+ *   turnOffComponent(entity, schema), update(frameTime), getRuns(),
+ *   setState(name), setComponentState(name, entity, schema),
+ *   getStateName([component]), getComponentState(entity, schema), setDebug(d)
+ * A run is the component itself: m_ (machine, name_), state_ (name_),
+ * entityName_.  lib.event keeps the event slots per machine name and sets
+ * `run.m_._ = run` before a handler, which makes it the current run here.
+ * setState inside a transition takes effect when that one is done.  Two
+ * enters yield ("preload", for the loading screen to show before the stage
+ * loads); they run directly, so a yield outside a coroutine returns at once
+ * (luabind objects made in a coroutine break this LuaJIT, lib/track.lua, and
+ * string.dump is disabled, so the yielding ones cannot be told apart).
+ */
+#ifndef SD3_LUA_H
+#define SD3_LUA_H
+
+static const char sd3_chunk0[] =
+"igs_call=function(f,...)\n"
+" local a={...}\n"
+" local ok,err=xpcall(function() return f(unpack(a)) end,debug.traceback)\n"
+" if not ok then print('[lua] '..tostring(err)) end\n"
+"end\n"
+"package.preload['lib.machine']=function(...)\n"
+"local y=coroutine.yield\n"
+"coroutine.yield=function(...) if coroutine.running() then return y(...) end end\n"
+"local _G,lib,pairs,ipairs,type,rawget,rawset,setmetatable,setfenv,require,table,string,package=\n"
+" _G,lib,pairs,ipairs,type,rawget,rawset,setmetatable,setfenv,require,table,string,package\n"
+"module(...)\n"
+"local runs,cur,dbg,def={},nil,nil,nil\n"
+"local function call(r,f,...)\n"
+" if f then local p=cur cur=r f(...) cur=p end\n"
+"end\n"
+"local function slot(m,t)\n"
+" if t.on then for e in pairs(t.on) do lib.event.createRunSlot(m.name_,e) end end\n"
+"end\n"
+"local function merge(s,g)\n"
+" if not g.on then return end\n"
+" s.on=s.on or {}\n"
+" for e,h in pairs(g.on) do if s.on[e]==nil then s.on[e]=h end end\n"
+"end\n"
+"Machine=function(name)\n"
+" local m=package.loaded[name]\n"
+" if type(m)~='table' then m={} end\n"
+" local t,parts=_G,{}\n"
+" for p in string.gmatch(name,'[^%.]+') do parts[#parts+1]=p end\n"
+" for i=1,#parts-1 do\n"
+"  local v=rawget(t,parts[i])\n"
+"  if type(v)~='table' then v={} t[parts[i]]=v end\n"
+"  t=v\n"
+" end\n"
+" t[parts[#parts]]=m\n"
+" package.loaded[name]=m\n"
+" rawset(m,'name_',name) rawset(m,'_NAME',name) rawset(m,'_M',m)\n"
+" rawset(m,'states_',{}) rawset(m,'groups_',{})\n"
+" setmetatable(m,{\n"
+"  __index=function(_,k) if k=='_' then return cur end return _G[k] end,\n"
+"  __newindex=function(t,k,v) if k=='_' then cur=v else rawset(t,k,v) end end})\n"
+" def=m\n"
+" setfenv(2,m)\n"
+"end\n"
+"State=function(name)\n"
+" return function(t)\n"
+"  local m=def\n"
+"  t.name_=name\n"
+"  m.states_[name]=t\n"
+"  if not m.first_ then m.first_=t end\n"
+"  for _,g in ipairs(m.groups_) do if g.members_[name] then merge(t,g) end end\n"
+"  slot(m,t)\n"
+" end\n"
+"end\n"
+"Group=function(...)\n"
+" local names={...}\n"
+" return function(t)\n"
+"  local m=def\n"
+"  t.members_={}\n"
+"  for _,n in ipairs(names) do t.members_[n]=true end\n"
+"  table.insert(m.groups_,t)\n"
+"  for n in pairs(t.members_) do local s=m.states_[n] if s then merge(s,t) end end\n"
+"  slot(m,t)\n"
+" end\n"
+"end\n"
+"Finalize=function(t) def.final_=t end\n"
+"local function go(r,name)\n"
+" local m=r.m_\n"
+" local s=m.states_[name]\n"
+" if not s then _G.warn('lib.machine: no state',name,'in',m.name_) return end\n"
+" if r.busy_ then r.next_=name return end\n"
+" r.busy_=true\n"
+" local o=r.state_\n"
+" if o then\n"
+"  call(r,o.exit)\n"
+"  for _,g in ipairs(m.groups_) do if g.members_[o.name_] and not g.members_[name] then call(r,g.exit) end end\n"
+" end\n"
+" r.state_=s r.time_=0 r.fired_={}\n"
+" for _,g in ipairs(m.groups_) do if g.members_[name] and not (o and g.members_[o.name_]) then call(r,g.enter) end end\n"
+" call(r,s.enter)\n"
+" r.busy_=nil\n"
+" if dbg and dbg.setState then local p=cur cur=r dbg.setState(m) cur=p end\n"
+" local n=r.next_\n"
+" if n and not r.off_ then r.next_=nil go(r,n) end\n"
+"end\n"
+"create=function(class)\n"
+" require(class)\n"
+" local m=package.loaded[class]\n"
+" if type(m)~='table' or not rawget(m,'states_') then _G.warn('lib.machine: not a machine',class) return end\n"
+" return m\n"
+"end\n"
+"turnOn=function(m,c)\n"
+" if not m or not c then return end\n"
+" if c.m_ and not c.off_ then turnOff(c) end\n"
+" c.m_=m c.off_=nil c.state_=nil c.next_=nil c.busy_=nil\n"
+" if not c.listed_ then c.listed_=true table.insert(runs,c) end\n"
+" lib.event.registerRun(c)\n"
+" if m.first_ then go(c,m.first_.name_) end\n"
+"end\n"
+"turnOff=function(c)\n"
+" c=c or cur\n"
+" if not c or not c.m_ or c.off_ then return end\n"
+" local m,s=c.m_,c.state_\n"
+" if s then\n"
+"  call(c,s.exit)\n"
+"  for _,g in ipairs(m.groups_) do if g.members_[s.name_] then call(c,g.exit) end end\n"
+" end\n"
+" if m.final_ then call(c,m.final_.exit) end\n"
+" c.off_=true\n"
+" lib.event.unregisterRun(c)\n"
+"end\n"
+"local function comp(e,sn)\n"
+" local cs=lib.getComponents(sn)\n"
+" return cs and cs[e]\n"
+"end\n"
+"turnOffComponent=function(e,sn) local c=comp(e,sn) if c then turnOff(c) end end\n"
+"update=function(ft)\n"
+" local i=1\n"
+" while i<=#runs do\n"
+"  local r=runs[i]\n"
+"  if r.off_ then r.listed_=nil table.remove(runs,i)\n"
+"  else\n"
+"   local s=r.state_\n"
+"   if s then\n"
+"    call(r,s.update,ft)\n"
+"    for _,g in ipairs(r.m_.groups_) do if g.update and g.members_[s.name_] then call(r,g.update,ft) end end\n"
+"    if s.timer and r.state_==s then\n"
+"     r.time_=(r.time_ or 0)+(ft or 0)\n"
+"     for t,f in pairs(s.timer) do\n"
+"      if r.state_~=s then break end\n"
+"      if r.time_>=t and not r.fired_[t] then r.fired_[t]=true call(r,f) end\n"
+"     end\n"
+"    end\n"
+"   end\n"
+"   i=i+1\n"
+"  end\n"
+" end\n"
+" if dbg and dbg.update then dbg.update() end\n"
+"end\n"
+"getRuns=function() return runs end\n"
+"setState=function(name)\n"
+" if cur then go(cur,name) else _G.warn('lib.machine.setState: no current machine',name) end\n"
+"end\n"
+"setComponentState=function(name,e,sn)\n"
+" local c=comp(e,sn)\n"
+" if c and c.m_ then go(c,name) else _G.warn('lib.machine.setComponentState: no machine',e,sn) end\n"
+"end\n"
+"getStateName=function(c)\n"
+" c=c or cur\n"
+" if c and c.state_ then return c.state_.name_ end\n"
+"end\n"
+"getComponentState=function(e,sn)\n"
+" local c=comp(e,sn)\n"
+" if c and c.state_ then return c.state_.name_ end\n"
+"end\n"
+"setDebug=function(d) dbg=d end\n"
+"end\n";
+
+static const char sd3_chunk1[] =
+"igs_call(function()\n"
+" require 'lib.entry'\n"
+" sendEvent=lib.event.sendEvent\n"
+" require 'speed.entry'\n"
+" require 'game.entry'\n"
+" lib.autotest.registerFunction('getMainState',function() return lib.machine.getComponentState('Game','SD3Main') end)\n"
+" lib.autotest.registerFunction('setMainState',game.setMainState)\n"
+" lib.package.load('game_entities')\n"
+"end)\n"
+"update=function(ft)\n"
+" igs_call(speed.coin.update)\n"
+" igs_call(speed.update,ft)\n"
+" igs_call(lib.autotest.update,ft)\n"
+"end\n"
+"pushFlashCmd=function(cmd)\n"
+" local f,msg=loadstring(cmd)\n"
+" if f then igs_call(f) else print('[lua] command '..tostring(cmd)..': '..tostring(msg)) end\n"
+"end\n"
+"pushNetCmd=pushFlashCmd\n"
+"pushLocalCmd=pushFlashCmd\n"
+"setNextState=function(id)\n"
+" igs_call(game.setNextState,id)\n"
+"end\n";
+
+#endif

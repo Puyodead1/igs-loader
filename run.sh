@@ -47,6 +47,9 @@ cd "$SET$DATA" || exit 1
 # SDL built in (E2000) only know x11 and dsp: their entries set
 # video_driver / audio_driver.
 export SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-${VIDEO_DRIVER:-wayland}}
+# no libdecor: its GTK title bar is a separate surface that WSLg shows as an
+# empty box beside the window (the compositor decorates the window itself)
+export SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR=${SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR:-0}
 # WSLg has a PulseAudio server; pin SDL to it
 export SDL_AUDIODRIVER=${SDL_AUDIODRIVER:-${AUDIO_DRIVER:-pulseaudio}}
 export EGL_LOG_LEVEL=${EGL_LOG_LEVEL:-fatal} MESA_LOG_LEVEL=${MESA_LOG_LEVEL:-error}
@@ -89,4 +92,5 @@ if [ "$LIBC" = uclibc ]; then
     LDSO=/lib/ld-linux.so.2
 fi
 # IGS_WRAP: a command to run the game under, e.g. "gdb -q --args"
-exec $IGS_WRAP $LDSO "$EXE"
+# ARGS: the words the cabinet passes after the binary
+exec $IGS_WRAP $LDSO "$EXE" $ARGS
