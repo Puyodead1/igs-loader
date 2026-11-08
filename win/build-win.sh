@@ -41,7 +41,7 @@ PF="$CF -shared -static -Iwin/compat -include win/compat/igs_plugin.h"
 for m in e2100 e2000 e1000 e2200 e3000; do
     $CC $PF -o "$OUT/$m.dll" "machines/$m/$m.c"
 done
-for g in harpoonlagoon fishhunter4 fishhunter6 fishhunterfinal6 oceanparty sangomario scratch heroofrobots goldcaptain piraterevenge gogoball2 speedrider pandafamily speeddriver2 wedanceonline2 percussionkids percussionmaster3 crazyshoot speeddriver3; do
+for g in harpoonlagoon fishhunter4 fishhunter6 fishhunterfinal6 oceanparty sangomario scratch heroofrobots goldcaptain piraterevenge gogoball2 speedrider pandafamily speeddriver2 wedanceonline2 percussionkids percussionmaster3 crazyshoot speeddriver3 powertruck muzibox speedrider2 speeddriver4; do
     $CC $PF -o "$OUT/$g.dll" "games/$g/$g.c" $(cat "games/$g/sources" 2>/dev/null) || echo "($g.dll not built)"
 done
 # the preloaded libraries (feature "preload"): build/<name>.so on Linux, <name>.dll here

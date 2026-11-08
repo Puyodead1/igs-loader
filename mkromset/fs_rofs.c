@@ -102,7 +102,21 @@ static const struct profile profiles[] = {
        mode leads the record and its AES blocks start at +8; magic block at
        0x58; page ends are word 1. */
     { "fishskl2_8p", "8PFishSKLv2InOST", 0x58, 2, 0x150, 0x78, 0x00,
-      { 0x28, 1, 0xD3A4465C }, { 0x08, 3, 0x531CABC7 }, { 0x48, 2, 0x034FC930 }, 1, 1, 1, 1, 0, 0, 0xA0 },};
+      { 0x28, 1, 0xD3A4465C }, { 0x08, 3, 0x531CABC7 }, { 0x48, 2, 0x034FC930 }, 1, 1, 1, 1, 0, 0, 0xA0 },
+    /* Power Truck (E3000, PowerTruck-OS).  Ocean Party's design; page ends
+       are word 3. */
+    { "powertruck", "PowerP-TTruck-v1", 0x100, 1, 0x150, 0x78, 0x74,
+      { 0x50, 1, 0xE10A7F4C }, { 0x30, 2, 0x5F0D452F }, { 0x00, 1, 0x00AF2A69 }, 1, 1, 1, 3 },
+    /* MuziBox (E3000, MuziBox-OS).  Ocean Party's design; page ends are
+       word 0. */
+    { "muzibox", "KM5MuziBoxSYS_V1", 0x100, 3, 0x150, 0x78, 0x74,
+      { 0x50, 3, 0x0D50143C }, { 0x30, 2, 0xB34958DB }, { 0x00, 2, 0x00EA417D }, 1, 1, 1, 0 },
+    /* Speed Driver 4 (E3000, SD4-OS-R31).  SKL2 8P's design (mode first,
+       AES blocks from +8); XORs are the init constants -/+ 0x5956; page
+       ends are word 2.  Files also carry a CRC-32C, not checked here. */
+    { "speeddriver4", "WeLikeSDAnyWhere", 0xD8, 1, 0x150, 0x78, 0x00,
+      { 0x28, 0, 0x243F2BC3 }, { 0x08, 2, 0x2EF8A639 }, { 0x48, 1, 0x243E7917 }, 1, 1, 1, 2, 0, 0, 0xA0 },
+};
 
 #define NPROF ((int)(sizeof(profiles) / sizeof(profiles[0])))
 
@@ -504,7 +518,7 @@ int fs_rofs(struct mkr_job *j, uint64_t off, uint64_t size, struct mkr_node *dir
             for (i = 0; i < NPROF && strcmp(profile, profiles[i].name); i++)
                 ;
             if (i == NPROF)
-                mkr_fail(j, "unknown ROFS profile '%s' (known: fish4p, oceanparty, heroofrobots, scratch, pmaster3, fish4p_m400, fish, fish6pv2, fishskl, fishskl2, demonhunter, crazyshoot, oceanking, soulofgun, westtrip, fishskl2_8p)",
+                mkr_fail(j, "unknown ROFS profile '%s' (known: fish4p, oceanparty, heroofrobots, scratch, pmaster3, fish4p_m400, fish, fish6pv2, fishskl, fishskl2, demonhunter, crazyshoot, oceanking, soulofgun, westtrip, fishskl2_8p, powertruck, muzibox)",
                          profile);
         }
         mkr_fail(j, "not an IGS ROFS v2 image for any known profile (no key decodes the superblock magic)");

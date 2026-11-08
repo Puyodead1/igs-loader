@@ -249,6 +249,14 @@ static void crash_report(EXCEPTION_POINTERS *ep)
             (er->ExceptionInformation[0] == 8 ? " executing" :
              er->ExceptionInformation[0] ? " writing" : " reading") : "",
         er->NumberParameters >= 2 ? (unsigned long)er->ExceptionInformation[1] : 0ul);
+    if (er->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && er->NumberParameters >= 2) {
+        MEMORY_BASIC_INFORMATION mbi;
+
+        if (VirtualQuery((void *)er->ExceptionInformation[1], &mbi, sizeof(mbi)))
+            LOG("  that page: %s, protection 0x%lx, region %p+0x%lx, allocation %p",
+                mbi.State == MEM_COMMIT ? "committed" : mbi.State == MEM_RESERVE ? "reserved" : "free",
+                (unsigned long)mbi.Protect, mbi.BaseAddress, (unsigned long)mbi.RegionSize, mbi.AllocationBase);
+    }
     LOG("  eax %08lx ebx %08lx ecx %08lx edx %08lx esi %08lx edi %08lx ebp %08lx esp %08lx",
         c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp, c->Esp);
     /* return addresses into ELF code on the stack: a rough backtrace */
@@ -714,8 +722,105 @@ static void frame_end(void)
     }
 }
 
+/*
+ * IGS_ROTATE=90|180|270: a cabinet whose monitor is mounted rotated (MuziBox:
+ * portrait).  The game draws for that monitor; the frame is turned clockwise
+ * by that many degrees and fitted into the window (black bars), before the
+ * overlay and the screenshot.
+ */
+static void rotate_frame(void)
+{
+    static GLuint tex;
+    static int deg = -1, tw, th;
+    static void (APIENTRY *bind_fb)(GLenum, GLuint);
+    static const float uv[4][4][2] = {     /* screen TL, TR, BR, BL <- source corner */
+        { { 0, 1 }, { 1, 1 }, { 1, 0 }, { 0, 0 } },          /* 0 */
+        { { 0, 0 }, { 0, 1 }, { 1, 1 }, { 1, 0 } },          /* 90 clockwise */
+        { { 1, 0 }, { 0, 0 }, { 0, 1 }, { 1, 1 } },          /* 180 */
+        { { 1, 1 }, { 1, 0 }, { 0, 0 }, { 0, 1 } },          /* 270 */
+    };
+    RECT rc;
+    int w, h, r, i, prog = 0;
+    float a, b;
+
+    if (deg < 0) {
+        deg = (int)lx_env_long("IGS_ROTATE", 0) % 360;
+        *(PROC *)&bind_fb = wglGetProcAddress("glBindFramebuffer");
+        if (!bind_fb)
+            *(PROC *)&bind_fb = wglGetProcAddress("glBindFramebufferEXT");
+    }
+    if (!deg || deg % 90 || !game_hwnd || !GetClientRect(game_hwnd, &rc))
+        return;
+    w = rc.right;
+    h = rc.bottom;
+    if (w <= 0 || h <= 0)
+        return;
+    r = deg / 90;
+    if (glx.UseProgram)
+        glGetIntegerv(GL_CURRENT_PROGRAM_, &prog);
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    if (bind_fb)
+        bind_fb(0x8D40, 0);                            /* GL_FRAMEBUFFER: the window's */
+    if (!tex)
+        glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    if (tw != w || th != h) {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 0, 0, w, h, 0);
+        tw = w;
+        th = h;
+    } else {
+        glReadBuffer(GL_BACK);
+        glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h);
+    }
+    /* the turned frame's size fitted into the window: half extents in NDC */
+    if (r & 1) {
+        float s = (float)w / h < (float)h / w ? (float)w / h : (float)h / w;
+
+        a = (float)h * s / w;
+        b = (float)w * s / h;
+    } else {
+        a = b = 1;
+    }
+    glViewport(0, 0, w, h);
+    glDisable(GL_SCISSOR_TEST);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_ALPHA_TEST);
+    if (glx.UseProgram)
+        glx.UseProgram(0);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    glEnable(GL_TEXTURE_2D);
+    glColor4f(1, 1, 1, 1);
+    glBegin(GL_QUADS);
+    for (i = 0; i < 4; i++) {
+        glTexCoord2f(uv[r][i][0], uv[r][i][1]);
+        glVertex2f(i == 0 || i == 3 ? -a : a, i < 2 ? b : -b);
+    }
+    glEnd();
+    glDisable(GL_TEXTURE_2D);
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glPopAttrib();
+    if (glx.UseProgram)
+        glx.UseProgram(prog);
+}
+
 void core_frame(void)
 {
+    rotate_frame();
     overlay();
     frame_end();
 }

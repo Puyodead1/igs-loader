@@ -54,12 +54,16 @@ data is included.
 | `percussionmaster3_m107fa` | Percussion Master 3 (M107FA) (offline; online with `IGS_NET`) | E2200 | ✓ | ✓ |
 | `fishhunterskl2_m801cn` | Fish Hunter SKL2 8P (M801CN) | E2200 | ✓ | ✓ |
 | `speeddriver3_m109cn` | Speed Driver 3 (M109CN) (no card play, no versus) | E3000 | ✓ | ✓ |
+| `powertruck` | Power Truck (no card play, no versus) | E3000 | ✓ | ✓ |
+| `muzibox` | MuziBox (no member card, no contests; Linux untested past loading) | E3000 | ? | ✓ |
+| `speedrider2`, `speedrider2fa` | Speed Rider 2 (no member card, no link play; Linux untested) | E3000 | ? | ✓ |
+| `speeddriver4` | Speed Driver 4 (no card play, no versus or internet race; Linux untested) | E3000 | ? | ✓ |
 
 Where the protection chip runs game logic whose code has not been dumped
 (Fish Hunter 4's, 6's, Plus 6P's, SKL's, SKL2's and Demon Hunter's catches, chance games and payouts, Ocean Party's odds, Scratch's prizes, the E2000 games' weapon tables and
 game flow, SangoMario's rounds and odds, Speed Rider's AI riders and lost archive bytes, Speed Driver 2's
 screens and AI throttle, all of Percussion Kids' game flow and judging,
-Percussion Master 3's screen flow, Speed Driver 3's screen flow and state-machine library, Crazy Shoot's prize odds, ported from the
+Percussion Master 3's screen flow, Speed Driver 3's and Power Truck's screen flow, state-machine library and boot scripts (Power Truck's replays), MuziBox's screen flow, Speed Rider 2's AI riders' control, Speed Driver 4's screen flow and state-machine library, Crazy Shoot's prize odds, ported from the
 developers' own stand-in in the game), the plugin reconstructs or invents it,
 so gameplay may not be completely identical to the real cabinet.
 
@@ -242,6 +246,7 @@ rate. Useful environment variables:
 | `IGS_TITLE=text` | window title instead of the game's name (`0` keeps the game's own) |
 | `IGS_VERBOSE=1` | log every message between the game and the emulated hardware |
 | `IGS_SHOT=<prefix>` | save the frame to `<prefix><n>.ppm` every `IGS_SHOT_EVERY` frames (default 600) |
+| `IGS_ROTATE=90\|180\|270` | turn the frame clockwise and fit it to the window (a rotated cabinet monitor; MuziBox's list entry sets 90) |
 | `IGS_SCRIPT="sec:key[+],..."` | press keys on a timetable, for testing |
 | `IGS_NET=host[:port]` | online games: connect to a local stand-in server (igs-online; We Dance, Percussion Master 3) instead of staying offline; nothing else reaches the network |
 | `IGS_WRAP="cmd"` | Linux: run the game under a command, e.g. `gdb -q --args` |

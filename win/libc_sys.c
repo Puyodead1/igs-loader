@@ -1850,9 +1850,56 @@ static int l_statvfs64(const char *p, uint32_t *s)
     return 0;
 }
 
-/* We Dance Online 2's network code: no interfaces here */
-static int l_getifaddrs(void **ifa) { *ifa = NULL; SET_ERRNO(L_ENOSYS); return -1; }
-static void l_freeifaddrs(void *ifa) { (void)ifa; }
+/*
+ * getifaddrs: the cabinet's interfaces, lo (127.0.0.1) and eth0 (172.16.1.1,
+ * net.c's own address, the one the Speed games' ifconfig reports), in
+ * glibc's i386 struct ifaddrs, one block for freeifaddrs.  RakNet (the
+ * Speed engine) takes its own addresses from it, and its loopback packets
+ * carry them.
+ */
+struct l_ifaddrs {
+    struct l_ifaddrs *next;
+    char *name;
+    unsigned flags;
+    void *addr, *netmask, *broadaddr, *data;
+};
+struct l_sin { uint16_t family, port; uint32_t addr; uint8_t zero[8]; };
+
+static int l_getifaddrs(void **ifa)
+{
+    static const struct { const char *name; unsigned flags; uint32_t addr, mask, bcast; } nic[2] = {
+        { "lo", 0x49, 0x0100007Fu, 0x000000FFu, 0 },                   /* UP LOOPBACK RUNNING */
+        { "eth0", 0x1043, 0x010110ACu, 0x00FFFFFFu, 0xFF0110ACu },     /* UP BROADCAST RUNNING MULTICAST */
+    };
+    struct blk { struct l_ifaddrs ia[2]; struct l_sin sa[2][3]; char names[2][8]; } *b = l_malloc(sizeof(*b));
+    int i;
+
+    if (!b) {
+        SET_ERRNO(12);
+        return -1;
+    }
+    memset(b, 0, sizeof(*b));
+    for (i = 0; i < 2; i++) {
+        snprintf(b->names[i], sizeof(b->names[i]), "%s", nic[i].name);
+        b->sa[i][0].family = b->sa[i][1].family = 2;
+        b->sa[i][0].addr = nic[i].addr;
+        b->sa[i][1].addr = nic[i].mask;
+        b->ia[i].next = i ? NULL : &b->ia[1];
+        b->ia[i].name = b->names[i];
+        b->ia[i].flags = nic[i].flags;
+        b->ia[i].addr = &b->sa[i][0];
+        b->ia[i].netmask = &b->sa[i][1];
+        if (nic[i].bcast) {
+            b->sa[i][2].family = 2;
+            b->sa[i][2].addr = nic[i].bcast;
+            b->ia[i].broadaddr = &b->sa[i][2];
+        }
+    }
+    *ifa = &b->ia[0];
+    return 0;
+}
+
+static void l_freeifaddrs(void *ifa) { l_free(ifa); }
 
 static int l_ftruncate64(int fd, long long len)
 {
@@ -1868,6 +1915,53 @@ static int l_ftruncate(int fd, long len) { return l_ftruncate64(fd, len); }
 
 /* file times are not kept */
 static int l_utimes(const char *path, const void *tv) { (void)path; (void)tv; return 0; }
+static int l_utime(const char *path, const void *t) { (void)path; (void)t; return 0; }
+static int l_chown(const char *p, unsigned u, unsigned g) { (void)p; (void)u; (void)g; return 0; }
+
+/*
+ * strverscmp (libidn): digit runs compare as numbers, except that a run
+ * with leading zeros is a fraction (fewer leading zeros is larger), as
+ * glibc's.
+ */
+static int l_strverscmp(const char *a, const char *b)
+{
+    const unsigned char *p = (const unsigned char *)a, *q = (const unsigned char *)b;
+
+    for (;;) {
+        if (*p >= '0' && *p <= '9' && *q >= '0' && *q <= '9') {
+            const unsigned char *ps = p, *qs = q;
+            int zp = *p == '0', zq = *q == '0';
+
+            if (zp || zq) {                    /* fractional parts: digit by digit */
+                while (*p == *q && *p >= '0' && *p <= '9') {
+                    p++;
+                    q++;
+                }
+                if (*p >= '0' && *p <= '9' && *q >= '0' && *q <= '9')
+                    return *p - *q;
+                if (*p >= '0' && *p <= '9')
+                    return zp && zq ? 1 : -1;
+                if (*q >= '0' && *q <= '9')
+                    return zp && zq ? -1 : 1;
+                continue;
+            }
+            while (*p >= '0' && *p <= '9')
+                p++;
+            while (*q >= '0' && *q <= '9')
+                q++;
+            if (p - ps != q - qs)              /* integers: the longer is larger */
+                return (p - ps) < (q - qs) ? -1 : 1;
+            for (; ps < p; ps++, qs++)
+                if (*ps != *qs)
+                    return *ps - *qs;
+            continue;
+        }
+        if (*p != *q || !*p)
+            return *p - *q;
+        p++;
+        q++;
+    }
+}
 
 /* POSIX basename: the last component, trailing slashes cut */
 static char *l___xpg_basename(char *p)
@@ -2005,7 +2099,22 @@ static int l_inet_aton(const char *s, uint32_t *a)
     *a = v;
     return 1;
 }
-/* getaddrinfo / getnameinfo: EAI_FAIL, there is no network */
+/* getnameinfo: numeric only (RakNet formats its interface addresses: NI_NUMERICHOST) */
+static int l_getnameinfo(const struct l_sin *sa, int salen, char *host, size_t hostlen, char *serv,
+                         size_t servlen, int flags)
+{
+    (void)salen; (void)flags;
+    if (!sa || sa->family != 2)
+        return -6;                              /* EAI_FAMILY */
+    if (host && hostlen)
+        snprintf(host, hostlen, "%u.%u.%u.%u", sa->addr & 0xff, sa->addr >> 8 & 0xff, sa->addr >> 16 & 0xff,
+                 sa->addr >> 24);
+    if (serv && servlen)
+        snprintf(serv, servlen, "%u", (unsigned)(sa->port >> 8 | (sa->port & 0xff) << 8));
+    return 0;
+}
+
+/* getaddrinfo: EAI_FAIL, there is no network to look names up on */
 static int l_gai_fail(void) { return -4; }
 static void l_freeaddrinfo(void *p) { (void)p; }
 static const char *l_gai_strerror(int e) { (void)e; return "no network"; }
@@ -2131,7 +2240,8 @@ const struct nsym sys_syms[] = {
     N(gethostname), N(sysconf), N(getpagesize), N(sync), N(fsync), NA(fdatasync, l_fsync),
     N(getrlimit), N(setrlimit), N(getrusage), N(get_nprocs), NA(get_nprocs_conf, l_get_nprocs),
     N(setmntent), N(getmntent), N(endmntent), N(getpwnam), N(getpwuid), N(setuid), N(ioperm), N(iopl),
-    N(getifaddrs), N(freeifaddrs), N(ftruncate), N(ftruncate64), N(utimes), N(__xpg_basename),
+    N(getifaddrs), N(freeifaddrs), N(ftruncate), N(ftruncate64), N(utimes), N(utime), N(chown),
+    N(strverscmp), N(__xpg_basename),
     NA(shmget, l_shm_fail), N(shmat), NA(shmdt, l_shm_fail), NA(shmctl, l_shm_fail), N(tmpnam),
     N(mremap),
     NA(getpwuid_r, l_getpw_r), NA(getpwnam_r, l_getpw_r), NA(getgrgid_r, l_getpw_r), NA(getgrnam_r, l_getpw_r),
@@ -2144,11 +2254,11 @@ const struct nsym sys_syms[] = {
     NA(__libc_current_sigrtmin, l_sigrtmin), NA(__libc_current_sigrtmax, l_sigrtmax),
     NA(__realpath_chk, l_realpath), NA(execl, l_execv), NA(__sysv_signal, l_signal),
     NA(getservbyname, l_net_null), N(getdtablesize),
-    /* socket, connect, send, recv...: net.c */
-    NA(bind, l_net_fail), NA(listen, l_net_fail), NA(accept, l_net_fail),
+    /* socket, bind, connect, send, recv...: net.c */
+    NA(listen, l_net_fail), NA(accept, l_net_fail),
     NA(gethostbyname, l_net_null), NA(gethostbyaddr, l_net_null), NA(if_nameindex, l_net_null), N(if_freenameindex), N(inet_ntoa),
     N(inet_addr), N(inet_aton),
-    NA(getaddrinfo, l_gai_fail), NA(getnameinfo, l_gai_fail), N(freeaddrinfo), N(gai_strerror),
+    NA(getaddrinfo, l_gai_fail), N(getnameinfo), N(freeaddrinfo), N(gai_strerror),
     NA(socketpair, l_net_fail), NA(sendmsg, l_net_fail), NA(recvmsg, l_net_fail),
     NA(sockatmark, l_net_fail), NA(isfdtype, l_net_fail),
     NA(if_indextoname, l_net_null), NA(inet_ntop, l_net_null), N(inet_pton), N(htons),

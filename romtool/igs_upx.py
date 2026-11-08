@@ -3,7 +3,8 @@
 The executable is stock UPX (l_info version 13, format 12 = linux/elf386):
 after the stub's two program headers come l_info, p_info (original file
 size) and the compressed blocks, each a b_info {sz_unc, sz_cpr, method,
-filter id, filter cto, 0} and its data; sz_unc 0 ends them.  The first
+filter id, filter cto, 0} and its data; sz_unc 0 ends them (UPX 3.08 puts
+its decompressor before the gaps' blocks, which are found past it).  The first
 block is the original ELF header and program headers; then come each
 PT_LOAD's file bytes (the first one's after the headers), then the gaps
 between and after them in file order.  Only NRV2B/NRV2D/NRV2E (le32)
@@ -123,11 +124,38 @@ def unpack(data):
     if fmt != 12:
         raise ValueError('UPX format %d, only linux/elf386 (12) is handled' % fmt)
     filesize = struct.unpack_from('<I', data, i + 16)[0]
-    p, blocks = i + 24, []
+    p, blocks, left = i + 24, [], filesize
+
+    def plausible(p, left):
+        """a b_info header at p whose block fits: what UPX writes, not its stub's code"""
+        if p + 12 > len(data):
+            return False
+        u, c, method, _, _, z = struct.unpack_from('<IIBBBB', data, p)
+        return 0 < c <= u <= left and method in (2, 5, 8) and not z and p + 12 + c <= len(data)
+
+    def chain(p, left):
+        """plausible headers from p on that end in the sz_unc 0 terminator"""
+        while plausible(p, left):
+            u, c = struct.unpack_from('<II', data, p)
+            left -= u
+            p += 12 + c
+            if p + 4 <= len(data) and not struct.unpack_from('<I', data, p)[0]:
+                return True
+        return False
+
     while True:
         u, c, method, ftid = struct.unpack_from('<IIBB', data, p)
         if not u:
             break
+        if not plausible(p, left):
+            # UPX 3.08 puts its decompressor between the PT_LOADs' blocks and
+            # the gaps' (Speed Driver 4): the next block header after it
+            q = next((q for q in range(p + 1, min(p + 0x10000, len(data) - 12)) if chain(q, left)), None)
+            if q is None:
+                raise ValueError('UPX: no block header at 0x%X' % p)
+            p = q
+            u, c, method, ftid = struct.unpack_from('<IIBB', data, p)
+        left -= u
         if ftid:
             raise ValueError('UPX filter 0x%x not handled' % ftid)
         blk = data[p + 12:p + 12 + c]

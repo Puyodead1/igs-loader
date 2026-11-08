@@ -1953,6 +1953,8 @@ static void *l_XCreateGC(void)
     return gc;
 }
 
+static int l_XFreeGC(void *d, void *gc) { (void)d; l_free(gc); return 1; }
+
 static XID l_XCreateColormap(void) { return new_xid(); }
 
 static uint32_t rgb_pixel(const XColor *c)
@@ -3029,7 +3031,7 @@ const struct nsym x11_syms[] = {
     N(XcursorCursorsDestroy),
     N(XListFonts), NOK(XFreeFontNames), N(XGetFontPath), NOK(XFreeFontPath), NZ(XGetSelectionOwner),
     NOK(XStoreBytes), N(XFetchBytes), N(XkbSetDetectableAutoRepeat), NOK(XForceScreenSaver),
-    N(XCreateGC), NA(XFreeGC, l_XFree), NOK(XChangeGC), NOK(XSetForeground), NOK(XSetBackground),
+    N(XCreateGC), N(XFreeGC), NOK(XChangeGC), NOK(XSetForeground), NOK(XSetBackground),
     NOK(XSetFunction), NOK(XFillRectangle), NOK(XCopyArea), NOK(XDrawLine),
     N(XCreateColormap), NOK(XFreeColormap), NOK(XInstallColormap), N(XAllocColor), N(XAllocNamedColor),
     N(XParseColor), N(XQueryColors), NOK(XStoreColors), NOK(XFreeColors),

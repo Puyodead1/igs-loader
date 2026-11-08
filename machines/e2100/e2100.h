@@ -174,6 +174,14 @@ struct e2100_game {
     /* optional: igs_machine.vfile, files and command output ("|cmd") the
        cabinet provides; called without the machine lock, from any fopen */
     const char *(*vfile)(const char *name);
+
+    /*
+     * optional: the cipher's CBC mode (ioctl 0x6614 on, 0x6615 off; Speed
+     * Driver 4): 64 KiB chunk k >= 1 of a request is under the mask XORed
+     * with cbc_delta[k - 1] (measured per game)
+     */
+    const uint8_t (*cbc_delta)[16];
+    unsigned cbc_chunks;
 };
 
 enum { E2100_LAYOUT_RUNNING, E2100_LAYOUT_TRAILING };

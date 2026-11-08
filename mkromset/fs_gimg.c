@@ -9,20 +9,49 @@
  * is the offset in words: one past it for a directory's entries, at it (low
  * two bits varying) for a file's cramfs-style block table, each 4 KiB block
  * zlib or, zero length, a hole.
+ *
+ * Speed Rider 2 ("Variant: Speed Rider 2"): keyed inodes.  Each entry is a
+ * fixed header then its name padded to 16; the header's words are xored with
+ * the kernel's constants: major and minor checks, the size (low 28 bits),
+ * the offset in words (low 26 bits; the directory's entries or the file's
+ * block table, both at it) and the name length (one byte).  The root inode
+ * is at 0x40.  Speed Rider 2 FA's headers are longer and their first 0x60
+ * bytes AES-ECB under the ROFS key transform of "riderspeed2-v1.0".
  */
 #include <stdlib.h>
 #include <string.h>
 
 #include "mkr.h"
 
+#include "Aes.h"
 #include "zlib.h"
 
 #define GIMG_MAGIC 0xD4AA2684u
 
-struct gimg_profile { const char *name; uint32_t off_key, size_key; };
+struct gimg_profile { const char *name; uint32_t off_key, size_key; int keyed; };
 
 static const struct gimg_profile gprofiles[] = {
-    { "speeddriver3", 0x016F88CC, 0x0777613F },
+    { "speeddriver3", 0x016F88CC, 0x0777613F, 0 },
+    { "speedrider2", 0, 0, 1 },
+};
+
+/* Speed Rider 2's kernel constants (init_igs_rofs_fs) */
+#define K_SIZE 0x505D3EC3u
+#define K_MAJ  0x1F416F72u
+#define K_MIN  0xBAE4CAD7u
+#define K_ROFS 0x10B1219Fu
+#define K_ROOT 0x04E20F34u
+#define K_D    0x2A1Fu
+#define SR2_MAJOR 0xA5A5A5A5u
+#define SR2_MINOR 0xAA55EB48u
+#define SR2_ROFS  0x14532EABu
+
+/* header size, encrypted bytes, field offsets, the root list's offset */
+struct klayout { const char *name; uint32_t hdr, enc, maj, nlen, off, size, minor, mode, root; };
+
+static const struct klayout klayouts[] = {
+    { "Speed Rider 2", 0x58, 0, 0x04, 0x1C, 0x28, 0x30, 0x4C, 0x54, 0x130 },
+    { "Speed Rider 2 FA", 0x68, 0x60, 0x04, 0x2C, 0x38, 0x40, 0x5C, 0x64, 0x140 },
 };
 
 struct gimg {
@@ -30,6 +59,8 @@ struct gimg {
     const uint8_t *d;
     size_t n;
     const struct gimg_profile *p;
+    const struct klayout *k;
+    UInt32 aesbuf[AES_NUM_IVMRK_WORDS + 4], *aes;
     uint32_t check;
     int dirs, files, links, other;
 };
@@ -191,6 +222,162 @@ static int list(struct gimg *g, struct mkr_node *dir, uint32_t start, uint32_t e
     return 0;
 }
 
+/* ---- Speed Rider 2: keyed inodes ------------------------------------------------------------ */
+
+static void k_setkey(struct gimg *g, const char *literal)
+{
+    uint8_t k[16];
+    uint32_t w[4];
+    int i;
+
+    for (i = 0; i < 4; i++)                       /* the ROFS key transform (fs_rofs.c) */
+        w[i] = (uint32_t)(uint8_t)literal[4 * i] << 24 | (uint32_t)(uint8_t)literal[4 * i + 1] << 16 |
+               (uint32_t)(uint8_t)literal[4 * i + 2] << 8 | (uint8_t)literal[4 * i + 3];
+    w[0] >>= 2;
+    w[1] >>= 1;
+    w[3] <<= 1;
+    for (i = 0; i < 16; i++)
+        k[i] = (uint8_t)(w[i / 4] >> (24 - 8 * (i % 4)));
+    g->aes = g->aesbuf + ((0u - (unsigned)(uintptr_t)g->aesbuf) & 15) / 4;
+    Aes_SetKey_Dec(g->aes + 4, k, 16);
+}
+
+static void k_ecb(struct gimg *g, uint8_t *b, size_t n)
+{
+    static const uint8_t zero[16];
+    size_t i;
+
+    for (i = 0; i < n; i += 16) {
+        AesCbc_Init(g->aes, zero);
+        g_AesCbc_Decode(g->aes, b + i, 1);
+    }
+}
+
+struct kent { uint32_t size, off, next; unsigned mode; char name[260]; };
+
+/* the inode at o (the root's checks differ); 0, or -1 quietly when it is not one */
+static int k_inode(struct gimg *g, uint32_t o, int root, struct kent *e)
+{
+    const struct klayout *L = g->k;
+    uint8_t h[0x80];
+    uint32_t okey, nl, i;
+
+    if ((uint64_t)o + L->hdr > g->n)
+        return -1;
+    memcpy(h, g->d + o, L->hdr);
+    if (L->enc)
+        k_ecb(g, h, L->enc);
+    if (root) {
+        if ((rd32(h + L->maj) ^ K_ROFS) != SR2_ROFS)
+            return -1;
+        okey = K_ROOT + K_D;
+    } else {
+        if ((rd32(h + L->maj) ^ K_MAJ) != SR2_MAJOR)
+            return -1;
+        okey = K_MAJ - K_D;
+    }
+    if ((rd32(h + L->minor) ^ K_MIN) != SR2_MINOR)
+        return -1;
+    e->size = (rd32(h + L->size) ^ (K_SIZE - K_D)) & 0xFFFFFFF;
+    e->off = ((rd32(h + L->off) ^ okey) & 0x3FFFFFF) * 4;
+    e->mode = rd16(h + L->mode);
+    e->name[0] = 0;
+    e->next = o + L->hdr;
+    if (!root) {
+        nl = h[L->nlen] ^ ((K_MIN - K_D) & 0xFF);
+        if (!nl || (uint64_t)o + L->hdr + nl > g->n)
+            return -1;
+        for (i = 0; i < nl && g->d[o + L->hdr + i]; i++)
+            e->name[i] = g->d[o + L->hdr + i] >= 0x80 ? '?' : (char)g->d[o + L->hdr + i];
+        e->name[i] = 0;
+        e->next = o + L->hdr + ((nl + 15) & ~15u);
+    }
+    return 0;
+}
+
+static int k_list(struct gimg *g, struct mkr_node *dir, uint32_t start, uint32_t end, int depth)
+{
+    uint32_t o = start;
+
+    if (depth > 64)
+        return mkr_fail(g->j, "gimg: directories nested too deep");
+    while (o < end) {
+        struct kent e;
+        unsigned kind;
+
+        if (k_inode(g, o, 0, &e))
+            return mkr_fail(g->j, "gimg: no inode at 0x%X", o);
+        sanitize(e.name);
+        kind = e.mode & 0xF000;
+        if (kind == 0x4000) {
+            struct mkr_node *sub = vfs_dir(g->j, dir, e.name, 0755);
+
+            if (!sub)
+                return -1;
+            g->dirs++;
+            if (e.size && k_list(g, sub, e.off, e.off + e.size, depth + 1))
+                return -1;
+        } else if (kind == 0x8000 || kind == 0xA000) {
+            uint8_t *data = malloc(e.size ? e.size : 1);
+
+            if (!data)
+                return mkr_fail(g->j, "out of memory");
+            if (e.size && blocks(g, e.off / 4, e.size, NULL, data)) {
+                free(data);
+                return mkr_fail(g->j, "gimg: %s does not decode", e.name);
+            }
+            if (kind == 0x8000) {
+                struct mkr_w w;
+
+                if (vfs_wopen(g->j, &w, dir, e.name))
+                    return free(data), -1;
+                if (e.size && vfs_write(g->j, &w, data, e.size)) {
+                    vfs_wabort(g->j, &w);
+                    return free(data), -1;
+                }
+                if (!vfs_put(g->j, dir, e.name, &w, e.mode & 07777))
+                    return free(data), -1;
+                g->files++;
+            } else {
+                char *t = mkr_latin1(data, e.size);
+                struct mkr_node *l = vfs_link(g->j, dir, e.name, t);
+
+                free(t);
+                if (!l)
+                    return free(data), -1;
+                g->links++;
+            }
+            free(data);
+        } else {
+            g->other++;
+        }
+        if (mkr_check(g->j))
+            return -1;
+        o = e.next;
+    }
+    if (o != end)
+        return mkr_fail(g->j, "gimg: a directory's entries end at 0x%X, its size says 0x%X", o, end);
+    return 0;
+}
+
+/* the layout whose root inode checks out */
+static int k_root(struct gimg *g, struct mkr_node *dir)
+{
+    unsigned i;
+
+    k_setkey(g, "riderspeed2-v1.0");
+    for (i = 0; i < sizeof(klayouts) / sizeof(klayouts[0]); i++) {
+        struct kent r;
+
+        g->k = &klayouts[i];
+        if (!k_inode(g, 0x40, 1, &r) && (r.mode & 0xF000) == 0x4000 && r.off == g->k->root) {
+            mkr_log(g->j, MKR_TOOL, "Game Image: %s layout", g->k->name);
+            return k_list(g, dir, r.off, r.off + r.size, 0);
+        }
+    }
+    return mkr_fail(g->j, "not a Speed Rider 2 Game Image v2 root (no root inode at 0x40)");
+}
+
 int fs_gimg_known(const char *profile)
 {
     unsigned i;
@@ -227,6 +414,14 @@ int fs_gimg(struct mkr_job *j, uint64_t off, uint64_t size, struct mkr_node *dir
     }
     g.d = data;
     g.n = (size_t)k;
+    if (g.p->keyed) {
+        rc = k_root(&g, dir);
+        if (!rc)
+            mkr_log(j, MKR_TOOL, "Game Image %s: %d dirs, %d files, %d symlinks, %d special nodes skipped",
+                    g.p->name, g.dirs, g.files, g.links, g.other);
+        free(data);
+        return rc;
+    }
     if (g.n < 0x100 || rd32(data + 0x7C) != GIMG_MAGIC) {
         free(data);
         return mkr_fail(j, "not a plaintext Game Image v2 root (no magic at 0x7C)");

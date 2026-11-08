@@ -16,21 +16,115 @@
 
 #include "lx.h"
 
-/* ---- memory (one allocator for everything ELF code may free) ------------------- */
+/*
+ * ---- memory (one allocator for everything ELF code may free) -------------------
+ *
+ * A heap of its own in which the bytes around a block are always mapped,
+ * as in glibc's brk heap: games read past their blocks (Speed Driver 2's
+ * replay camera starts at index -1 and reads the entry before its camera
+ * array).  The CRT heap does not promise that: its Low Fragmentation Heap
+ * puts a no-access guard page after each subsegment, so a block at the start
+ * of one has a guard page just below it, and the backend decommits large
+ * free runs.  This heap is RtlCreateHeap'd with HEAP_NO_SERIALIZE, which
+ * keeps the LFH off (our lock serializes it instead), and with the decommit
+ * thresholds out of reach.
+ * Blocks are 16-aligned (malloc's on i386 glibc: 8; SSE code wants 16);
+ * the raw block and the size sit just below the returned pointer.
+ */
+typedef struct {
+    ULONG Length;
+    SIZE_T SegmentReserve, SegmentCommit, DeCommitFreeBlockThreshold, DeCommitTotalFreeThreshold,
+        MaximumAllocationSize, VirtualMemoryThreshold, InitialCommit, InitialReserve;
+    void *CommitRoutine;
+    SIZE_T Reserved[2];
+} heap_params;
 
-void *l_malloc(size_t n)
+static HANDLE gheap;
+static INIT_ONCE gheap_once = INIT_ONCE_STATIC_INIT;
+static SRWLOCK glock = SRWLOCK_INIT;
+
+static BOOL CALLBACK gheap_init(PINIT_ONCE o, void *a, void **c)
 {
-    void *p = _aligned_malloc(n ? n : 1, 16);
+    void *(NTAPI *create)(ULONG, void *, SIZE_T, SIZE_T, void *, heap_params *);
+    heap_params hp;
 
-    if (!p)
+    (void)o; (void)a; (void)c;
+    *(FARPROC *)&create = GetProcAddress(GetModuleHandleA("ntdll.dll"), "RtlCreateHeap");
+    memset(&hp, 0, sizeof(hp));
+    hp.Length = sizeof(hp);
+    hp.DeCommitFreeBlockThreshold = hp.DeCommitTotalFreeThreshold = 0x7FFFFFFF;
+    hp.InitialReserve = 64 << 20;
+    hp.SegmentReserve = 64 << 20;
+    if (create)
+        gheap = create(HEAP_GROWABLE | HEAP_NO_SERIALIZE, NULL, 0, 0, NULL, &hp);
+    if (!gheap)
+        gheap = GetProcessHeap();
+    return TRUE;
+}
+
+/* tag: ties the header to its pointer, so a block from another allocator is told apart */
+struct blk_hdr { void *raw; size_t n; uintptr_t tag; };
+#define BLK_TAG(p, raw) ((uintptr_t)(p) ^ (uintptr_t)(raw) ^ (uintptr_t)0x9E3779B9u)
+
+static struct blk_hdr *blk(void *p)
+{
+    struct blk_hdr *h = &((struct blk_hdr *)p)[-1];
+
+    if (h->tag == BLK_TAG(p, h->raw) && (char *)h->raw <= (char *)h)
+        return h;
+    return NULL;
+}
+
+/* a block not from this heap: the CRT's if it is one of its (native code's malloc), else kept */
+static void foreign_free(void *p, void *caller)
+{
+    static int said;
+    int crt = HeapValidate(GetProcessHeap(), 0, p) != 0;
+
+    if (said++ < 8)
+        LOG("free(%p) from %p: not a malloc block%s", p, caller, crt ? " (CRT's, freed there)" : " (left alone)");
+    if (crt)
+        free(p);
+}
+
+static void *heap_get(size_t n, size_t align)
+{
+    char *raw = NULL, *p;
+
+    if (!gheap)
+        InitOnceExecuteOnce(&gheap_once, gheap_init, NULL, NULL);
+    if (n <= (size_t)-1 - align - sizeof(struct blk_hdr)) {
+        AcquireSRWLockExclusive(&glock);
+        raw = HeapAlloc(gheap, 0, n + align + sizeof(struct blk_hdr));
+        ReleaseSRWLockExclusive(&glock);
+    }
+    if (!raw) {
         SET_ERRNO(ENOMEM);
+        return NULL;
+    }
+    p = (char *)(((uintptr_t)raw + sizeof(struct blk_hdr) + align - 1) & ~(uintptr_t)(align - 1));
+    ((struct blk_hdr *)p)[-1].raw = raw;
+    ((struct blk_hdr *)p)[-1].n = n;
+    ((struct blk_hdr *)p)[-1].tag = BLK_TAG(p, raw);
     return p;
 }
 
+void *l_malloc(size_t n) { return heap_get(n, 16); }
+
 void l_free(void *p)
 {
-    if (p)
-        _aligned_free(p);
+    struct blk_hdr *h;
+
+    if (!p)
+        return;
+    if (!(h = blk(p))) {
+        foreign_free(p, __builtin_return_address(0));
+        return;
+    }
+    h->tag = 0;
+    AcquireSRWLockExclusive(&glock);
+    HeapFree(gheap, 0, h->raw);
+    ReleaseSRWLockExclusive(&glock);
 }
 
 void *l_calloc(size_t n, size_t m)
@@ -55,14 +149,51 @@ void *l_realloc(void *p, size_t n)
         l_free(p);
         return NULL;
     }
-    return _aligned_realloc(p, n, 16);
+    {
+        struct blk_hdr *h = blk(p);
+        size_t head;
+        void *q = NULL;
+
+        if (!h) {
+            /* another allocator's block: its size is unknown, so move it as the CRT's */
+            size_t old = HeapValidate(GetProcessHeap(), 0, p) ? _msize(p) : 0;
+
+            LOG("realloc(%p) from %p: not a malloc block", p, __builtin_return_address(0));
+            if (!old || !(q = heap_get(n, 16)))
+                return NULL;
+            memcpy(q, p, old < n ? old : n);
+            free(p);
+            return q;
+        }
+        head = (size_t)((char *)p - (char *)h->raw);
+
+        /* in place keeps the alignment (the raw block does not move) */
+        if (n <= (size_t)-1 - head) {
+            AcquireSRWLockExclusive(&glock);
+            q = HeapReAlloc(gheap, HEAP_REALLOC_IN_PLACE_ONLY, h->raw, head + n);
+            ReleaseSRWLockExclusive(&glock);
+        }
+        if (q) {
+            h->n = n;
+            return p;
+        }
+        if (!(q = heap_get(n, 16)))
+            return NULL;
+        memcpy(q, p, h->n < n ? h->n : n);
+        l_free(p);
+        return q;
+    }
 }
 
 static void *l_memalign(size_t a, size_t n)
 {
     if (a < 16)
         a = 16;
-    return _aligned_malloc(n ? n : 1, a);
+    if (a & (a - 1)) {
+        SET_ERRNO(EINVAL);
+        return NULL;
+    }
+    return heap_get(n, a);
 }
 
 static int l_posix_memalign(void **out, size_t a, size_t n)
@@ -72,6 +203,14 @@ static int l_posix_memalign(void **out, size_t a, size_t n)
 }
 
 static void *l_valloc(size_t n) { return l_memalign(4096, n); }
+
+/* the block's size as asked (glibc may report more; the bytes asked are what is safe) */
+static size_t l_malloc_usable_size(void *p)
+{
+    struct blk_hdr *h = p ? blk(p) : NULL;
+
+    return h ? h->n : 0;
+}
 
 char *l_strdup(const char *s)
 {
@@ -1063,6 +1202,7 @@ static lwchar *l_wmemcpy(lwchar *d, const lwchar *s, size_t n) { return memcpy(d
 static lwchar *l_wmemmove(lwchar *d, const lwchar *s, size_t n) { return memmove(d, s, n * 4); }
 static lwchar *l_wmemset(lwchar *d, lwchar c, size_t n) { size_t i; for (i = 0; i < n; i++) d[i] = c; return d; }
 static int l___wcscoll_l(const lwchar *a, const lwchar *b, void *l) { (void)l; return l_wcscmp(a, b); }
+static int l_wcscoll(const lwchar *a, const lwchar *b) { return l_wcscmp(a, b); }   /* the C locale */
 static size_t l___wcsxfrm_l(lwchar *d, const lwchar *s, size_t n, void *l)
 {
     size_t len = l_wcslen(s);
@@ -1762,7 +1902,7 @@ static LFILE *l_fdopen(int fd, const char *mode)
 const struct nsym libc_syms[] = {
     /* memory */
     N(malloc), N(free), N(calloc), N(realloc), N(memalign), N(posix_memalign), N(valloc),
-    NA(__libc_memalign, l_memalign),
+    NA(__libc_memalign, l_memalign), N(malloc_usable_size),
     /* strings */
     NF(memcpy), NF(memmove), NF(memset), NF(memcmp), NF(memchr), N(memrchr), N(mempcpy),
     NF(strcpy), NF(strncpy), NF(strcat), NF(strncat), NF(strcmp), NF(strncmp), NF(strchr),
@@ -1803,7 +1943,7 @@ const struct nsym libc_syms[] = {
     N(__strtoll_l), N(__strtoull_l), N(__rawmemchr),
     N(__towlower_l), N(__towupper_l), N(towlower), N(towupper), N(__wctype_l), N(wctype),
     N(__iswctype_l), N(iswctype), N(wctob), N(btowc), N(mbrtowc), N(wcrtomb), N(mbsrtowcs),
-    N(mbsnrtowcs), N(wcsrtombs), N(wcsnrtombs), N(wcslen), N(wcscmp), N(wmemchr), N(wmemcmp),
+    N(mbsnrtowcs), N(wcsrtombs), N(wcsnrtombs), N(wcslen), N(wcscmp), N(wcscoll), N(wmemchr), N(wmemcmp),
     N(wmemcpy), N(wmemmove), N(wmemset), N(__wcscoll_l), N(__wcsxfrm_l), N(__wcsftime_l),
     N(getwc), N(putwc), N(ungetwc), N(gettext), N(dgettext), N(dcgettext), N(textdomain),
     N(bindtextdomain), N(bind_textdomain_codeset),

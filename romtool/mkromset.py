@@ -74,6 +74,7 @@ import zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import softlist            # noqa: E402
+import igs_gimg            # noqa: E402
 import igs_rofs            # noqa: E402
 import igs_rofs24          # noqa: E402
 import igs_shfs            # noqa: E402
@@ -247,7 +248,11 @@ class Builder:
             with open(self.image, 'rb') as f:
                 f.seek(off)
                 data = f.read(size)
-            igs_rofs.extract(data, self.stage, self.sw.feature('rofs_profile'))
+            profile = self.sw.feature('rofs_profile')
+            if profile in igs_gimg.PROFILES:
+                igs_gimg.extract(data, self.stage, profile)
+            else:
+                igs_rofs.extract(data, self.stage, profile)
 
     def step_decrypt(self, op, src, dst, size):
         mask = self.sw.feature('exe_mask') or self.sw.feature('asset_mask')

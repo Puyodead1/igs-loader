@@ -224,6 +224,7 @@ int main(int argc, char **argv)
         return 1;
     }
     lx_set_dirs(data, rootfs);
+    setenv_kv("IGS_SET", rootfs);              /* plugins keep their NV files in the set */
     SetCurrentDirectoryA(data);
     LOG("%s: set %s, DATA %s", sw->description, rootfs, data);
 

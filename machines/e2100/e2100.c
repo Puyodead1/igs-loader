@@ -109,6 +109,7 @@ static struct {
     double rr_time;
     uint8_t rr_reply[E2100_REQRESP_MAX];
 
+    int cbc;                       /* the cipher's CBC mode (ioctl 0x6614 / 0x6615) */
     /* ring transport: slot positions, data pointers (words), queued actions */
     int ring;
     uint32_t ring_tx, ring_rx, ring_counter, ring_in, ring_out;
@@ -902,6 +903,35 @@ static int dev_ioctl(int fd, unsigned long req, void *arg)
         const uint8_t *mask = cipher_mask;
         uint32_t i;
 
+        if (c && s.cbc && c->src && c->dst && c->src->buf && c->dst->buf) {
+            /*
+             * CBC mode (Speed Driver 4): one request over the whole buffer,
+             * any length, straight between the caller's buffers; 64 KiB
+             * chunk k is under the mask XORed with the game's delta k
+             */
+            uint32_t len = c->src->len < c->dst->len ? c->src->len : c->dst->len;
+            uint8_t m[16];
+
+            if (game->asset_mask && c->key && game->asset_mask(c->key))
+                mask = game->asset_mask(c->key);
+            if (c->dst->buf != c->src->buf)
+                memmove(c->dst->buf, c->src->buf, len);
+            for (i = 0; i + 16 <= len; i += 16) {
+                uint32_t k = i >> 16, j;
+
+                memcpy(m, mask, 16);
+                if (k && k <= game->cbc_chunks)
+                    for (j = 0; j < 16; j++)
+                        m[j] ^= game->cbc_delta[k - 1][j];
+                else if (k && !(i & 0xFFFF))
+                    LOG("CBC chunk %u: no mask delta", k);
+                if (c->encrypt)
+                    cipher_encrypt_block((uint8_t *)c->dst->buf + i, m);
+                else
+                    cipher_decrypt_block((uint8_t *)c->dst->buf + i, m);
+            }
+            break;
+        }
         if (!c || !dma_check(c->src) || !dma_check(c->dst)) { ret = -1; break; }
         if (game->asset_mask && c->key && game->asset_mask(c->key))
             mask = game->asset_mask(c->key);
@@ -915,6 +945,10 @@ static int dev_ioctl(int fd, unsigned long req, void *arg)
         memcpy(c->dst->buf, s.bar0 + c->dst->sram, c->dst->len);
         break;
     }
+    case 0x6614:                                /* CBC mode on / off (Speed Driver 4) */
+    case 0x6615:
+        s.cbc = req == 0x6614;
+        break;
     case IOC_KEY:
     case 0x6607: case 0x6608: case 0x6609: case 0x660A:
     case 0x660B: case 0x660C: case 0x660D: case 0x660E:

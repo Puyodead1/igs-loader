@@ -75,10 +75,13 @@ EXPORT long CasStatus(long card, char *names, unsigned long *len, unsigned long 
 }
 
 /* SLE4442 memory-card calls (cdecl: the caller's arguments are ignored); only reached with a card;
-   also Speed Driver 3's CasTransmit and CasGetRdrType */
+   also Speed Driver 3's CasTransmit and CasGetRdrType, Power Truck's
+   CasReconnect and CasGetStatusChange */
 #define SLE_FAIL(name) EXPORT long name(void) { return SCARD_E_NO_SERVICE; }
 SLE_FAIL(CasTransmit)
 SLE_FAIL(CasGetRdrType)
+SLE_FAIL(CasReconnect)
+SLE_FAIL(CasGetStatusChange)
 SLE_FAIL(SLE4442_Read_Main_Memory)
 SLE_FAIL(SLE4442_Update_Main_MemoryA)
 SLE_FAIL(SLE4442_Update_Main_Memory)

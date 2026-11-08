@@ -267,6 +267,7 @@ static const Opt opts[] = {
     { "IGS_NO_AUDIO", "bool", "0", "no audio device; audio drains at the real rate", H_ALL },
     { "IGS_DSP_LATENCY_MS", "int", "-", "OSS /dev/dsp latency, ms (default 60; Linux 150)", H_ALL },
     { "IGS_SHOT_EVERY", "int", "600", "frames between snapshots (Snapshots below)", H_ALL },
+    { "IGS_ROTATE", "int", "0", "turn the frame clockwise: 90, 180 or 270 (rotated cabinet monitor)", H_ALL },
     { "IGS_SCRIPT", "str", "-", "press keys on a timetable, sec:key[+],... (testing)", H_ALL },
     { "IGS_MISSING_OK", "bool", "0", "start even with unresolved symbols", H_WIN },
     { "IGS_LDDEBUG", "enum:1|2", "-", "loader detail: 1 modules, inits, dlopen/dlsym; 2 every symbol binding", H_WIN },

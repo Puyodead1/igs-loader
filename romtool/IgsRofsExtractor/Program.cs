@@ -220,6 +220,37 @@ sealed record RofsProfile(
             Table: (0x48, 2, 0x034FC930),
             EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
             PageTableWord: 1, EncryptedHead: 0xA0),
+        // Power Truck (E3000, PowerTruck-OS).  Ocean Party's design; page ends
+        // are word 3.
+        new("powertruck", "PowerP-TTruck-v1",
+            MagicBlock: 0x100, MagicWord: 1,
+            FirstRecord: 0x150, HeaderSize: 0x78, ModeOffset: 0x74,
+            NameLength: (0x50, 1, 0xE10A7F4C),
+            Size: (0x30, 2, 0x5F0D452F),
+            Table: (0x00, 1, 0x00AF2A69),
+            EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
+            PageTableWord: 3),
+        // MuziBox (E3000, MuziBox-OS).  Ocean Party's design; page ends are
+        // word 0.
+        new("muzibox", "KM5MuziBoxSYS_V1",
+            MagicBlock: 0x100, MagicWord: 3,
+            FirstRecord: 0x150, HeaderSize: 0x78, ModeOffset: 0x74,
+            NameLength: (0x50, 3, 0x0D50143C),
+            Size: (0x30, 2, 0xB34958DB),
+            Table: (0x00, 2, 0x00EA417D),
+            EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
+            PageTableWord: 0),
+        // Speed Driver 4 (E3000, SD4-OS-R31).  SKL2 8P's design (mode first,
+        // AES blocks from +8); XORs are the init constants -/+ 0x5956; page
+        // ends are word 2.  Files also carry a CRC-32C, not checked here.
+        new("speeddriver4", "WeLikeSDAnyWhere",
+            MagicBlock: 0xD8, MagicWord: 1,
+            FirstRecord: 0x150, HeaderSize: 0x78, ModeOffset: 0x00,
+            NameLength: (0x28, 0, 0x243F2BC3),
+            Size: (0x08, 2, 0x2EF8A639),
+            Table: (0x48, 1, 0x243E7917),
+            EncryptedNames: true, EncryptedPageTable: true, BlankedZlibHeader: true,
+            PageTableWord: 2, EncryptedHead: 0xA0),
     ];
 }
 

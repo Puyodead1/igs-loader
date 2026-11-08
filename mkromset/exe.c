@@ -197,8 +197,35 @@ static int ext_cmp(const void *a, const void *b)
     return x->off < y->off ? -1 : x->off > y->off ? 1 : x->n < y->n ? -1 : x->n > y->n;
 }
 
+/* a b_info header at p whose block fits: what UPX writes, not its stub's code */
+static int upx_plausible(const uint8_t *data, size_t n, size_t p, uint64_t left)
+{
+    uint32_t u, c;
+    uint8_t m;
+
+    if (p + 12 > n)
+        return 0;
+    u = rd32(data + p);
+    c = rd32(data + p + 4);
+    m = data[p + 8];
+    return c && c <= u && u <= left && (m == 2 || m == 5 || m == 8) && !data[p + 11] && p + 12 + c <= n;
+}
+
+/* plausible headers from p on that end in the sz_unc 0 terminator */
+static int upx_chain(const uint8_t *data, size_t n, size_t p, uint64_t left)
+{
+    while (upx_plausible(data, n, p, left)) {
+        left -= rd32(data + p);
+        p += 12 + rd32(data + p + 4);
+        if (p + 4 <= n && !rd32(data + p))
+            return 1;
+    }
+    return 0;
+}
+
 int upx_unpack(struct mkr_job *j, const uint8_t *data, size_t n, uint8_t **out, size_t *outn)
 {
+    uint64_t total = 0;
     uint8_t **blk = NULL, *o = NULL;
     size_t *blen = NULL, nb = 0, cap = 0, i, p, bi = 0, olen, ocap;
     struct ext *ex = NULL, *sorted;
@@ -234,6 +261,22 @@ int upx_unpack(struct mkr_job *j, const uint8_t *data, size_t n, uint8_t **out, 
         c = rd32(data + p + 4);
         if (!u)
             break;
+        if (!upx_plausible(data, n, p, filesize - total)) {
+            /* UPX 3.08 puts its decompressor between the PT_LOADs' blocks and
+               the gaps' (Speed Driver 4): the next block header after it */
+            size_t q, lim = p + 0x10000 < n ? p + 0x10000 : n;
+
+            for (q = p + 1; q < lim && !upx_chain(data, n, q, filesize - total); q++)
+                ;
+            if (q >= lim) {
+                mkr_fail(j, "UPX: no block header at 0x%zx", p);
+                goto out;
+            }
+            p = q;
+            u = rd32(data + p);
+            c = rd32(data + p + 4);
+        }
+        total += u;
         if (data[p + 9]) {
             mkr_fail(j, "UPX filter 0x%x not handled", data[p + 9]);
             goto out;

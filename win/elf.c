@@ -714,6 +714,10 @@ static struct elf_mod *load_by_name(const char *name)
     if (is_native_lib(name))
         return native_mod(name);
     path = find_lib(name);
+    /* a path (MuziBox: ./lib/libfmodex.so): the candidate by its file's soname,
+       the list's libs naming the file */
+    if (!path && strrchr(name, '/'))
+        path = find_lib(strrchr(name, '/') + 1);
     if (!path) {
         snprintf(dl_error, sizeof(dl_error), "%s: not found in the search list", name);
         return NULL;

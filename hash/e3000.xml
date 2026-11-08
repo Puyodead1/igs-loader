@@ -41,4 +41,158 @@
 		</part>
 	</software>
 
+	<software name="powertruck">
+		<description>Power Truck</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="usage" value="Power-Truck"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="powertruck"/>
+			<!-- /etc/X11/IGS: cd /PT/readwrite; ./pt `cat args` (p3 on /PT, p4 on /PT/readwrite) -->
+			<feature name="data" value="/PT/readwrite"/>
+			<feature name="binary" value="pt"/>
+			<!-- the args file: the byte offset and sizes of the two Lua blocks the chip serves from its image -->
+			<feature name="args" value="25020 7056 10080"/>
+			<!-- Speed Driver 3's engine: its own Ogre 1.6.1, Cg, Theora plugin and the NVPerfSDK stub; the cabinet's libtheoradec -->
+			<feature name="libs" value="libOgreMain-1.6.1.so libCg.so libNVPerfSDK.so.1 libzzip-0.so.13 Plugin_TheoraVideoSystem.so /usr/lib/libtheoradec.so.1"/>
+			<!-- the smart-card reader, no card -->
+			<feature name="preload" value="libcasmcard-nocard.so"/>
+			<feature name="env" value="IGS_X11_LOCKS=1 IGS_CG_ARB=1"/>
+			<!-- p2 an igs_rofs root; p3 SquashFS on /PT, p4 ext on /PT/readwrite; pt is UPX-packed -->
+			<feature name="rofs_profile" value="powertruck"/>
+			<feature name="build" value="root p2; mount p3 /PT; mount p4 /PT/readwrite; unupx /PT/readwrite/pt /PT/readwrite/pt"/>
+			<!-- the FPGA key the chip hands out (scripts *.lua.enc): solved from the files' trailers -->
+			<feature name="asset_mask" value="e7daa49ffc202ca9bfe1467887de35f7"/>
+			<diskarea name="harddriv">
+				<disk name="e3000_powertruck" sha1="f8e805d82a742580841e14ff5cbf13a486d8745e"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/PT/readwrite/pt" size="177504168" sha1="9debdb428663caea43e24c10a36bc3317f5eb7ce"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="speedrider2">
+		<description>Speed Rider 2</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="usage" value="Speed-Rider-2"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="speedrider2"/>
+			<!-- /etc/X11/IGS: cd /SR2/bin_linux; ./speedrider2 (p3 on /SR2, p4 on /SR2/rewrite) -->
+			<feature name="data" value="/SR2/bin_linux"/>
+			<feature name="binary" value="speedrider2"/>
+			<!-- its own Ogre 1.6.1, Cg and the NVPerfSDK stub -->
+			<feature name="libs" value="libOgreMain-1.6.1.so libCg.so libNVPerfSDK.so.1"/>
+			<!-- the smart-card reader (CRT288HL), no card -->
+			<feature name="preload" value="libcasmcard-nocard.so"/>
+			<!-- Ogre uses Xlib from several threads; its Cg shaders want NVIDIA's profiles (Mesa: ARB) -->
+			<feature name="env" value="IGS_X11_LOCKS=1 IGS_CG_ARB=1"/>
+			<!-- p2 a keyed Game Image v2 root (wiki Disk Formats) -->
+			<feature name="rofs_profile" value="speedrider2"/>
+			<!-- the FPGA key the chip hands out (scripts *.lua.enc) -->
+			<feature name="asset_mask" value="c400ca6b7571e1d0956aa0a4783094c7"/>
+			<feature name="build" value="root p2; mount p3 /SR2; mount p4 /SR2/rewrite"/>
+			<diskarea name="harddriv">
+				<disk name="e3000_speedrider2" sha1="c74e18791197cb3c9c3d51749bf872835b62857f"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/SR2/bin_linux/speedrider2" size="21203352" sha1="089a92a612c4a63c71bf57209ba285c399460f56"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="speedrider2fa" cloneof="speedrider2">
+		<description>Speed Rider 2 FA</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="usage" value="Speed-Rider-2"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="speedrider2"/>
+			<!-- /etc/X11/IGS: cd /SR2/bin_linux; ./speedrider2-fa, then ./speedrider2-fanc -->
+			<feature name="data" value="/SR2/bin_linux"/>
+			<feature name="binary" value="speedrider2-fa"/>
+			<feature name="libs" value="libOgreMain-1.6.1.so libCg.so libNVPerfSDK.so.1"/>
+			<feature name="preload" value="libcasmcard-nocard.so"/>
+			<!-- the chip's version check: 100, region FA -->
+			<feature name="env" value="IGS_X11_LOCKS=1 IGS_CG_ARB=1 SR2_REGION=FA"/>
+			<!-- p2 a keyed Game Image v2 root, its inode headers AES-encrypted;
+			     the game partition is p4 here, the writable one p3 -->
+			<feature name="rofs_profile" value="speedrider2"/>
+			<feature name="build" value="root p2; mount p4 /SR2; mount p3 /SR2/rewrite"/>
+			<feature name="asset_mask" value="77c2b4b2eaa3d6f403c23708e624c874"/>
+			<diskarea name="harddriv">
+				<disk name="e3000_speedrider2fa" sha1="f93c7cd57831d2d4af73d8e401097c0241e0e6b7"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/SR2/bin_linux/speedrider2-fa" size="21229028" sha1="a34e97ec222f94fd8fbd84b2d1c130802c197d9b"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="speeddriver4">
+		<description>Speed Driver 4</description>
+		<year>2012</year>
+		<publisher>IGS</publisher>
+		<info name="usage" value="Speed-Driver-4"/>
+		<part name="hdd" interface="igs_hdd">
+			<!-- /etc/X11/IGS: cd /SD4/readwrite; sh apply.sh (the kernel mounts p3 on /SD4, p4 on
+			     /SD4/readwrite); apply.sh ends in go_product, a loop running ./olympus 24636 9344 2016:
+			     the patched executable (patch 14), UPX-packed -->
+			<feature name="plugin" value="speeddriver4"/>
+			<feature name="data" value="/SD4/readwrite"/>
+			<feature name="binary" value="olympus"/>
+			<!-- the byte offset and sizes of the two Lua blocks the chip serves from its image -->
+			<feature name="args" value="24636 9344 2016"/>
+			<!-- its own Ogre 1.8.0, Cg, Scaleform and the NVPerfSDK stub, in /SD4/readwrite -->
+			<feature name="libs" value="libOgreMain.so.1.8.0 libCg.so libNVPerfSDK.so libgfx.so libgfxrender_gl.so libgfx_as2.so libgfx_as3.so Plugin_TheoraVideoSystem.so"/>
+			<!-- the smart-card reader, no card -->
+			<feature name="preload" value="libcasmcard-nocard.so"/>
+			<feature name="env" value="IGS_X11_LOCKS=1 IGS_CG_ARB=1"/>
+			<!-- the FPGA key the chip hands out (scripts *.lua.enc; 64 KiB chunks past the first in
+			     the cipher's CBC mode, wiki Speed Driver 4) -->
+			<feature name="asset_mask" value="ae7fc6242bc93b0bd0c4f5c6928281de"/>
+			<!-- p2 an igs_rofs root; p3 IGS_SHFS (SquashFS 4, LZO) on /SD4, p4 ext on /SD4/readwrite.
+			     (The kernel's eqn also decrypts sd3x, the unpatched build, to /SD4/SD4: never run) -->
+			<feature name="rofs_profile" value="speeddriver4"/>
+			<feature name="build" value="root p2; mount p3 /SD4; mount p4 /SD4/readwrite; unupx /SD4/readwrite/olympus /SD4/readwrite/olympus"/>
+			<diskarea name="harddriv">
+				<disk name="e3000_speeddriver4" sha1="bc8a5ae42ee593932010d968e28cf6d0f8abbba3"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/SD4/readwrite/olympus" size="24127901" sha1="8ae6cd7303d7a633986938355760e2e19ff24ea8"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="muzibox">
+		<description>MuziBox</description>
+		<year>2011</year>
+		<publisher>IGS</publisher>
+		<info name="usage" value="MuziBox"/>
+		<part name="hdd" interface="igs_hdd">
+			<feature name="plugin" value="muzibox"/>
+			<!-- /etc/X11/IGS: cd /MuziBox; ./system/net/net; ./poweron; /MuziBox.bin/mb (p4 on /MuziBox, p3 on /MuziBox/system) -->
+			<feature name="data" value="/MuziBox"/>
+			<feature name="binary" value="/MuziBox.bin/mb"/>
+			<!-- p2 an igs_rofs root; p4 ext on /MuziBox, p3 SquashFS on /MuziBox/system;
+			     poweron decrypts mbCliGame.exe (FPGA cipher, no header) to /MuziBox.bin/mb -->
+			<feature name="rofs_profile" value="muzibox"/>
+			<!-- FMOD Ex, linked as ./lib/libfmodex.so; the cabinet's libidn (curl) -->
+			<feature name="libs" value="lib/libfmodex.so /lib/libidn.so.11"/>
+			<!-- a portrait cabinet: the game draws for a monitor turned on its side -->
+			<feature name="env" value="IGS_ROTATE=90"/>
+			<!-- the executable's and the scripts' (script/*.mba, the chip's state script) FPGA mask -->
+			<feature name="exe_mask" value="774b89a1bed8ff2bcf32d9b4230a27e0"/>
+			<feature name="asset_mask" value="774b89a1bed8ff2bcf32d9b4230a27e0"/>
+			<feature name="build" value="root p2; mount p4 /MuziBox; mount p3 /MuziBox/system; decrypt /MuziBox/mbCliGame.exe /MuziBox.bin/mb 5634008"/>
+			<diskarea name="harddriv">
+				<disk name="e3000_muzibox" sha1="3c3b348b865152e6b86adf475328f14533180374"/>
+			</diskarea>
+			<dataarea name="files">
+				<rom name="/MuziBox.bin/mb" size="5634008" sha1="e9514d324d0eb5fc44e5c4af363000b88f698a66"/>
+			</dataarea>
+		</part>
+	</software>
+
 </softwarelist>

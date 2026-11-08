@@ -107,7 +107,22 @@ PROFILES = {
     # leads the record and its AES blocks start at +8; page ends are word 1.
     'fishskl2_8p': ('8PFishSKLv2InOST', 0x58, 2, 0x150, 0x78, 0x00,
                     (0x28, 1, 0xD3A4465C), (0x08, 3, 0x531CABC7), (0x48, 2, 0x034FC930),
-                    True, True, True, 1),}
+                    True, True, True, 1),
+    # Power Truck (E3000, PowerTruck-OS).  Ocean Party's design; page ends
+    # are word 3.
+    'powertruck': ('PowerP-TTruck-v1', 0x100, 1, 0x150, 0x78, 0x74,
+                   (0x50, 1, 0xE10A7F4C), (0x30, 2, 0x5F0D452F), (0x00, 1, 0x00AF2A69),
+                   True, True, True, 3),
+    # MuziBox (E3000, MuziBox-OS).  Ocean Party's design; page ends are word 0.
+    'muzibox': ('KM5MuziBoxSYS_V1', 0x100, 3, 0x150, 0x78, 0x74,
+                (0x50, 3, 0x0D50143C), (0x30, 2, 0xB34958DB), (0x00, 2, 0x00EA417D),
+                True, True, True, 0),
+    # Speed Driver 4 (E3000, SD4-OS-R31).  SKL2 8P's design (mode first, AES
+    # blocks from +8); XORs are the init constants -/+ 0x5956; page ends are
+    # word 2.  Files also carry a CRC-32C, not checked here.
+    'speeddriver4': ('WeLikeSDAnyWhere', 0xD8, 1, 0x150, 0x78, 0x00,
+                     (0x28, 0, 0x243F2BC3), (0x08, 2, 0x2EF8A639), (0x48, 1, 0x243E7917),
+                     True, True, True, 2),}
 
 # profiles whose compressed pages longer than n bytes have their first n
 # bytes AES-CBC encrypted (zero IV, the same key)
@@ -118,6 +133,7 @@ ENC_HEAD = {
     'soulofgun': 0xA0,
     'westtrip': 0xA0,
     'fishskl2_8p': 0xA0,
+    'speeddriver4': 0xA0,
 }
 
 # plaintext profiles: (name length mask, unit, name alignment); the name

@@ -471,6 +471,12 @@ static struct {
     void (*ActiveTexture)(unsigned);
     void (*ReadPixels)(int, int, int, int, unsigned, unsigned, void *);
     void (*Viewport)(int, int, int, int);
+    void (*GenTextures)(int, unsigned *), (*BindTexture)(unsigned, unsigned);
+    void (*TexParameteri)(unsigned, unsigned, int);
+    void (*CopyTexImage2D)(unsigned, int, unsigned, int, int, int, int, int);
+    void (*CopyTexSubImage2D)(unsigned, int, int, int, int, int, int, int);
+    void (*ClearColor)(float, float, float, float), (*Clear)(unsigned);
+    void (*TexCoord2f)(float, float);
     void (*BindFramebuffer)(unsigned, unsigned), (*ReadBuffer)(unsigned);   /* optional */
 } gl;
 
@@ -482,6 +488,8 @@ static int gl_load_from(void *(*gpa)(const char *))
     L(Ortho); L(Enable); L(Disable); L(BlendFunc); L(Color4f);
     L(Begin); L(End); L(Vertex2f); L(WindowPos2i); L(Bitmap); L(PixelStorei);
     L(UseProgram); L(ActiveTexture); L(ReadPixels); L(Viewport);
+    L(GenTextures); L(BindTexture); L(TexParameteri); L(CopyTexImage2D); L(CopyTexSubImage2D);
+    L(ClearColor); L(Clear); L(TexCoord2f);
 #undef L
     *(void **)&gl.BindFramebuffer = gpa("glBindFramebuffer");
     if (!gl.BindFramebuffer)
@@ -584,6 +592,73 @@ static void screenshot(void)
 }
 
 /*
+ * IGS_ROTATE=90|180|270: a cabinet whose monitor is mounted rotated (MuziBox:
+ * portrait).  The game draws for that monitor; the frame (w x h, the window)
+ * is turned clockwise by that many degrees and fitted into the window (black
+ * bars), before the overlay and the screenshot.  Called with the overlay's
+ * state set up (no program, no textures, identity matrices).
+ */
+static void rotate_frame(int w, int h)
+{
+    static unsigned tex;
+    static int deg = -1, tw, th;
+    static const float uv[4][4][2] = {     /* screen TL, TR, BR, BL <- source corner */
+        { { 0, 1 }, { 1, 1 }, { 1, 0 }, { 0, 0 } },          /* 0 */
+        { { 0, 0 }, { 0, 1 }, { 1, 1 }, { 1, 0 } },          /* 90 clockwise */
+        { { 1, 0 }, { 0, 0 }, { 0, 1 }, { 1, 1 } },          /* 180 */
+        { { 1, 1 }, { 1, 0 }, { 0, 0 }, { 0, 1 } },          /* 270 */
+    };
+    int r, i;
+    float a = 1, b = 1;
+
+    if (deg < 0)
+        deg = (int)(core_env_long("IGS_ROTATE", 0) % 360);
+    if (!deg || deg % 90 || w <= 0 || h <= 0)
+        return;
+    r = deg / 90;
+    if (gl.BindFramebuffer)
+        gl.BindFramebuffer(0x8D40, 0);                     /* GL_FRAMEBUFFER: the window's */
+    if (gl.ReadBuffer)
+        gl.ReadBuffer(0x0405);                             /* GL_BACK */
+    if (!tex)
+        gl.GenTextures(1, &tex);
+    gl.ActiveTexture(GL_TEXTURE0);
+    gl.BindTexture(GL_TEXTURE_2D, tex);
+    if (tw != w || th != h) {
+        gl.TexParameteri(GL_TEXTURE_2D, 0x2801, 0x2601);   /* MIN_FILTER LINEAR */
+        gl.TexParameteri(GL_TEXTURE_2D, 0x2800, 0x2601);   /* MAG_FILTER LINEAR */
+        gl.CopyTexImage2D(GL_TEXTURE_2D, 0, 0x1907, 0, 0, w, h, 0);   /* GL_RGB */
+        tw = w;
+        th = h;
+    } else {
+        gl.CopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h);
+    }
+    if (r & 1) {                           /* the turned frame fitted: half extents in NDC */
+        float s = (float)w / h < (float)h / w ? (float)w / h : (float)h / w;
+
+        a = (float)h * s / w;
+        b = (float)w * s / h;
+    }
+    gl.Viewport(0, 0, w, h);
+    gl.ClearColor(0, 0, 0, 1);
+    gl.Clear(0x4000);                                      /* GL_COLOR_BUFFER_BIT */
+    gl.Disable(GL_BLEND);
+    gl.MatrixMode(GL_PROJECTION);
+    gl.PushMatrix();
+    gl.LoadIdentity();
+    gl.Enable(GL_TEXTURE_2D);
+    gl.Color4f(1, 1, 1, 1);
+    gl.Begin(GL_QUADS);
+    for (i = 0; i < 4; i++) {
+        gl.TexCoord2f(uv[r][i][0], uv[r][i][1]);
+        gl.Vertex2f(i == 0 || i == 3 ? -a : a, i < 2 ? b : -b);
+    }
+    gl.End();
+    gl.Disable(GL_TEXTURE_2D);
+    gl.PopMatrix();
+}
+
+/*
  * Origin bottom-left, in viewport pixels; all GL state saved and restored.
  * The viewport is the largest seen: some screens end their frame on a small
  * one (We Dance's login: 480x32).
@@ -622,6 +697,11 @@ static void overlay(void)
     gl.Disable(GL_STENCIL_TEST);
     gl.Disable(GL_SCISSOR_TEST);
     gl.PixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    gl.MatrixMode(GL_MODELVIEW);
+    gl.PushMatrix();
+    gl.LoadIdentity();
+    rotate_frame(vp[2], vp[3]);
+    gl.PopMatrix();
     gl.MatrixMode(GL_PROJECTION);
     gl.PushMatrix();
     gl.LoadIdentity();

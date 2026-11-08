@@ -1,16 +1,23 @@
 /*
- * IGS loader, Windows core: IP sockets on Winsock, only with IGS_NET.
+ * IGS loader, Windows core: IP sockets.
  *
- * IGS_NET=host[:port] (port 10000) is the game's own server (igs-online):
- * TCP connects to the ports in IGS_NET_PORTS (default 10000, We Dance's game
- * server) go to host:port whatever address the game asked for; every other
- * connection, datagram and name lookup is refused, as on Linux (core.c).
- * Without IGS_NET there is no IP network at all.
+ * TCP is on Winsock, only with IGS_NET=host[:port] (port 10000), the game's
+ * own server (igs-online): connects to the ports in IGS_NET_PORTS (default
+ * 10000, We Dance's game server) go to host:port whatever address the game
+ * asked for; every other connection and name lookup is refused, as on Linux
+ * (core.c).
+ *
+ * UDP is the cabinet alone on its LAN, in-process: a datagram socket binds a
+ * port (0: one of its own); sendto an address of this cabinet (127.x,
+ * 0.0.0.0, the 172.16.1.1 its ifconfig reports) queues the datagram on the
+ * socket bound to that port, and to any other address goes nowhere;
+ * recvfrom takes from the queue (blocking, or EAGAIN).  The Speed engine's
+ * RakNet needs it: a solo race's results go from the game to itself over
+ * the cabinet network (speed.net.sendServerCommand -> pushNetCmd).  The
+ * interface ioctls answer as before (SIOCGIFFLAGS: up and running; no MAC).
  *
  * Sockets are Linux fds of type FD_SOCK in libc_sys.c; read/write/close,
  * fcntl(O_NONBLOCK), ioctl, poll and select (x11.c) come here for them.
- * Datagram sockets exist only for the interface ioctls the games make
- * (SIOCGIFFLAGS: up and running; no MAC address).
  */
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -36,11 +43,39 @@
 #define L_EINPROGRESS  115
 #define L_ENETUNREACH  101
 
+#define L_EADDRINUSE   98
+
 #define NFD 1024
+struct dgram { struct dgram *next; struct sockaddr_in from; int n; char data[]; };
 static struct {
     SOCKET s;
     int dgram, nonblock;
+    /* datagram sockets: the bound port (host order), the connected peer, the queue */
+    int port;
+    struct sockaddr_in peer;
+    struct dgram *head, *tail;
+    int queued;
 } socks[NFD];
+
+static CRITICAL_SECTION dlock;
+static CONDITION_VARIABLE dcond;
+static INIT_ONCE donce = INIT_ONCE_STATIC_INIT;
+
+static BOOL CALLBACK dinit(PINIT_ONCE o, void *p, void **c)
+{
+    (void)o; (void)p; (void)c;
+    InitializeCriticalSection(&dlock);
+    InitializeConditionVariable(&dcond);
+    return TRUE;
+}
+
+static void dlock_on(void)
+{
+    InitOnceExecuteOnce(&donce, dinit, NULL, NULL);
+    EnterCriticalSection(&dlock);
+}
+
+static void dlock_off(void) { LeaveCriticalSection(&dlock); }
 
 static struct {
     int on;                       /* 1 on, -1 IGS_NET given but unusable */
@@ -143,12 +178,12 @@ int l_socket(int d, int t, int p)
     SOCKET s = INVALID_SOCKET;
 
     (void)p;
-    if (!lx_net_on() || d != AF_INET || ((t & 0xf) != 1 && (t & 0xf) != 2)) {
+    if (d != AF_INET || ((t & 0xf) != 1 && (t & 0xf) != 2) || ((t & 0xf) == 1 && !lx_net_on())) {
         static int once;
 
         if (!once++)
             LOG("socket(%d, %d, %d): no network (logged once)", d, t, p);
-        return fail(lx_net_on() ? L_EACCES : L_EAFNOSUPPORT);
+        return fail(lx_net_on() || d == AF_INET ? L_EACCES : L_EAFNOSUPPORT);
     }
     if ((t & 0xf) == 1 && (s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == INVALID_SOCKET)
         return fail(lerr(WSAGetLastError()));
@@ -157,12 +192,126 @@ int l_socket(int d, int t, int p)
             closesocket(s);
         return -1;
     }
+    dlock_on();
+    memset(&socks[fd], 0, sizeof(socks[fd]));
     socks[fd].s = s;
     socks[fd].dgram = (t & 0xf) == 2;
-    socks[fd].nonblock = 0;
+    dlock_off();
     if (t & L_O_NONBLOCK)                       /* SOCK_NONBLOCK */
         lx_net_nonblock(fd, 1);
     return fd;
+}
+
+/* ---- in-process datagrams ---------------------------------------------------------------- */
+
+/* an address of this cabinet: loopback, any, its own (ifconfig's 172.16.1.1) */
+static int ours(uint32_t a)
+{
+    a = ntohl(a);
+    return (a >> 24) == 127 || a == 0 || a == 0xAC100101u;
+}
+
+/* the datagram socket bound to port, or -1 (dlock held) */
+static int bound(int port)
+{
+    int fd;
+
+    for (fd = 0; fd < NFD; fd++)
+        if (socks[fd].dgram && socks[fd].port == port && lx_fd_is_sock(fd))
+            return fd;
+    return -1;
+}
+
+int l_bind(int fd, const struct sockaddr_in *a, int len)
+{
+    int port;
+
+    (void)len;
+    if (!sock_of(fd))
+        return -1;
+    if (!socks[fd].dgram || !a || a->sin_family != AF_INET)
+        return fail(L_EACCES);                  /* TCP servers: none */
+    dlock_on();
+    port = ntohs(a->sin_port);
+    if (!port)                                  /* an ephemeral port */
+        for (port = 49152; port < 65535 && bound(port) >= 0; port++)
+            ;
+    if (bound(port) >= 0 && bound(port) != fd) {
+        dlock_off();
+        return fail(L_EADDRINUSE);
+    }
+    socks[fd].port = port;
+    dlock_off();
+    if (lx_verbose)
+        LOG("udp: fd %d bound to port %d", fd, port);
+    return 0;
+}
+
+static int dg_send(int fd, const void *buf, size_t n, const struct sockaddr_in *to)
+{
+    int dst;
+
+    if (!to || to->sin_family != AF_INET)
+        return fail(L_ENOTCONN);
+    dlock_on();
+    if (!socks[fd].port) {                      /* sending binds, as on Linux */
+        int p = 49152;
+
+        while (bound(p) >= 0)
+            p++;
+        socks[fd].port = p;
+    }
+    if (ours(to->sin_addr.s_addr) && (dst = bound(ntohs(to->sin_port))) >= 0 && socks[dst].queued < 4096) {
+        struct dgram *d = malloc(sizeof(*d) + n);
+
+        if (d) {
+            memset(&d->from, 0, sizeof(d->from));
+            d->from.sin_family = AF_INET;
+            d->from.sin_addr.s_addr = htonl(0x7F000001u);
+            d->from.sin_port = htons((u_short)socks[fd].port);
+            d->n = (int)n;
+            memcpy(d->data, buf, n);
+            d->next = NULL;
+            if (socks[dst].tail)
+                socks[dst].tail->next = d;
+            else
+                socks[dst].head = d;
+            socks[dst].tail = d;
+            socks[dst].queued++;
+            WakeAllConditionVariable(&dcond);
+        }
+    }
+    dlock_off();
+    return (int)n;                              /* anywhere else: gone, as on a quiet LAN */
+}
+
+static int dg_recv(int fd, void *buf, size_t n, int flags, struct sockaddr_in *from, int *len)
+{
+    struct dgram *d;
+    int r;
+    dlock_on();
+    while (!(d = socks[fd].head)) {
+        if (socks[fd].nonblock || (flags & 0x40) || !lx_fd_is_sock(fd) || !socks[fd].dgram) {   /* MSG_DONTWAIT */
+            dlock_off();
+            return fail(L_EAGAIN);
+        }
+        SleepConditionVariableCS(&dcond, &dlock, 100);
+    }
+    r = d->n < (int)n ? d->n : (int)n;
+    memcpy(buf, d->data, (size_t)r);
+    if (from && len && *len >= (int)sizeof(*from)) {
+        *from = d->from;
+        *len = sizeof(*from);
+    }
+    if (!(flags & 2)) {                         /* not MSG_PEEK */
+        socks[fd].head = d->next;
+        if (!d->next)
+            socks[fd].tail = NULL;
+        socks[fd].queued--;
+        free(d);
+    }
+    dlock_off();
+    return r;
 }
 
 int l_connect(int fd, const struct sockaddr_in *a, int len)
@@ -172,6 +321,10 @@ int l_connect(int fd, const struct sockaddr_in *a, int len)
     (void)len;
     if (!sock_of(fd))
         return -1;
+    if (socks[fd].dgram && a && a->sin_family == AF_INET) {
+        socks[fd].peer = *a;                    /* send / recv without an address */
+        return 0;
+    }
     if (socks[fd].dgram || !a || a->sin_family != AF_INET)
         return fail(L_ECONNREFUSED);
     port = ntohs(a->sin_port);
@@ -199,7 +352,7 @@ int l_send(int fd, const void *buf, size_t n, int flags)
     if (!sock_of(fd))
         return -1;
     if (socks[fd].dgram)
-        return fail(L_EACCES);
+        return dg_send(fd, buf, n, socks[fd].peer.sin_family ? &socks[fd].peer : NULL);
     r = send(socks[fd].s, buf, (int)n, 0);
     return r == SOCKET_ERROR ? fail(lerr(WSAGetLastError())) : r;
 }
@@ -211,7 +364,7 @@ int l_recv(int fd, void *buf, size_t n, int flags)
     if (!sock_of(fd))
         return -1;
     if (socks[fd].dgram)
-        return fail(L_EAGAIN);
+        return dg_recv(fd, buf, n, flags, NULL, NULL);
     r = recv(socks[fd].s, buf, (int)n, flags & 2 ? MSG_PEEK : 0);
     return r == SOCKET_ERROR ? fail(lerr(WSAGetLastError())) : r;
 }
@@ -219,6 +372,10 @@ int l_recv(int fd, void *buf, size_t n, int flags)
 int l_sendto(int fd, const void *buf, size_t n, int flags, const void *a, int len)
 {
     (void)len;
+    if (!sock_of(fd))
+        return -1;
+    if (socks[fd].dgram)
+        return dg_send(fd, buf, n, a ? a : socks[fd].peer.sin_family ? &socks[fd].peer : NULL);
     if (a)
         return fail(L_EACCES);
     return l_send(fd, buf, n, flags);
@@ -226,6 +383,10 @@ int l_sendto(int fd, const void *buf, size_t n, int flags, const void *a, int le
 
 int l_recvfrom(int fd, void *buf, size_t n, int flags, void *a, int *len)
 {
+    if (!sock_of(fd))
+        return -1;
+    if (socks[fd].dgram)
+        return dg_recv(fd, buf, n, flags, a, len);
     if (a && len)
         memset(a, 0, (size_t)*len);
     return l_recv(fd, buf, n, flags);
@@ -300,6 +461,15 @@ int l_getsockname(int fd, void *a, int *len)
 {
     if (!sock_of(fd))
         return -1;
+    if (socks[fd].dgram && a && len && *len >= (int)sizeof(struct sockaddr_in)) {
+        struct sockaddr_in *s = a;
+
+        memset(s, 0, sizeof(*s));
+        s->sin_family = AF_INET;
+        s->sin_port = htons((u_short)socks[fd].port);
+        *len = sizeof(*s);
+        return 0;
+    }
     if (socks[fd].dgram || getsockname(socks[fd].s, a, len))
         return fail(L_EINVAL);
     return 0;
@@ -312,9 +482,20 @@ int lx_net_write(int fd, const void *buf, size_t n) { return l_send(fd, buf, n, 
 
 void lx_net_close(int fd)
 {
-    if (fd >= 0 && fd < NFD && socks[fd].s != INVALID_SOCKET && socks[fd].s)
+    struct dgram *d, *n;
+
+    if (fd < 0 || fd >= NFD)
+        return;
+    if (socks[fd].s != INVALID_SOCKET && socks[fd].s)
         closesocket(socks[fd].s);
+    dlock_on();
+    for (d = socks[fd].head; d; d = n) {
+        n = d->next;
+        free(d);
+    }
     memset(&socks[fd], 0, sizeof(socks[fd]));
+    WakeAllConditionVariable(&dcond);          /* a recvfrom waiting on it returns */
+    dlock_off();
 }
 
 int lx_net_nonblocking(int fd) { return fd >= 0 && fd < NFD && socks[fd].nonblock; }
@@ -331,11 +512,15 @@ void lx_net_nonblock(int fd, int on)
 int lx_net_ioctl(int fd, unsigned long req, void *arg)
 {
     u_long v = 0;
-
     switch (req) {
-    case 0x541B:                                /* FIONREAD */
+    case 0x541B:                                /* FIONREAD: a datagram socket's next one */
         if (!socks[fd].dgram)
             ioctlsocket(socks[fd].s, FIONREAD, &v);
+        else {
+            dlock_on();
+            v = socks[fd].head ? (u_long)socks[fd].head->n : 0;
+            dlock_off();
+        }
         *(int *)arg = (int)v;
         return 0;
     case 0x5421:                                /* FIONBIO */
@@ -368,7 +553,11 @@ int lx_net_select(int n, const uint32_t *rd, const uint32_t *wr, uint32_t *ord, 
 
         if (!(inr || inw) || !lx_fd_is_sock(fd))
             continue;
-        if (socks[fd].dgram) {                  /* never readable, always writable */
+        if (socks[fd].dgram) {                  /* readable with a datagram queued, always writable */
+            if (inr && socks[fd].head) {
+                ord[fd / 32] |= 1u << (fd % 32);
+                count++;
+            }
             if (inw) {
                 owr[fd / 32] |= 1u << (fd % 32);
                 count++;
@@ -448,7 +637,7 @@ int lx_net_poll(struct l_pollfd *p, unsigned n, int timeout)
 }
 
 const struct nsym net_syms[] = {
-    N(socket), N(connect), N(send), N(recv), N(sendto), N(recvfrom), N(shutdown),
+    N(socket), N(bind), N(connect), N(send), N(recv), N(sendto), N(recvfrom), N(shutdown),
     N(setsockopt), N(getsockopt), N(getpeername), N(getsockname),
     { NULL, NULL },
 };
