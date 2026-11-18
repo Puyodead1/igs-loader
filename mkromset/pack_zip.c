@@ -9,10 +9,73 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/types.h>
 
 #include "mkr.h"
 
 #include "zip.h"
+
+/*
+ * minizip's own fopen64 functions seek through zlib's z_off64_t, which
+ * MinGW's zconf.h makes a 32-bit long: the seek back to an entry's local
+ * header failed once it lay past 2 GiB.  These keep the offset 64-bit.
+ */
+#ifdef _WIN32
+#define fseek64 _fseeki64
+#define ftell64 _ftelli64
+#else
+#define fseek64 fseeko
+#define ftell64 ftello
+_Static_assert(sizeof(off_t) == 8, "mkromset needs -D_FILE_OFFSET_BITS=64");
+#endif
+
+static voidpf ZCALLBACK zf_open(voidpf opaque, const void *path, int mode)
+{
+    (void)opaque;
+    if ((mode & ZLIB_FILEFUNC_MODE_CREATE) && path)
+        return fopen((const char *)path, "wb");
+    return NULL;
+}
+
+static uLong ZCALLBACK zf_read(voidpf opaque, voidpf f, void *buf, uLong n)
+{
+    (void)opaque;
+    return (uLong)fread(buf, 1, n, (FILE *)f);
+}
+
+static uLong ZCALLBACK zf_write(voidpf opaque, voidpf f, const void *buf, uLong n)
+{
+    (void)opaque;
+    return (uLong)fwrite(buf, 1, n, (FILE *)f);
+}
+
+static ZPOS64_T ZCALLBACK zf_tell(voidpf opaque, voidpf f)
+{
+    (void)opaque;
+    return (ZPOS64_T)ftell64((FILE *)f);
+}
+
+static long ZCALLBACK zf_seek(voidpf opaque, voidpf f, ZPOS64_T off, int origin)
+{
+    int wh = origin == ZLIB_FILEFUNC_SEEK_CUR ? SEEK_CUR : origin == ZLIB_FILEFUNC_SEEK_END ? SEEK_END : SEEK_SET;
+
+    (void)opaque;
+    return fseek64((FILE *)f, (long long)off, wh) ? -1 : 0;
+}
+
+static int ZCALLBACK zf_close(voidpf opaque, voidpf f)
+{
+    (void)opaque;
+    return fclose((FILE *)f);
+}
+
+static int ZCALLBACK zf_error(voidpf opaque, voidpf f)
+{
+    (void)opaque;
+    return ferror((FILE *)f);
+}
+
+static zlib_filefunc64_def zf = { zf_open, zf_read, zf_write, zf_tell, zf_seek, zf_close, zf_error, NULL };
 
 struct zw {
     struct mkr_job *j;
@@ -138,7 +201,7 @@ int pack_zip(struct mkr_job *j, const char *path)
     w.level = j->o->mx > 0 ? (j->o->mx > 9 ? 9 : j->o->mx) : Z_DEFAULT_COMPRESSION;
     w.dos = (uLong)((t->tm_year - 80) << 25 | (t->tm_mon + 1) << 21 | t->tm_mday << 16 | t->tm_hour << 11 |
                     t->tm_min << 5 | t->tm_sec / 2);
-    if (!(w.z = zipOpen64(path, APPEND_STATUS_CREATE)))
+    if (!(w.z = zipOpen2_64(path, APPEND_STATUS_CREATE, NULL, &zf)))
         return mkr_fail(j, "cannot create %s", path);
     w.buf = malloc(1 << 20);
     mkr_phase(j, "pack", tree_bytes(j->root));
